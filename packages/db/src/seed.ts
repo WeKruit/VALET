@@ -5,7 +5,7 @@ const DATABASE_URL =
   process.env["DATABASE_URL"] ?? "postgres://wekruit:wekruit_dev@localhost:5432/wekruit";
 
 async function seed() {
-  console.log("Seeding database...");
+  console.warn("Seeding database...");
   const { db, sql } = createDatabase(DATABASE_URL);
 
   // Clean existing data
@@ -184,12 +184,12 @@ async function seed() {
     },
   ]);
 
-  console.log("Seed complete:");
-  console.log("  - 2 users");
-  console.log("  - 1 resume");
-  console.log("  - 5 tasks");
-  console.log("  - 4 Q&A bank entries");
-  console.log("  - 2 consent records");
+  console.warn("Seed complete:");
+  console.warn("  - 2 users");
+  console.warn("  - 1 resume");
+  console.warn("  - 5 tasks");
+  console.warn("  - 4 Q&A bank entries");
+  console.warn("  - 2 consent records");
 
   await sql.end();
   process.exit(0);

@@ -34,8 +34,8 @@ coverage/
 # Docker volumes
 docker/data/
 
-# Drizzle
-packages/db/drizzle/meta/
+# Drizzle (keep migrations + journal, ignore snapshots)
+packages/db/drizzle/meta/0*_snapshot.json
 
 # MinIO data
 minio-data/

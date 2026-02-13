@@ -7,7 +7,6 @@ import { qaBank } from "./qa-bank.js";
 import { consentRecords } from "./consent-records.js";
 import { browserProfiles } from "./browser-profiles.js";
 import { applicationResults } from "./application-results.js";
-import { auditTrail } from "./audit-trail.js";
 import { applicationFields } from "./application-fields.js";
 
 export const usersRelations = relations(users, ({ many }) => ({
