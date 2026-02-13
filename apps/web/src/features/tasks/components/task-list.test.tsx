@@ -5,7 +5,7 @@ import { TaskList } from "./task-list";
 
 // Mock the utils
 vi.mock("@/lib/utils", () => ({
-  formatRelativeTime: (date: string) => "2 hours ago",
+  formatRelativeTime: (_date: string) => "2 hours ago",
   cn: (...args: any[]) => args.filter(Boolean).join(" "),
 }));
 

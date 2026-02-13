@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@valet/ui/components/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, setAccessToken, API_BASE_URL } from "@/lib/api-client";
+import { api, setAccessToken } from "@/lib/api-client";
 import { useAuth } from "../hooks/use-auth";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
@@ -43,7 +43,6 @@ export function LoginPage() {
         body: { code, redirectUri: REDIRECT_URI },
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const [isRedirecting, setIsRedirecting] = useState(false);

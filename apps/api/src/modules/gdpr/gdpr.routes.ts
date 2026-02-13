@@ -54,7 +54,7 @@ export default async function gdprRoutes(fastify: FastifyInstance) {
           "Initiate account deletion with 30-day grace period (GDPR Article 17)",
       },
     },
-    async (request, reply) => {
+    async (request, _reply) => {
       const userId = (request as any).userId;
       const { gdprService } = (request as any).diScope.cradle;
 
@@ -77,7 +77,7 @@ export default async function gdprRoutes(fastify: FastifyInstance) {
         description: "Cancel pending account deletion during grace period",
       },
     },
-    async (request, reply) => {
+    async (request, _reply) => {
       const userId = (request as any).userId;
       const { gdprService } = (request as any).diScope.cradle;
 

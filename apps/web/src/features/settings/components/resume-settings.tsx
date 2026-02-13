@@ -117,7 +117,6 @@ export function ResumeSettings() {
         processFile(file);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -540,7 +539,7 @@ export function ResumeSettings() {
 
 function StatusBadge({
   status,
-  confidence,
+  confidence: _confidence,
 }: {
   status: string;
   confidence: number | null;

@@ -1,13 +1,12 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import type { S3Client } from "@aws-sdk/client-s3";
 import {
-  S3Client,
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 import {
   users,
   tasks,
-  taskEvents,
   resumes,
   qaBank,
   consentRecords,

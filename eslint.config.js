@@ -37,10 +37,11 @@ export default [
     },
   },
   {
-    files: ["**/*.tsx"],
+    files: ["apps/web/**/*.ts", "apps/web/**/*.tsx", "packages/ui/**/*.tsx"],
     languageOptions: {
       globals: {
         ...globals.browser,
+        React: "readonly",
       },
     },
   },

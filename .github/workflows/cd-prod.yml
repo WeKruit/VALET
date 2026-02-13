@@ -1,9 +1,7 @@
 name: CD → Production
 
 on:
-  # Manual trigger only for production
   workflow_dispatch:
-  # Also triggered by push to main, but requires environment approval
   push:
     branches: [main]
 
@@ -12,7 +10,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Production always deploys all services for safety.
+  # Only migrations are conditional — they run when drizzle files change.
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run-migrations: ${{ steps.check.outputs.run-migrations }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            migrations:
+              - 'packages/db/drizzle/**'
+
+      - name: Check migration need
+        id: check
+        run: |
+          echo "run-migrations=${{ steps.changes.outputs.migrations }}" >> $GITHUB_OUTPUT
+
   deploy:
+    needs: detect-changes
     uses: ./.github/workflows/deploy.yml
     with:
       environment: production
@@ -20,6 +40,10 @@ jobs:
       worker-app: valet-worker
       web-app: valet-web
       api-url: https://valet-api.fly.dev
+      deploy-api: true
+      deploy-worker: true
+      deploy-web: true
+      run-migrations: ${{ needs.detect-changes.outputs.run-migrations == 'true' }}
     secrets:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}

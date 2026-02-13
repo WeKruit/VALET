@@ -43,6 +43,7 @@ export interface AppCradle {
 }
 
 declare module "@fastify/awilix" {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface Cradle extends AppCradle {}
 }
 

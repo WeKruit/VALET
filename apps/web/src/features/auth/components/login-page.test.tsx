@@ -7,9 +7,8 @@ import { LoginPage } from "./login-page";
 // Mock react-router-dom navigation
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>(
-    "react-router-dom"
-  );
+  const actual =
+    await vi.importActual("react-router-dom");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -23,7 +22,7 @@ vi.mock("@/lib/api-client", () => ({
   api: {
     auth: {
       google: {
-        useMutation: (opts?: any) => ({
+        useMutation: (_opts?: any) => ({
           mutate: mockGoogleMutate,
           isPending: false,
         }),

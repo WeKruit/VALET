@@ -160,7 +160,7 @@ export function registerResumeParseWorkflow(
   const extractText = workflow.task({
     name: "extract-text",
     executionTimeout: "30s",
-    fn: async (input: ResumeParseInput, ctx: Context<ResumeParseInput>) => {
+    fn: async (input: ResumeParseInput, _ctx: Context<ResumeParseInput>) => {
       logger.info(
         { resumeId: input.resumeId },
         "Extracting text from resume",

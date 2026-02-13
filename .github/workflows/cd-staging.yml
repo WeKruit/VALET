@@ -9,7 +9,109 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy-api: ${{ steps.targets.outputs.deploy-api }}
+      deploy-worker: ${{ steps.targets.outputs.deploy-worker }}
+      deploy-web: ${{ steps.targets.outputs.deploy-web }}
+      run-migrations: ${{ steps.targets.outputs.run-migrations }}
+      any-deploy: ${{ steps.targets.outputs.any-deploy }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            shared:
+              - 'packages/shared/**'
+            contracts:
+              - 'packages/contracts/**'
+            db:
+              - 'packages/db/**'
+            llm:
+              - 'packages/llm/**'
+            ui:
+              - 'packages/ui/**'
+            api:
+              - 'apps/api/**'
+            worker:
+              - 'apps/worker/**'
+            web:
+              - 'apps/web/**'
+            migrations:
+              - 'packages/db/drizzle/**'
+            infra:
+              - 'fly/**'
+              - 'pnpm-lock.yaml'
+              - 'turbo.json'
+              - 'tsconfig.json'
+
+      - name: Determine deploy targets
+        id: targets
+        run: |
+          # Migrations only when drizzle migration files change
+          MIGRATE=${{ steps.changes.outputs.migrations }}
+
+          # API depends on: shared, contracts, db, llm
+          if [[ "${{ steps.changes.outputs.api }}" == "true" \
+             || "${{ steps.changes.outputs.shared }}" == "true" \
+             || "${{ steps.changes.outputs.contracts }}" == "true" \
+             || "${{ steps.changes.outputs.db }}" == "true" \
+             || "${{ steps.changes.outputs.llm }}" == "true" \
+             || "${{ steps.changes.outputs.infra }}" == "true" ]]; then
+            DEPLOY_API=true
+          else
+            DEPLOY_API=false
+          fi
+
+          # Worker depends on: shared, contracts, db, llm
+          if [[ "${{ steps.changes.outputs.worker }}" == "true" \
+             || "${{ steps.changes.outputs.shared }}" == "true" \
+             || "${{ steps.changes.outputs.contracts }}" == "true" \
+             || "${{ steps.changes.outputs.db }}" == "true" \
+             || "${{ steps.changes.outputs.llm }}" == "true" \
+             || "${{ steps.changes.outputs.infra }}" == "true" ]]; then
+            DEPLOY_WORKER=true
+          else
+            DEPLOY_WORKER=false
+          fi
+
+          # Web depends on: shared, contracts, ui
+          if [[ "${{ steps.changes.outputs.web }}" == "true" \
+             || "${{ steps.changes.outputs.shared }}" == "true" \
+             || "${{ steps.changes.outputs.contracts }}" == "true" \
+             || "${{ steps.changes.outputs.ui }}" == "true" \
+             || "${{ steps.changes.outputs.infra }}" == "true" ]]; then
+            DEPLOY_WEB=true
+          else
+            DEPLOY_WEB=false
+          fi
+
+          if [[ "$DEPLOY_API" == "true" || "$DEPLOY_WORKER" == "true" || "$DEPLOY_WEB" == "true" ]]; then
+            ANY_DEPLOY=true
+          else
+            ANY_DEPLOY=false
+          fi
+
+          echo "run-migrations=$MIGRATE" >> $GITHUB_OUTPUT
+          echo "deploy-api=$DEPLOY_API" >> $GITHUB_OUTPUT
+          echo "deploy-worker=$DEPLOY_WORKER" >> $GITHUB_OUTPUT
+          echo "deploy-web=$DEPLOY_WEB" >> $GITHUB_OUTPUT
+          echo "any-deploy=$ANY_DEPLOY" >> $GITHUB_OUTPUT
+
+          echo "### Deploy Targets" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Deploy? |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API | $DEPLOY_API |" >> $GITHUB_STEP_SUMMARY
+          echo "| Worker | $DEPLOY_WORKER |" >> $GITHUB_STEP_SUMMARY
+          echo "| Web | $DEPLOY_WEB |" >> $GITHUB_STEP_SUMMARY
+          echo "| Migrations | $MIGRATE |" >> $GITHUB_STEP_SUMMARY
+
   deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any-deploy == 'true'
     uses: ./.github/workflows/deploy.yml
     with:
       environment: staging
@@ -17,6 +119,10 @@ jobs:
       worker-app: valet-worker-stg
       web-app: valet-web-stg
       api-url: https://valet-api-stg.fly.dev
+      deploy-api: ${{ needs.detect-changes.outputs.deploy-api == 'true' }}
+      deploy-worker: ${{ needs.detect-changes.outputs.deploy-worker == 'true' }}
+      deploy-web: ${{ needs.detect-changes.outputs.deploy-web == 'true' }}
+      run-migrations: ${{ needs.detect-changes.outputs.run-migrations == 'true' }}
     secrets:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}

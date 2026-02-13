@@ -16,9 +16,8 @@ async function main() {
   // Prevent unhandled socket errors (ECONNRESET, EPIPE, etc.) from crashing the process
   process.on("uncaughtException", (err) => {
     // Socket errors are expected when clients disconnect abruptly
-    if ((err as NodeJS.ErrnoException).code === "ECONNRESET" ||
-        (err as NodeJS.ErrnoException).code === "EPIPE" ||
-        (err as NodeJS.ErrnoException).code === "ECONNABORTED") {
+    const code = (err as { code?: string }).code;
+    if (code === "ECONNRESET" || code === "EPIPE" || code === "ECONNABORTED") {
       app.log.warn({ err: err.message }, "Ignored socket error");
       return;
     }

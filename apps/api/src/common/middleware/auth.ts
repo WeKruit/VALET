@@ -19,7 +19,7 @@ const PUBLIC_PATHS = [
 
 export async function authMiddleware(
   request: FastifyRequest,
-  reply: FastifyReply,
+  _reply: FastifyReply,
 ) {
   const path = request.url.split("?")[0];
   if (!path) return;

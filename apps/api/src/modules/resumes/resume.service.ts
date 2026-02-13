@@ -1,6 +1,6 @@
 import type { Hatchet } from "@hatchet-dev/typescript-sdk";
+import type { S3Client } from "@aws-sdk/client-s3";
 import {
-  S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
