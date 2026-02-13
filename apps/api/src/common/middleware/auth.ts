@@ -35,7 +35,11 @@ export async function authMiddleware(
 
   const token = authHeader.slice(7);
   try {
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? "");
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw AppError.unauthorized("Server configuration error");
+    }
+    const secret = new TextEncoder().encode(jwtSecret);
     const { payload } = await jose.jwtVerify(token, secret, {
       algorithms: ["HS256"],
     });

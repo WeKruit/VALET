@@ -32,6 +32,11 @@ interface AuthResult {
   isNewUser: boolean;
 }
 
+// Google's JWKS endpoint for verifying ID tokens
+const googleJWKS = jose.createRemoteJWKSet(
+  new URL("https://www.googleapis.com/oauth2/v3/certs"),
+);
+
 export class AuthService {
   private db: Database;
   private jwtSecret: Uint8Array;
@@ -39,13 +44,18 @@ export class AuthService {
 
   constructor({ db }: { db: Database }) {
     this.db = db;
-    this.jwtSecret = new TextEncoder().encode(
-      process.env.JWT_SECRET ?? "dev-secret-change-me-in-production-min-32ch",
-    );
-    this.jwtRefreshSecret = new TextEncoder().encode(
-      process.env.JWT_REFRESH_SECRET ??
-        "dev-refresh-secret-change-me-in-production",
-    );
+
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error("JWT_SECRET environment variable is required");
+    }
+    this.jwtSecret = new TextEncoder().encode(jwtSecret);
+
+    const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET;
+    if (!jwtRefreshSecret) {
+      throw new Error("JWT_REFRESH_SECRET environment variable is required");
+    }
+    this.jwtRefreshSecret = new TextEncoder().encode(jwtRefreshSecret);
   }
 
   async authenticateWithGoogle(
@@ -120,9 +130,20 @@ export class AuthService {
     }
 
     const tokenData = (await tokenResponse.json()) as { id_token: string };
-    const claims = jose.decodeJwt(tokenData.id_token) as unknown as GoogleTokenPayload;
 
-    return claims;
+    // Cryptographically verify the ID token using Google's public JWKS keys
+    const { payload } = await jose.jwtVerify(tokenData.id_token, googleJWKS, {
+      issuer: ["https://accounts.google.com", "accounts.google.com"],
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    return {
+      sub: payload.sub!,
+      email: payload.email as string,
+      name: payload.name as string,
+      picture: payload.picture as string,
+      email_verified: payload.email_verified as boolean,
+    };
   }
 
   private async findOrCreateUser(

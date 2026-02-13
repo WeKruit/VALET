@@ -19,16 +19,23 @@ on:
         description: "Fly.io app name for Web"
         required: true
         type: string
-      hatchet-app:
-        description: "Fly.io app name for Hatchet engine"
-        required: true
-        type: string
       api-url:
         description: "Public API URL (e.g. https://valet-api-dev.fly.dev)"
         required: true
         type: string
+      deploy-hatchet:
+        description: "Deploy Hatchet engine (only needed for config/version changes)"
+        required: false
+        type: boolean
+        default: false
+      hatchet-app:
+        description: "Fly.io app name for Hatchet engine (required if deploy-hatchet is true)"
+        required: false
+        type: string
     secrets:
       FLY_API_TOKEN:
+        required: true
+      DATABASE_DIRECT_URL:
         required: true
 
 env:
@@ -36,7 +43,7 @@ env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
-  # ── Build & test before deploying ──
+  # ── Build & typecheck before deploying ──
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -52,15 +59,36 @@ jobs:
       - run: pnpm turbo typecheck
       - run: pnpm turbo build
 
-  # ── Deploy Hatchet Engine ──
+  # ── Run DB migrations before deploying new code ──
+  migrate:
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run database migrations
+        run: pnpm --filter @valet/db db:migrate
+        env:
+          DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
+
+  # ── Deploy Hatchet Engine (optional — pre-built image, rarely changes) ──
   deploy-hatchet:
+    if: inputs.deploy-hatchet
     runs-on: ubuntu-latest
     needs: validate
     environment: ${{ inputs.environment }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy Hatchet to Fly.io
@@ -74,20 +102,23 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   # ── Deploy API ──
+  # NOTE: flyctl resolves [build].dockerfile relative to the config file
+  # directory, not CWD. We copy the toml to the repo root so that
+  # "apps/api/Dockerfile" resolves correctly from the project root.
   deploy-api:
     runs-on: ubuntu-latest
-    needs: [validate, deploy-hatchet]
+    needs: migrate
     environment: ${{ inputs.environment }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy API to Fly.io
         run: |
+          cp fly/api.toml fly-deploy.toml
           flyctl deploy \
-            --config fly/api.toml \
+            --config fly-deploy.toml \
             --app ${{ inputs.api-app }} \
             --remote-only \
             --wait-timeout 300
@@ -97,18 +128,18 @@ jobs:
   # ── Deploy Worker ──
   deploy-worker:
     runs-on: ubuntu-latest
-    needs: [validate, deploy-hatchet]
+    needs: migrate
     environment: ${{ inputs.environment }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy Worker to Fly.io
         run: |
+          cp fly/worker.toml fly-deploy.toml
           flyctl deploy \
-            --config fly/worker.toml \
+            --config fly-deploy.toml \
             --app ${{ inputs.worker-app }} \
             --remote-only \
             --wait-timeout 300
@@ -123,37 +154,19 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy Web to Fly.io
         run: |
           WS_URL=$(echo "${{ inputs.api-url }}" | sed 's|^https://|wss://|')
+          cp fly/web.toml fly-deploy.toml
           flyctl deploy \
-            --config fly/web.toml \
+            --config fly-deploy.toml \
             --app ${{ inputs.web-app }} \
             --build-arg VITE_API_URL=${{ inputs.api-url }} \
             --build-arg VITE_WS_URL=${WS_URL} \
+            --build-arg VITE_GOOGLE_CLIENT_ID=${{ vars.VITE_GOOGLE_CLIENT_ID }} \
             --remote-only \
             --wait-timeout 300
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-  # ── Run DB migrations after API deploy ──
-  migrate:
-    runs-on: ubuntu-latest
-    needs: deploy-api
-    environment: ${{ inputs.environment }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Run database migrations
-        run: |
-          flyctl ssh console \
-            --app ${{ inputs.api-app }} \
-            --command "node packages/db/dist/migrate.js"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

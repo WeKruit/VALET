@@ -19,7 +19,7 @@ jobs:
       api-app: valet-api
       worker-app: valet-worker
       web-app: valet-web
-      hatchet-app: valet-hatchet-prod
       api-url: https://valet-api.fly.dev
     secrets:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}

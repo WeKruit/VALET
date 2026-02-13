@@ -55,11 +55,19 @@ jobs:
       - name: Build
         run: pnpm turbo build
 
-      - name: Security scan
+      - name: Security audit
+        run: pnpm audit --audit-level=high || echo "::warning::npm audit found vulnerabilities (non-blocking)"
+
+      - name: Check frontend bundle for secrets
         run: |
-          pnpm audit --audit-level=high || true
-          # Check no secrets in frontend bundle
-          if grep -r "sk-" apps/web/dist/ 2>/dev/null; then
-            echo "FATAL: API key found in frontend bundle"
+          FAIL=0
+          for pattern in "sk-ant-" "sk-proj-" "GOCSPX-" "eyJhbG" "postgresql://" "rediss://" "amqps://"; do
+            if grep -r "$pattern" apps/web/dist/ 2>/dev/null; then
+              echo "::error::Secret pattern '$pattern' found in frontend bundle!"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" = "1" ]; then
             exit 1
           fi
+          echo "No secrets found in frontend bundle"
