@@ -1,0 +1,25 @@
+name: CD → Production
+
+on:
+  # Manual trigger only for production
+  workflow_dispatch:
+  # Also triggered by push to main, but requires environment approval
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      api-app: valet-api
+      worker-app: valet-worker
+      web-app: valet-web
+      hatchet-app: valet-hatchet-prod
+      api-url: https://valet-api.fly.dev
+    secrets:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

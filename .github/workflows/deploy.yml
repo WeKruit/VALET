@@ -1,0 +1,159 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (dev | staging | production)"
+        required: true
+        type: string
+      api-app:
+        description: "Fly.io app name for API"
+        required: true
+        type: string
+      worker-app:
+        description: "Fly.io app name for Worker"
+        required: true
+        type: string
+      web-app:
+        description: "Fly.io app name for Web"
+        required: true
+        type: string
+      hatchet-app:
+        description: "Fly.io app name for Hatchet engine"
+        required: true
+        type: string
+      api-url:
+        description: "Public API URL (e.g. https://valet-api-dev.fly.dev)"
+        required: true
+        type: string
+    secrets:
+      FLY_API_TOKEN:
+        required: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  # ── Build & test before deploying ──
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo typecheck
+      - run: pnpm turbo build
+
+  # ── Deploy Hatchet Engine ──
+  deploy-hatchet:
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Hatchet to Fly.io
+        run: |
+          flyctl deploy \
+            --config fly/hatchet.toml \
+            --app ${{ inputs.hatchet-app }} \
+            --remote-only \
+            --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ── Deploy API ──
+  deploy-api:
+    runs-on: ubuntu-latest
+    needs: [validate, deploy-hatchet]
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy API to Fly.io
+        run: |
+          flyctl deploy \
+            --config fly/api.toml \
+            --app ${{ inputs.api-app }} \
+            --remote-only \
+            --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ── Deploy Worker ──
+  deploy-worker:
+    runs-on: ubuntu-latest
+    needs: [validate, deploy-hatchet]
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Worker to Fly.io
+        run: |
+          flyctl deploy \
+            --config fly/worker.toml \
+            --app ${{ inputs.worker-app }} \
+            --remote-only \
+            --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ── Deploy Web ──
+  deploy-web:
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Web to Fly.io
+        run: |
+          WS_URL=$(echo "${{ inputs.api-url }}" | sed 's|^https://|wss://|')
+          flyctl deploy \
+            --config fly/web.toml \
+            --app ${{ inputs.web-app }} \
+            --build-arg VITE_API_URL=${{ inputs.api-url }} \
+            --build-arg VITE_WS_URL=${WS_URL} \
+            --remote-only \
+            --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ── Run DB migrations after API deploy ──
+  migrate:
+    runs-on: ubuntu-latest
+    needs: deploy-api
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Run database migrations
+        run: |
+          flyctl ssh console \
+            --app ${{ inputs.api-app }} \
+            --command "node packages/db/dist/migrate.js"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

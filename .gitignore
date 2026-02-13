@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.turbo/
+
+# Environment (never commit secrets)
+.env
+.env.local
+.env.*.local
+.env.dev
+.env.staging
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+
+# Docker volumes
+docker/data/
+
+# Drizzle
+packages/db/drizzle/meta/
+
+# MinIO data
+minio-data/

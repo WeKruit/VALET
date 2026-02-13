@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mock LinkedIn Easy Apply - Software Engineer at Acme Corp</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f3f2ef; }
+    .artdeco-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; }
+    .artdeco-modal { background: #fff; border-radius: 8px; width: 560px; max-height: 90vh; overflow-y: auto; }
+    .artdeco-modal__header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid #e0e0e0; }
+    .artdeco-modal__dismiss { background: none; border: none; cursor: pointer; font-size: 24px; color: #666; }
+    .jobs-easy-apply-modal__content { padding: 24px; }
+    .jobs-easy-apply-content { display: block; }
+    .jobs-easy-apply-form-section__grouping { margin-bottom: 20px; }
+    .fb-dash-form-element { margin-bottom: 16px; }
+    .fb-dash-form-element__label { display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 4px; }
+    .fb-dash-form-element__label .visually-hidden { position: absolute; clip: rect(0,0,0,0); }
+    .artdeco-text-input--input { width: 100%; padding: 8px 12px; border: 1px solid #999; border-radius: 4px; font-size: 14px; }
+    .artdeco-text-input--input:focus { border-color: #0a66c2; outline: 2px solid #0a66c2; }
+    select.fb-dash-form-element__select { width: 100%; padding: 8px 12px; border: 1px solid #999; border-radius: 4px; font-size: 14px; background: #fff; }
+    .artdeco-button--primary { background: #0a66c2; color: #fff; border: none; border-radius: 20px; padding: 8px 24px; font-size: 16px; font-weight: 600; cursor: pointer; }
+    .artdeco-button--primary:hover { background: #004182; }
+    .artdeco-button--secondary { background: transparent; color: #0a66c2; border: 1px solid #0a66c2; border-radius: 20px; padding: 8px 24px; font-size: 16px; cursor: pointer; }
+    .jobs-easy-apply-footer { display: flex; justify-content: space-between; padding: 16px 24px; border-top: 1px solid #e0e0e0; }
+    .jobs-easy-apply-footer__actions { display: flex; gap: 8px; margin-left: auto; }
+    .step-indicator { text-align: center; padding: 8px; color: #666; font-size: 12px; }
+    .file-upload-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; }
+    .file-upload-zone:hover { border-color: #0a66c2; }
+    textarea { width: 100%; padding: 8px 12px; border: 1px solid #999; border-radius: 4px; font-size: 14px; resize: vertical; min-height: 80px; }
+    .radio-group, .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
+    .radio-group label, .checkbox-group label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .required::after { content: ' *'; color: #cc1016; }
+  </style>
+</head>
+<body>
+  <div class="artdeco-modal-overlay" data-test-modal="easy-apply">
+    <div class="artdeco-modal" role="dialog" aria-labelledby="easy-apply-title">
+      <div class="artdeco-modal__header">
+        <h2 id="easy-apply-title">Easy Apply to Acme Corp</h2>
+        <button class="artdeco-modal__dismiss" aria-label="Dismiss">&#x2715;</button>
+      </div>
+
+      <form id="easy-apply-form" data-test-form="easy-apply">
+        <!-- Page 1: Contact Info -->
+        <div class="page active" data-step="1" id="page-1">
+          <div class="jobs-easy-apply-modal__content">
+            <div class="jobs-easy-apply-content">
+              <h3>Contact info</h3>
+
+              <div class="jobs-easy-apply-form-section__grouping">
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required" for="first-name">First name</label>
+                  <input type="text" id="first-name" name="firstName" class="artdeco-text-input--input" required
+                    data-test-field="firstName" autocomplete="given-name" />
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required" for="last-name">Last name</label>
+                  <input type="text" id="last-name" name="lastName" class="artdeco-text-input--input" required
+                    data-test-field="lastName" autocomplete="family-name" />
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required" for="email">Email address</label>
+                  <input type="email" id="email" name="email" class="artdeco-text-input--input" required
+                    data-test-field="email" autocomplete="email" />
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required" for="phone">Phone number</label>
+                  <input type="tel" id="phone" name="phone" class="artdeco-text-input--input" required
+                    data-test-field="phone" autocomplete="tel" />
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required" for="phone-country">Phone country code</label>
+                  <select id="phone-country" name="phoneCountryCode" class="fb-dash-form-element__select"
+                    data-test-field="phoneCountryCode">
+                    <option value="">Select</option>
+                    <option value="us">United States (+1)</option>
+                    <option value="uk">United Kingdom (+44)</option>
+                    <option value="ca">Canada (+1)</option>
+                    <option value="de">Germany (+49)</option>
+                    <option value="in">India (+91)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="jobs-easy-apply-footer">
+            <div class="step-indicator">Step 1 of 4</div>
+            <div class="jobs-easy-apply-footer__actions">
+              <button type="button" class="artdeco-button--primary" data-test-action="next" onclick="nextPage(2)">Next</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page 2: Resume / CV -->
+        <div class="page" data-step="2" id="page-2">
+          <div class="jobs-easy-apply-modal__content">
+            <div class="jobs-easy-apply-content">
+              <h3>Resume / CV</h3>
+
+              <div class="jobs-easy-apply-form-section__grouping">
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required">Upload resume</label>
+                  <div class="file-upload-zone" data-test-field="resume">
+                    <input type="file" id="resume-upload" name="resume" accept=".pdf,.doc,.docx"
+                      data-test-field="resumeFile" style="display:none" />
+                    <label for="resume-upload">
+                      <p>Upload a resume (PDF, DOC, DOCX)</p>
+                      <p style="font-size:12px;color:#666;">Max 5MB</p>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="jobs-easy-apply-footer">
+            <div class="step-indicator">Step 2 of 4</div>
+            <div class="jobs-easy-apply-footer__actions">
+              <button type="button" class="artdeco-button--secondary" data-test-action="back" onclick="nextPage(1)">Back</button>
+              <button type="button" class="artdeco-button--primary" data-test-action="next" onclick="nextPage(3)">Next</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page 3: Additional Questions -->
+        <div class="page" data-step="3" id="page-3">
+          <div class="jobs-easy-apply-modal__content">
+            <div class="jobs-easy-apply-content">
+              <h3>Additional Questions</h3>
+
+              <div class="jobs-easy-apply-form-section__grouping">
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required" for="experience-years">How many years of relevant experience do you have?</label>
+                  <select id="experience-years" name="yearsOfExperience" class="fb-dash-form-element__select"
+                    data-test-field="yearsOfExperience" required>
+                    <option value="">Select an option</option>
+                    <option value="0">Less than 1 year</option>
+                    <option value="1">1-2 years</option>
+                    <option value="3">3-5 years</option>
+                    <option value="5">5-10 years</option>
+                    <option value="10">10+ years</option>
+                  </select>
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required">Are you authorized to work in the United States?</label>
+                  <div class="radio-group" data-test-field="workAuthorization">
+                    <label>
+                      <input type="radio" name="workAuthorization" value="yes" required /> Yes
+                    </label>
+                    <label>
+                      <input type="radio" name="workAuthorization" value="no" /> No
+                    </label>
+                  </div>
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label required">Will you now or in the future require sponsorship?</label>
+                  <div class="radio-group" data-test-field="sponsorship">
+                    <label>
+                      <input type="radio" name="sponsorship" value="yes" required /> Yes
+                    </label>
+                    <label>
+                      <input type="radio" name="sponsorship" value="no" /> No
+                    </label>
+                  </div>
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label" for="salary-expectation">What is your desired salary? (Optional)</label>
+                  <input type="text" id="salary-expectation" name="salary" class="artdeco-text-input--input"
+                    data-test-field="salary" placeholder="e.g. $120,000" />
+                </div>
+
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label" for="cover-letter">Cover letter (Optional)</label>
+                  <textarea id="cover-letter" name="coverLetter" data-test-field="coverLetter"
+                    placeholder="Why are you a good fit for this role?" maxlength="2000"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="jobs-easy-apply-footer">
+            <div class="step-indicator">Step 3 of 4</div>
+            <div class="jobs-easy-apply-footer__actions">
+              <button type="button" class="artdeco-button--secondary" data-test-action="back" onclick="nextPage(2)">Back</button>
+              <button type="button" class="artdeco-button--primary" data-test-action="next" onclick="nextPage(4)">Next</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page 4: Review & Submit -->
+        <div class="page" data-step="4" id="page-4">
+          <div class="jobs-easy-apply-modal__content">
+            <div class="jobs-easy-apply-content">
+              <h3>Review your application</h3>
+
+              <div class="jobs-easy-apply-form-section__grouping">
+                <div class="fb-dash-form-element">
+                  <label class="fb-dash-form-element__label">
+                    <input type="checkbox" name="followCompany" data-test-field="followCompany" checked />
+                    Follow Acme Corp to stay up to date with their page.
+                  </label>
+                </div>
+              </div>
+
+              <p style="font-size:12px;color:#666;margin-top:12px;">
+                By clicking "Submit application", you agree to LinkedIn's User Agreement,
+                Privacy Policy, and Cookie Policy.
+              </p>
+            </div>
+          </div>
+
+          <div class="jobs-easy-apply-footer">
+            <div class="step-indicator">Step 4 of 4</div>
+            <div class="jobs-easy-apply-footer__actions">
+              <button type="button" class="artdeco-button--secondary" data-test-action="back" onclick="nextPage(3)">Back</button>
+              <button type="submit" class="artdeco-button--primary" data-test-action="submit">Submit application</button>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Test instrumentation: records all form interactions for assertion -->
+  <script>
+    window.__mockAtsLog = [];
+    window.__mockAtsType = 'linkedin-easy-apply';
+    window.__mockAtsVersion = '1.0';
+
+    function logInteraction(action, field, value) {
+      window.__mockAtsLog.push({
+        timestamp: Date.now(),
+        action: action,
+        field: field,
+        value: value,
+      });
+    }
+
+    function nextPage(pageNum) {
+      document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+      document.getElementById('page-' + pageNum).classList.add('active');
+      logInteraction('navigate', 'page', pageNum);
+    }
+
+    // Track all input changes
+    document.querySelectorAll('input, select, textarea').forEach(function(el) {
+      el.addEventListener('change', function() {
+        logInteraction('change', el.name || el.id, el.type === 'checkbox' ? el.checked : el.value);
+      });
+      el.addEventListener('input', function() {
+        logInteraction('input', el.name || el.id, el.value);
+      });
+    });
+
+    // Track form submission
+    document.getElementById('easy-apply-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var formData = new FormData(e.target);
+      var data = {};
+      formData.forEach(function(value, key) { data[key] = value; });
+      logInteraction('submit', 'form', data);
+      window.__mockAtsSubmitted = true;
+      window.__mockAtsFormData = data;
+    });
+  </script>
+</body>
+</html>

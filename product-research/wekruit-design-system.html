@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WeKruit Valet Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Halant:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+/* ============================================
+   WEKRUIT DESIGN SYSTEM — CSS CUSTOM PROPERTIES
+   ============================================ */
+
+:root {
+  /* ── LIGHT MODE (Default) ────────────────── */
+
+  /* Core Brand Colors */
+  --wk-brand-espresso:     #2B180A;
+  --wk-brand-espresso-90:  #40291A;
+  --wk-brand-espresso-80:  #553A2A;
+  --wk-brand-espresso-70:  #6A4B3A;
+
+  /* Surfaces */
+  --wk-surface-page:       #FCF6EF;
+  --wk-surface-raised:     #F6F0E9;
+  --wk-surface-sunken:     #EFE7DD;
+  --wk-surface-overlay:    rgba(240, 231, 221, 0.32);
+  --wk-surface-card:       #F5EFE8;
+  --wk-surface-white:      #FFFFFF;
+
+  /* Text */
+  --wk-text-primary:       #2B180A;
+  --wk-text-secondary:     #94877C;
+  --wk-text-tertiary:      #B0A59B;
+  --wk-text-on-dark:       #FAF6F2;
+  --wk-text-on-dark-muted: rgba(255, 255, 255, 0.8);
+  --wk-text-inverse:       #FFFFFF;
+
+  /* Borders */
+  --wk-border-subtle:      rgba(43, 24, 10, 0.08);
+  --wk-border-default:     rgba(43, 24, 10, 0.12);
+  --wk-border-strong:      rgba(43, 24, 10, 0.20);
+
+  /* Accents */
+  --wk-accent-amber:       #E8923A;
+  --wk-accent-amber-light: #F5C88A;
+  --wk-accent-teal:        #3AAFB0;
+  --wk-accent-coral:       #E86B4A;
+
+  /* Shadows */
+  --wk-shadow-sm:          0 1px 2px rgba(43, 24, 10, 0.06);
+  --wk-shadow-md:          0 4px 12px rgba(43, 24, 10, 0.08);
+  --wk-shadow-lg:          0 8px 24px rgba(43, 24, 10, 0.10);
+  --wk-shadow-xl:          0 16px 48px rgba(43, 24, 10, 0.12);
+
+  /* Typography */
+  --wk-font-display:       'Halant', serif;
+  --wk-font-body:          'Geist', sans-serif;
+
+  /* Font Sizes */
+  --wk-text-xs:    12px;
+  --wk-text-sm:    14px;
+  --wk-text-base:  16px;
+  --wk-text-lg:    20px;
+  --wk-text-xl:    24px;
+  --wk-text-2xl:   32px;
+  --wk-text-3xl:   40px;
+  --wk-text-4xl:   48px;
+  --wk-text-5xl:   56px;
+  --wk-text-6xl:   70px;
+
+  /* Font Weights */
+  --wk-weight-light:    300;
+  --wk-weight-regular:  400;
+  --wk-weight-medium:   500;
+  --wk-weight-semibold: 600;
+  --wk-weight-bold:     700;
+
+  /* Line Heights */
+  --wk-leading-tight:   1.1;
+  --wk-leading-snug:    1.25;
+  --wk-leading-normal:  1.5;
+  --wk-leading-relaxed: 1.65;
+
+  /* Letter Spacing */
+  --wk-tracking-tight:  -0.02em;
+  --wk-tracking-normal: 0em;
+  --wk-tracking-wide:   0.02em;
+  --wk-tracking-wider:  0.05em;
+
+  /* Spacing Scale */
+  --wk-space-1:  4px;
+  --wk-space-2:  8px;
+  --wk-space-3:  12px;
+  --wk-space-4:  16px;
+  --wk-space-5:  20px;
+  --wk-space-6:  24px;
+  --wk-space-8:  32px;
+  --wk-space-10: 40px;
+  --wk-space-12: 48px;
+  --wk-space-16: 64px;
+  --wk-space-20: 80px;
+  --wk-space-24: 96px;
+  --wk-space-32: 128px;
+
+  /* Border Radius */
+  --wk-radius-sm:   4px;
+  --wk-radius-md:   8px;
+  --wk-radius-lg:   12px;
+  --wk-radius-xl:   16px;
+  --wk-radius-2xl:  20px;
+  --wk-radius-3xl:  24px;
+  --wk-radius-full: 9999px;
+
+  /* Layout */
+  --wk-max-width:      1200px;
+  --wk-content-width:  960px;
+  --wk-narrow-width:   720px;
+
+  /* VALET Brand */
+  --wk-valet-name:         'WeKruit Valet';
+  --wk-valet-acronym:      'Verified. Autonomous. Lightning. Effortless. Trusted.';
+  --wk-valet-tagline:      'Verified Automation. Limitless Execution. Trust.';
+
+  /* Transitions */
+  --wk-ease-default:   cubic-bezier(0.25, 0.1, 0.25, 1);
+  --wk-ease-spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  --wk-duration-fast:  150ms;
+  --wk-duration-base:  250ms;
+  --wk-duration-slow:  400ms;
+}
+
+/* ── DARK MODE ─────────────────────────────── */
+[data-theme="dark"] {
+  --wk-brand-espresso:     #F5E6D4;
+  --wk-brand-espresso-90:  #E0CDB8;
+  --wk-brand-espresso-80:  #C4AD94;
+  --wk-brand-espresso-70:  #A89078;
+
+  --wk-surface-page:       #1A1210;
+  --wk-surface-raised:     #241C18;
+  --wk-surface-sunken:     #12100E;
+  --wk-surface-overlay:    rgba(30, 22, 18, 0.64);
+  --wk-surface-card:       #2A2220;
+  --wk-surface-white:      #302824;
+
+  --wk-text-primary:       #F5E6D4;
+  --wk-text-secondary:     #A89888;
+  --wk-text-tertiary:      #7A6E64;
+  --wk-text-on-dark:       #F5E6D4;
+  --wk-text-on-dark-muted: rgba(245, 230, 212, 0.7);
+  --wk-text-inverse:       #1A1210;
+
+  --wk-border-subtle:      rgba(245, 230, 212, 0.06);
+  --wk-border-default:     rgba(245, 230, 212, 0.10);
+  --wk-border-strong:      rgba(245, 230, 212, 0.18);
+
+  --wk-accent-amber:       #F0A050;
+  --wk-accent-amber-light: #D4945A;
+  --wk-accent-teal:        #4DC4C4;
+  --wk-accent-coral:       #F07858;
+
+  --wk-shadow-sm:          0 1px 2px rgba(0, 0, 0, 0.20);
+  --wk-shadow-md:          0 4px 12px rgba(0, 0, 0, 0.25);
+  --wk-shadow-lg:          0 8px 24px rgba(0, 0, 0, 0.30);
+  --wk-shadow-xl:          0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+
+/* ============================================
+   DESIGN SYSTEM PAGE STYLES
+   ============================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--wk-font-body);
+  background: var(--wk-surface-page);
+  color: var(--wk-text-primary);
+  line-height: var(--wk-leading-normal);
+  transition: background var(--wk-duration-slow) var(--wk-ease-default),
+              color var(--wk-duration-slow) var(--wk-ease-default);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Theme Toggle */
+.theme-toggle-wrapper {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--wk-surface-raised);
+  border: 1px solid var(--wk-border-default);
+  border-radius: var(--wk-radius-full);
+  padding: 6px 16px 6px 6px;
+  box-shadow: var(--wk-shadow-md);
+  transition: all var(--wk-duration-base) var(--wk-ease-default);
+}
+.theme-toggle-wrapper:hover { box-shadow: var(--wk-shadow-lg); }
+
+.theme-toggle {
+  width: 48px;
+  height: 26px;
+  background: var(--wk-border-strong);
+  border: none;
+  border-radius: var(--wk-radius-full);
+  cursor: pointer;
+  position: relative;
+  transition: background var(--wk-duration-base) var(--wk-ease-default);
+}
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: var(--wk-surface-page);
+  border-radius: 50%;
+  transition: transform var(--wk-duration-base) var(--wk-ease-spring);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+[data-theme="dark"] .theme-toggle { background: var(--wk-accent-amber); }
+[data-theme="dark"] .theme-toggle::after { transform: translateX(22px); }
+.theme-label { font-size: var(--wk-text-sm); font-weight: var(--wk-weight-medium); color: var(--wk-text-secondary); }
+
+/* Page Layout */
+.ds-page {
+  max-width: var(--wk-max-width);
+  margin: 0 auto;
+  padding: var(--wk-space-12) var(--wk-space-6);
+}
+
+/* Header */
+.ds-header {
+  text-align: center;
+  margin-bottom: var(--wk-space-24);
+  padding-bottom: var(--wk-space-16);
+  border-bottom: 1px solid var(--wk-border-subtle);
+}
+.ds-header h1 {
+  font-family: var(--wk-font-display);
+  font-size: var(--wk-text-5xl);
+  font-weight: var(--wk-weight-semibold);
+  letter-spacing: var(--wk-tracking-tight);
+  line-height: var(--wk-leading-tight);
+  color: var(--wk-text-primary);
+  margin-bottom: var(--wk-space-4);
+}
+.ds-header .subtitle {
+  font-size: var(--wk-text-lg);
+  color: var(--wk-text-secondary);
+  max-width: 600px;
+  margin: 0 auto;
+  line-height: var(--wk-leading-relaxed);
+}
+.ds-version {
+  display: inline-block;
+  margin-top: var(--wk-space-4);
+  font-size: var(--wk-text-xs);
+  color: var(--wk-text-tertiary);
+  background: var(--wk-surface-sunken);
+  padding: 4px 12px;
+  border-radius: var(--wk-radius-full);
+  font-weight: var(--wk-weight-medium);
+  letter-spacing: var(--wk-tracking-wide);
+  text-transform: uppercase;
+}
+
+/* Sections */
+.ds-section {
+  margin-bottom: var(--wk-space-24);
+}
+.ds-section-title {
+  font-family: var(--wk-font-display);
+  font-size: var(--wk-text-2xl);
+  font-weight: var(--wk-weight-semibold);
+  color: var(--wk-text-primary);
+  margin-bottom: var(--wk-space-2);
+  letter-spacing: var(--wk-tracking-tight);
+}
+.ds-section-desc {
+  font-size: var(--wk-text-base);
+  color: var(--wk-text-secondary);
+  margin-bottom: var(--wk-space-8);
+  max-width: 700px;
+  line-height: var(--wk-leading-relaxed);
+}
+.ds-subsection {
+  margin-bottom: var(--wk-space-12);
+}
+.ds-subsection-title {
+  font-family: var(--wk-font-body);
+  font-size: var(--wk-text-sm);
+  font-weight: var(--wk-weight-semibold);
+  color: var(--wk-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--wk-tracking-wider);
+  margin-bottom: var(--wk-space-4);
+}
+
+/* Color Swatches */
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--wk-space-4);
+}
+.color-swatch {
+  border-radius: var(--wk-radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--wk-border-subtle);
+  background: var(--wk-surface-raised);
+  transition: transform var(--wk-duration-fast) var(--wk-ease-default), box-shadow var(--wk-duration-fast) var(--wk-ease-default);
+}
+.color-swatch:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--wk-shadow-md);
+}
+.color-swatch .swatch-block {
+  height: 80px;
+  width: 100%;
+}
+.color-swatch .swatch-info {
+  padding: var(--wk-space-3) var(--wk-space-4);
+}
+.color-swatch .swatch-name {
+  font-size: var(--wk-text-sm);
+  font-weight: var(--wk-weight-medium);
+  color: var(--wk-text-primary);
+  margin-bottom: 2px;
+}
+.color-swatch .swatch-value {
+  font-size: var(--wk-text-xs);
+  color: var(--wk-text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.color-swatch .swatch-var {
+  font-size: 11px;
+  color: var(--wk-text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  opacity: 0.7;
+}
+
+/* Typography Specimens */
+.type-specimen {
+  padding: var(--wk-space-6) 0;
+  border-bottom: 1px solid var(--wk-border-subtle);
+}
+.type-specimen:last-child { border-bottom: none; }
+.type-specimen .label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--wk-space-2);
+}
+.type-specimen .type-label {
+  font-size: var(--wk-text-xs);
+  color: var(--wk-text-tertiary);
+  font-weight: var(--wk-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--wk-tracking-wider);
+}
+.type-specimen .type-meta {
+  font-size: 11px;
+  color: var(--wk-text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.type-specimen .type-sample {
+  color: var(--wk-text-primary);
+}
+
+/* Component Showcase */
+.component-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wk-space-4);
+  align-items: center;
+  margin-bottom: var(--wk-space-6);
+}
+
+/* Buttons */
+.wk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wk-space-2);
+  font-family: var(--wk-font-body);
+  font-weight: var(--wk-weight-medium);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--wk-duration-base) var(--wk-ease-default);
+}
+.wk-btn-primary {
+  background: var(--wk-text-primary);
+  color: var(--wk-surface-page);
+  padding: 10px 24px;
+  border-radius: var(--wk-radius-lg);
+  font-size: var(--wk-text-sm);
+}
+.wk-btn-primary:hover { opacity: 0.88; transform: translateY(-1px); box-shadow: var(--wk-shadow-md); }
+
+.wk-btn-secondary {
+  background: var(--wk-surface-white);
+  color: var(--wk-text-primary);
+  padding: 10px 24px;
+  border-radius: var(--wk-radius-lg);
+  font-size: var(--wk-text-sm);
+  border: 1px solid var(--wk-border-default);
+}
+.wk-btn-secondary:hover { background: var(--wk-surface-raised); border-color: var(--wk-border-strong); }
+
+.wk-btn-ghost {
+  background: transparent;
+  color: var(--wk-text-primary);
+  padding: 10px 24px;
+  border-radius: var(--wk-radius-lg);
+  font-size: var(--wk-text-sm);
+}
+.wk-btn-ghost:hover { background: var(--wk-surface-sunken); }
+
+.wk-btn-cta {
+  background: var(--wk-text-primary);
+  color: var(--wk-surface-page);
+  padding: 14px 32px;
+  border-radius: var(--wk-radius-lg);
+  font-size: var(--wk-text-base);
+  font-weight: var(--wk-weight-semibold);
+}
+.wk-btn-cta:hover { opacity: 0.88; transform: translateY(-2px); box-shadow: var(--wk-shadow-lg); }
+
+.wk-btn-sm {
+  padding: 6px 14px;
+  font-size: var(--wk-text-xs);
+  border-radius: var(--wk-radius-md);
+}
+
+/* Chips / Badges */
+.wk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--wk-radius-full);
+  font-size: var(--wk-text-xs);
+  font-weight: var(--wk-weight-medium);
+  font-family: var(--wk-font-body);
+  border: 1px solid var(--wk-border-default);
+  background: var(--wk-surface-raised);
+  color: var(--wk-text-primary);
+}
+.wk-chip-section {
+  background: var(--wk-surface-sunken);
+  border: 1px solid var(--wk-border-subtle);
+  color: var(--wk-text-secondary);
+  font-size: var(--wk-text-xs);
+  letter-spacing: var(--wk-tracking-wide);
+}
+.wk-chip-tag {
+  background: rgba(43, 24, 10, 0.5);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--wk-text-inverse);
+  backdrop-filter: blur(8px);
+}
+[data-theme="dark"] .wk-chip-tag {
+  background: rgba(245, 230, 212, 0.12);
+  border-color: rgba(245, 230, 212, 0.15);
+}
+
+/* Cards */
+.wk-card {
+  background: var(--wk-surface-card);
+  border-radius: var(--wk-radius-2xl);
+  padding: var(--wk-space-6);
+  border: 1px solid var(--wk-border-subtle);
+  transition: all var(--wk-duration-base) var(--wk-ease-default);
+}
+.wk-card:hover {
+  box-shadow: var(--wk-shadow-md);
+  transform: translateY(-2px);
+}
+.wk-card-stat {
+  background: var(--wk-surface-sunken);
+  border-radius: var(--wk-radius-xl);
+  padding: var(--wk-space-6);
+  border: 1px solid var(--wk-border-subtle);
+}
+.wk-card-stat .stat-number {
+  font-family: var(--wk-font-display);
+  font-size: var(--wk-text-4xl);
+  font-weight: var(--wk-weight-regular);
+  color: var(--wk-text-primary);
+  line-height: var(--wk-leading-tight);
+}
+.wk-card-stat .stat-label {
+  font-size: var(--wk-text-sm);
+  font-weight: var(--wk-weight-semibold);
+  color: var(--wk-text-primary);
+  margin-top: var(--wk-space-1);
+}
+.wk-card-stat .stat-sub {
+  font-size: var(--wk-text-xs);
+  color: var(--wk-text-tertiary);
+  margin-top: 2px;
+}
+
+.wk-card-image {
+  border-radius: var(--wk-radius-2xl);
+  overflow: hidden;
+  position: relative;
+  aspect-ratio: 4/3;
+  background: #222;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--wk-space-6);
+}
+.wk-card-image .card-image-title {
+  font-family: var(--wk-font-display);
+  font-size: var(--wk-text-2xl);
+  color: var(--wk-text-inverse);
+  font-weight: var(--wk-weight-regular);
+  position: relative;
+  z-index: 1;
+}
+.wk-card-image .card-image-subtitle {
+  font-size: var(--wk-text-sm);
+  color: var(--wk-text-on-dark-muted);
+  margin-top: var(--wk-space-1);
+  position: relative;
+  z-index: 1;
+}
+
+/* Partner / Logo Card */
+.wk-card-partner {
+  background: var(--wk-surface-sunken);
+  border-radius: var(--wk-radius-2xl);
+  padding: var(--wk-space-8) var(--wk-space-6);
+  text-align: left;
+  border: 1px solid var(--wk-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wk-space-4);
+}
+.wk-card-partner .partner-logo-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--wk-radius-md);
+  background: var(--wk-border-default);
+}
+.wk-card-partner .partner-name {
+  font-size: var(--wk-text-base);
+  font-weight: var(--wk-weight-semibold);
+  color: var(--wk-text-primary);
+}
+.wk-card-partner .partner-desc {
+  font-size: var(--wk-text-sm);
+  color: var(--wk-text-secondary);
+}
+
+/* Navigation */
+.wk-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--wk-space-4) var(--wk-space-6);
+  background: var(--wk-surface-page);
+  border: 1px solid var(--wk-border-subtle);
+  border-radius: var(--wk-radius-xl);
+  margin-bottom: var(--wk-space-6);
+}
+.wk-nav-brand {
+  font-family: var(--wk-font-display);
+  font-size: var(--wk-text-xl);
+  font-weight: var(--wk-weight-semibold);
+  color: var(--wk-text-primary);
+  text-decoration: none;
+}
+.wk-nav-link {
+  font-size: var(--wk-text-sm);
+  color: var(--wk-text-primary);
+  text-decoration: none;
+  font-weight: var(--wk-weight-medium);
+}
+.wk-nav-link:hover { color: var(--wk-text-secondary); }
+
+/* Input / Forms */
+.wk-input {
+  font-family: var(--wk-font-body);
+  font-size: var(--wk-text-sm);
+  padding: 10px 16px;
+  border: 1px solid var(--wk-border-default);
+  border-radius: var(--wk-radius-md);
+  background: var(--wk-surface-white);
+  color: var(--wk-text-primary);
+  outline: none;
+  transition: border-color var(--wk-duration-fast) var(--wk-ease-default), box-shadow var(--wk-duration-fast) var(--wk-ease-default);
+  width: 100%;
+}
+.wk-input:focus {
+  border-color: var(--wk-text-primary);
+  box-shadow: 0 0 0 3px var(--wk-border-subtle);
+}
+.wk-input::placeholder { color: var(--wk-text-tertiary); }
+
+.wk-label {
+  display: block;
+  font-size: var(--wk-text-sm);
+  font-weight: var(--wk-weight-medium);
+  color: var(--wk-text-primary);
+  margin-bottom: var(--wk-space-2);
+}
+
+/* Spacing Blocks */
+.spacing-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wk-space-4);
+  margin-bottom: var(--wk-space-3);
+}
+.spacing-block {
+  background: var(--wk-accent-amber);
+  border-radius: 3px;
+  height: 24px;
+  opacity: 0.5;
+}
+.spacing-label {
+  font-size: var(--wk-text-xs);
+  color: var(--wk-text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  min-width: 120px;
+}
+
+/* Radius Demos */
+.radius-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wk-space-6);
+}
+.radius-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wk-space-2);
+}
+.radius-box {
+  width: 72px;
+  height: 72px;
+  background: var(--wk-surface-sunken);
+  border: 2px solid var(--wk-border-default);
+}
+.radius-label {
+  font-size: 11px;
+  color: var(--wk-text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  text-align: center;
+}
+
+/* Shadow Demos */
+.shadow-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wk-space-8);
+}
+.shadow-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wk-space-3);
+}
+.shadow-box {
+  width: 100px;
+  height: 100px;
+  background: var(--wk-surface-raised);
+  border-radius: var(--wk-radius-lg);
+}
+.shadow-label {
+  font-size: 11px;
+  color: var(--wk-text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Spec Table */
+.spec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--wk-text-sm);
+}
+.spec-table th {
+  text-align: left;
+  padding: var(--wk-space-3) var(--wk-space-4);
+  font-weight: var(--wk-weight-semibold);
+  color: var(--wk-text-secondary);
+  font-size: var(--wk-text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--wk-tracking-wider);
+  border-bottom: 2px solid var(--wk-border-default);
+}
+.spec-table td {
+  padding: var(--wk-space-3) var(--wk-space-4);
+  border-bottom: 1px solid var(--wk-border-subtle);
+  color: var(--wk-text-primary);
+}
+.spec-table td code {
+  font-size: 12px;
+  background: var(--wk-surface-sunken);
+  padding: 2px 8px;
+  border-radius: var(--wk-radius-sm);
+  color: var(--wk-text-secondary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Token Copy Button */
+.copy-token {
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity var(--wk-duration-fast);
+  font-size: 11px;
+}
+.copy-token:hover { opacity: 1; }
+
+/* Grid demos */
+.grid-demo {
+  display: grid;
+  gap: var(--wk-space-4);
+}
+.grid-demo-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-demo-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-demo-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-cell {
+  background: var(--wk-surface-sunken);
+  border: 1px dashed var(--wk-border-default);
+  border-radius: var(--wk-radius-md);
+  padding: var(--wk-space-6);
+  text-align: center;
+  font-size: var(--wk-text-sm);
+  color: var(--wk-text-tertiary);
+}
+
+/* Full-width CTA */
+.wk-cta-banner {
+  background: var(--wk-text-primary);
+  border-radius: var(--wk-radius-2xl);
+  padding: var(--wk-space-16) var(--wk-space-8);
+  text-align: center;
+  overflow: hidden;
+  position: relative;
+}
+.wk-cta-banner h2 {
+  font-family: var(--wk-font-display);
+  font-size: var(--wk-text-4xl);
+  color: var(--wk-text-on-dark);
+  font-weight: var(--wk-weight-regular);
+  margin-bottom: var(--wk-space-6);
+  letter-spacing: var(--wk-tracking-tight);
+}
+.wk-cta-banner .wk-btn {
+  background: var(--wk-surface-page);
+  color: var(--wk-text-primary);
+}
+
+/* Code block */
+.code-block {
+  background: var(--wk-surface-sunken);
+  border: 1px solid var(--wk-border-subtle);
+  border-radius: var(--wk-radius-lg);
+  padding: var(--wk-space-6);
+  overflow-x: auto;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--wk-text-primary);
+  margin-top: var(--wk-space-4);
+  white-space: pre;
+}
+
+/* Divider */
+.ds-divider {
+  border: none;
+  border-top: 1px solid var(--wk-border-subtle);
+  margin: var(--wk-space-16) 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .ds-header h1 { font-size: var(--wk-text-3xl); }
+  .color-grid { grid-template-columns: repeat(2, 1fr); }
+  .grid-demo-3, .grid-demo-4 { grid-template-columns: repeat(2, 1fr); }
+  .component-row { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<!-- Theme Toggle -->
+<div class="theme-toggle-wrapper">
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode"></button>
+  <span class="theme-label" id="themeLabel">Light</span>
+</div>
+
+<div class="ds-page">
+
+  <!-- ════════════ HEADER ════════════ -->
+  <header class="ds-header">
+    <h1>WeKruit Valet</h1>
+    <p class="subtitle" style="font-size: var(--wk-text-sm); letter-spacing: var(--wk-tracking-wider); text-transform: uppercase; color: var(--wk-accent-amber); font-weight: var(--wk-weight-semibold); margin-bottom: var(--wk-space-3);">Verified Automation. Limitless Execution. Trust.</p>
+    <p class="subtitle">The single source of truth for colors, typography, components, and patterns across WeKruit Valet. Supports light and dark mode.</p>
+    <span class="ds-version">v2.0 &middot; Feb 2026</span>
+  </header>
+
+  <!-- ════════════ 1. COLOR PALETTE ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Color Palette</h2>
+    <p class="ds-section-desc">The WeKruit palette is built on warm, earthy tones rooted in espresso browns and creams. All values auto-switch for dark mode.</p>
+
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Brand &amp; Surface Colors</h3>
+      <div class="color-grid">
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-brand-espresso)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Espresso</div>
+            <div class="swatch-value">L: #2B180A &middot; D: #F5E6D4</div>
+            <div class="swatch-var">--wk-brand-espresso</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-surface-page)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Page Background</div>
+            <div class="swatch-value">L: #FCF6EF &middot; D: #1A1210</div>
+            <div class="swatch-var">--wk-surface-page</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-surface-raised)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Raised Surface</div>
+            <div class="swatch-value">L: #F6F0E9 &middot; D: #241C18</div>
+            <div class="swatch-var">--wk-surface-raised</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-surface-sunken)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Sunken Surface</div>
+            <div class="swatch-value">L: #EFE7DD &middot; D: #12100E</div>
+            <div class="swatch-var">--wk-surface-sunken</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-surface-card)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Card Surface</div>
+            <div class="swatch-value">L: #F5EFE8 &middot; D: #2A2220</div>
+            <div class="swatch-var">--wk-surface-card</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-surface-white)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">White Surface</div>
+            <div class="swatch-value">L: #FFFFFF &middot; D: #302824</div>
+            <div class="swatch-var">--wk-surface-white</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Text Colors</h3>
+      <div class="color-grid">
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-text-primary)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Primary Text</div>
+            <div class="swatch-value">L: #2B180A &middot; D: #F5E6D4</div>
+            <div class="swatch-var">--wk-text-primary</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-text-secondary)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Secondary Text</div>
+            <div class="swatch-value">L: #94877C &middot; D: #A89888</div>
+            <div class="swatch-var">--wk-text-secondary</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-text-tertiary)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Tertiary Text</div>
+            <div class="swatch-value">L: #B0A59B &middot; D: #7A6E64</div>
+            <div class="swatch-var">--wk-text-tertiary</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Accent Colors</h3>
+      <div class="color-grid">
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-accent-amber)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Amber</div>
+            <div class="swatch-value">L: #E8923A &middot; D: #F0A050</div>
+            <div class="swatch-var">--wk-accent-amber</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-accent-teal)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Teal</div>
+            <div class="swatch-value">L: #3AAFB0 &middot; D: #4DC4C4</div>
+            <div class="swatch-var">--wk-accent-teal</div>
+          </div>
+        </div>
+        <div class="color-swatch">
+          <div class="swatch-block" style="background: var(--wk-accent-coral)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Coral</div>
+            <div class="swatch-value">L: #E86B4A &middot; D: #F07858</div>
+            <div class="swatch-var">--wk-accent-coral</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 2. TYPOGRAPHY ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Typography</h2>
+    <p class="ds-section-desc">Two typefaces define the WeKruit voice: Halant (serif) for display and headline use, and Geist (sans-serif) for body and UI text.</p>
+
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Display &mdash; Halant</h3>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Display XL &mdash; Hero Headlines</span>
+          <span class="type-meta">70px / 400 / Halant / leading-tight</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-display); font-size: var(--wk-text-6xl); font-weight: var(--wk-weight-regular); line-height: var(--wk-leading-tight); letter-spacing: var(--wk-tracking-tight);">Find the People You Want</div>
+      </div>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Display LG &mdash; Section Headlines</span>
+          <span class="type-meta">48px / 400 / Halant / leading-tight</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-display); font-size: var(--wk-text-4xl); font-weight: var(--wk-weight-regular); line-height: var(--wk-leading-tight); letter-spacing: var(--wk-tracking-tight);">Built for Conversations That Matter</div>
+      </div>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Display MD &mdash; Feature Headings</span>
+          <span class="type-meta">32px / 400 / Halant / leading-snug</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-display); font-size: var(--wk-text-2xl); font-weight: var(--wk-weight-regular); line-height: var(--wk-leading-snug);">Infrastructure for Conversations That Require Judgment</div>
+      </div>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Display SM &mdash; Card Titles</span>
+          <span class="type-meta">24px / 500 / Halant / leading-snug</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-display); font-size: var(--wk-text-xl); font-weight: var(--wk-weight-medium); line-height: var(--wk-leading-snug);">Create Your Workflow</div>
+      </div>
+    </div>
+
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Body &amp; UI &mdash; Geist</h3>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Body LG</span>
+          <span class="type-meta">20px / 400 / Geist / leading-relaxed</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-body); font-size: var(--wk-text-lg); font-weight: var(--wk-weight-regular); line-height: var(--wk-leading-relaxed); color: var(--wk-text-secondary);">Run structured interviews at scale. 10x the insights. 5x the conversion.</div>
+      </div>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Body Base</span>
+          <span class="type-meta">16px / 400 / Geist / leading-normal</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-body); font-size: var(--wk-text-base); font-weight: var(--wk-weight-regular); line-height: var(--wk-leading-normal); color: var(--wk-text-secondary);">Human interviews are deep but expensive. Surveys are cheap but shallow. WeKruit sits in between: we provide voice AI infrastructure that lets any company run structured interviews at scale.</div>
+      </div>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Body SM &mdash; Descriptions, Captions</span>
+          <span class="type-meta">14px / 400 / Geist / leading-normal</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-body); font-size: var(--wk-text-sm); font-weight: var(--wk-weight-regular); line-height: var(--wk-leading-normal); color: var(--wk-text-secondary);">Define the interview structure, questions, and evaluation criteria.</div>
+      </div>
+
+      <div class="type-specimen">
+        <div class="label-row">
+          <span class="type-label">Caption / Label</span>
+          <span class="type-meta">12px / 500 / Geist / leading-normal / tracking-wider / uppercase</span>
+        </div>
+        <div class="type-sample" style="font-family: var(--wk-font-body); font-size: var(--wk-text-xs); font-weight: var(--wk-weight-medium); line-height: var(--wk-leading-normal); letter-spacing: var(--wk-tracking-wider); text-transform: uppercase; color: var(--wk-text-tertiary);">TRUSTED BY LEADING AI COMPANIES</div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 3. COMPONENTS ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Components</h2>
+    <p class="ds-section-desc">Reusable UI building blocks that form the WeKruit interface. Every component respects the theme toggle above.</p>
+
+    <!-- 3a. Navigation -->
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Navigation Bar</h3>
+      <nav class="wk-nav">
+        <a href="#" class="wk-nav-link">Case Interview</a>
+        <a href="#" class="wk-nav-brand">WeKruit</a>
+        <a href="#" class="wk-btn wk-btn-primary wk-btn-sm">Book a free call</a>
+      </nav>
+    </div>
+
+    <!-- 3b. Buttons -->
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Buttons</h3>
+      <div class="component-row">
+        <button class="wk-btn wk-btn-primary">Book a free call</button>
+        <button class="wk-btn wk-btn-secondary">Learn More</button>
+        <button class="wk-btn wk-btn-ghost">Contact Us</button>
+      </div>
+      <div class="component-row">
+        <button class="wk-btn wk-btn-cta">Request Demo</button>
+        <button class="wk-btn wk-btn-primary wk-btn-sm">+ Add Question</button>
+      </div>
+
+      <table class="spec-table" style="margin-top: var(--wk-space-6);">
+        <thead>
+          <tr><th>Variant</th><th>Background</th><th>Text</th><th>Radius</th><th>Padding</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Primary</td>
+            <td><code>--wk-text-primary</code></td>
+            <td><code>--wk-surface-page</code></td>
+            <td><code>--wk-radius-lg</code> (12px)</td>
+            <td>10px 24px</td>
+          </tr>
+          <tr>
+            <td>Secondary</td>
+            <td><code>--wk-surface-white</code></td>
+            <td><code>--wk-text-primary</code></td>
+            <td><code>--wk-radius-lg</code></td>
+            <td>10px 24px</td>
+          </tr>
+          <tr>
+            <td>Ghost</td>
+            <td>transparent</td>
+            <td><code>--wk-text-primary</code></td>
+            <td><code>--wk-radius-lg</code></td>
+            <td>10px 24px</td>
+          </tr>
+          <tr>
+            <td>CTA (large)</td>
+            <td><code>--wk-text-primary</code></td>
+            <td><code>--wk-surface-page</code></td>
+            <td><code>--wk-radius-lg</code></td>
+            <td>14px 32px</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3c. Chips & Badges -->
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Chips &amp; Badges</h3>
+      <div class="component-row">
+        <span class="wk-chip wk-chip-section">What is WeKruit</span>
+        <span class="wk-chip wk-chip-section">How It Works</span>
+        <span class="wk-chip wk-chip-section">Use Cases</span>
+        <span class="wk-chip wk-chip-section">Customer Stories</span>
+      </div>
+      <div class="component-row">
+        <span class="wk-chip">Backed by Alliance</span>
+        <span class="wk-chip wk-chip-tag">Job Interview</span>
+        <span class="wk-chip wk-chip-tag">Behavioral</span>
+        <span class="wk-chip wk-chip-tag">Problem-solving</span>
+        <span class="wk-chip wk-chip-tag">5 min</span>
+      </div>
+
+      <table class="spec-table" style="margin-top: var(--wk-space-6);">
+        <thead>
+          <tr><th>Variant</th><th>Use</th><th>Background</th><th>Border</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Section Label</td>
+            <td>Section headers (e.g., "How It Works")</td>
+            <td><code>--wk-surface-sunken</code></td>
+            <td><code>--wk-border-subtle</code></td>
+          </tr>
+          <tr>
+            <td>Default</td>
+            <td>Badges, trust marks</td>
+            <td><code>--wk-surface-raised</code></td>
+            <td><code>--wk-border-default</code></td>
+          </tr>
+          <tr>
+            <td>Tag (on dark/image)</td>
+            <td>Category tags over images</td>
+            <td>rgba(43,24,10,0.5) + blur</td>
+            <td>rgba(255,255,255,0.2)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3d. Cards -->
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Cards</h3>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--wk-space-4); margin-bottom: var(--wk-space-6);">
+        <!-- Standard Card -->
+        <div class="wk-card">
+          <h4 style="font-family: var(--wk-font-display); font-size: var(--wk-text-xl); font-weight: var(--wk-weight-medium); margin-bottom: var(--wk-space-2);">Create Your Workflow</h4>
+          <p style="font-size: var(--wk-text-sm); color: var(--wk-text-secondary); line-height: var(--wk-leading-relaxed);">Define the interview structure, questions, and evaluation criteria.</p>
+          <p style="font-size: var(--wk-text-sm); color: var(--wk-text-secondary); margin-top: var(--wk-space-4); display: flex; align-items: center; gap: 6px;">&#8629; Book a free call</p>
+        </div>
+
+        <!-- Stat Card -->
+        <div class="wk-card-stat">
+          <div class="stat-number">1,200+</div>
+          <div class="stat-label">Candidates</div>
+          <div class="stat-sub">Interviewed by CoreSpeed</div>
+        </div>
+
+        <!-- Stat Card 2 -->
+        <div class="wk-card-stat">
+          <div class="stat-number">25</div>
+          <div class="stat-label">People Hired</div>
+          <div class="stat-sub">By Tripalink</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--wk-space-4);">
+        <!-- Partner Card -->
+        <div class="wk-card-partner">
+          <div class="partner-logo-placeholder"></div>
+          <div>
+            <div class="partner-name">CoreSpeed</div>
+            <div class="partner-desc">Technical hiring across geographies</div>
+          </div>
+        </div>
+        <div class="wk-card-partner">
+          <div class="partner-logo-placeholder"></div>
+          <div>
+            <div class="partner-name">SeeU Career</div>
+            <div class="partner-desc">Interview practice at scale</div>
+          </div>
+        </div>
+        <div class="wk-card-partner">
+          <div class="partner-logo-placeholder"></div>
+          <div>
+            <div class="partner-name">Aibrary</div>
+            <div class="partner-desc">GTM and engineering hiring</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3e. Forms / Inputs -->
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">Form Elements</h3>
+      <div style="max-width: 400px;">
+        <label class="wk-label">Interview Question</label>
+        <input class="wk-input" type="text" placeholder="Tell me about a time you had to solve a complex problem..." />
+        <div style="height: var(--wk-space-4);"></div>
+        <label class="wk-label">Evaluation Criteria</label>
+        <input class="wk-input" type="text" placeholder="Technical skills, Communication..." />
+        <div style="height: var(--wk-space-4);"></div>
+        <button class="wk-btn wk-btn-primary" style="width: 100%;">+ Add Question</button>
+      </div>
+    </div>
+
+    <!-- 3f. CTA Banner -->
+    <div class="ds-subsection">
+      <h3 class="ds-subsection-title">CTA Banner</h3>
+      <div class="wk-cta-banner">
+        <h2>Scale Your Conversations Today</h2>
+        <button class="wk-btn wk-btn-cta" style="background: var(--wk-surface-page); color: var(--wk-text-primary);">Request Demo</button>
+      </div>
+    </div>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 4. SPACING ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Spacing Scale</h2>
+    <p class="ds-section-desc">A consistent 4px base grid keeps alignment tight across all components and layouts.</p>
+
+    <div class="spacing-row"><span class="spacing-label">--wk-space-1 (4px)</span><div class="spacing-block" style="width: 4px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-2 (8px)</span><div class="spacing-block" style="width: 8px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-3 (12px)</span><div class="spacing-block" style="width: 12px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-4 (16px)</span><div class="spacing-block" style="width: 16px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-6 (24px)</span><div class="spacing-block" style="width: 24px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-8 (32px)</span><div class="spacing-block" style="width: 32px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-10 (40px)</span><div class="spacing-block" style="width: 40px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-12 (48px)</span><div class="spacing-block" style="width: 48px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-16 (64px)</span><div class="spacing-block" style="width: 64px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-20 (80px)</span><div class="spacing-block" style="width: 80px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-24 (96px)</span><div class="spacing-block" style="width: 96px;"></div></div>
+    <div class="spacing-row"><span class="spacing-label">--wk-space-32 (128px)</span><div class="spacing-block" style="width: 128px;"></div></div>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 5. BORDER RADIUS ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Border Radius</h2>
+    <p class="ds-section-desc">Rounded corners are a defining trait of the WeKruit aesthetic. Use larger radii for hero cards, smaller for buttons and inputs.</p>
+
+    <div class="radius-grid">
+      <div class="radius-demo">
+        <div class="radius-box" style="border-radius: var(--wk-radius-sm);"></div>
+        <div class="radius-label">sm<br/>4px</div>
+      </div>
+      <div class="radius-demo">
+        <div class="radius-box" style="border-radius: var(--wk-radius-md);"></div>
+        <div class="radius-label">md<br/>8px</div>
+      </div>
+      <div class="radius-demo">
+        <div class="radius-box" style="border-radius: var(--wk-radius-lg);"></div>
+        <div class="radius-label">lg<br/>12px</div>
+      </div>
+      <div class="radius-demo">
+        <div class="radius-box" style="border-radius: var(--wk-radius-xl);"></div>
+        <div class="radius-label">xl<br/>16px</div>
+      </div>
+      <div class="radius-demo">
+        <div class="radius-box" style="border-radius: var(--wk-radius-2xl);"></div>
+        <div class="radius-label">2xl<br/>20px</div>
+      </div>
+      <div class="radius-demo">
+        <div class="radius-box" style="border-radius: var(--wk-radius-3xl);"></div>
+        <div class="radius-label">3xl<br/>24px</div>
+      </div>
+      <div class="radius-demo">
+        <div class="radius-box" style="border-radius: var(--wk-radius-full);"></div>
+        <div class="radius-label">full<br/>9999px</div>
+      </div>
+    </div>
+
+    <table class="spec-table" style="margin-top: var(--wk-space-8); max-width: 600px;">
+      <thead><tr><th>Element</th><th>Radius Token</th></tr></thead>
+      <tbody>
+        <tr><td>Buttons, Inputs</td><td><code>--wk-radius-lg</code> (12px)</td></tr>
+        <tr><td>Small Buttons, Code Blocks</td><td><code>--wk-radius-md</code> (8px)</td></tr>
+        <tr><td>Cards, Banners, Images</td><td><code>--wk-radius-2xl</code> (20px)</td></tr>
+        <tr><td>Chips, Pills, Toggles</td><td><code>--wk-radius-full</code></td></tr>
+        <tr><td>Navigation Bar</td><td><code>--wk-radius-xl</code> (16px)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 6. SHADOWS ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Elevation &amp; Shadows</h2>
+    <p class="ds-section-desc">Warm-toned shadows maintain the earthy feel. In dark mode, shadows use pure black for depth.</p>
+
+    <div class="shadow-grid">
+      <div class="shadow-demo">
+        <div class="shadow-box" style="box-shadow: var(--wk-shadow-sm);"></div>
+        <div class="shadow-label">sm</div>
+      </div>
+      <div class="shadow-demo">
+        <div class="shadow-box" style="box-shadow: var(--wk-shadow-md);"></div>
+        <div class="shadow-label">md</div>
+      </div>
+      <div class="shadow-demo">
+        <div class="shadow-box" style="box-shadow: var(--wk-shadow-lg);"></div>
+        <div class="shadow-label">lg</div>
+      </div>
+      <div class="shadow-demo">
+        <div class="shadow-box" style="box-shadow: var(--wk-shadow-xl);"></div>
+        <div class="shadow-label">xl</div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 7. LAYOUT ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Layout &amp; Grid</h2>
+    <p class="ds-section-desc">Container widths and responsive grid patterns used across the site.</p>
+
+    <table class="spec-table" style="max-width: 500px; margin-bottom: var(--wk-space-8);">
+      <thead><tr><th>Token</th><th>Value</th><th>Use</th></tr></thead>
+      <tbody>
+        <tr><td><code>--wk-max-width</code></td><td>1200px</td><td>Outer container</td></tr>
+        <tr><td><code>--wk-content-width</code></td><td>960px</td><td>Content sections</td></tr>
+        <tr><td><code>--wk-narrow-width</code></td><td>720px</td><td>Text-heavy sections</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="ds-subsection-title">Grid Examples</h3>
+    <p style="font-size: var(--wk-text-sm); color: var(--wk-text-tertiary); margin-bottom: var(--wk-space-4);">2-column (Use Cases), 4-column (Partner logos), with 16px gap</p>
+
+    <div class="grid-demo grid-demo-2" style="margin-bottom: var(--wk-space-6);">
+      <div class="grid-cell">Evaluation Interviews</div>
+      <div class="grid-cell">Customer Discovery</div>
+    </div>
+
+    <div class="grid-demo grid-demo-4">
+      <div class="grid-cell">CoreSpeed</div>
+      <div class="grid-cell">SeeU</div>
+      <div class="grid-cell">Aibrary</div>
+      <div class="grid-cell">Beta University</div>
+    </div>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 8. MOTION ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Motion &amp; Transitions</h2>
+    <p class="ds-section-desc">Subtle, purposeful animations reinforce the premium brand feel.</p>
+
+    <table class="spec-table" style="max-width: 600px;">
+      <thead><tr><th>Token</th><th>Value</th><th>Use</th></tr></thead>
+      <tbody>
+        <tr><td><code>--wk-duration-fast</code></td><td>150ms</td><td>Hover states, focus rings</td></tr>
+        <tr><td><code>--wk-duration-base</code></td><td>250ms</td><td>Buttons, cards, toggles</td></tr>
+        <tr><td><code>--wk-duration-slow</code></td><td>400ms</td><td>Page transitions, theme switch</td></tr>
+        <tr><td><code>--wk-ease-default</code></td><td>cubic-bezier(0.25, 0.1, 0.25, 1)</td><td>Standard easing</td></tr>
+        <tr><td><code>--wk-ease-spring</code></td><td>cubic-bezier(0.34, 1.56, 0.64, 1)</td><td>Playful bounce (toggle, micro-interactions)</td></tr>
+      </tbody>
+    </table>
+
+    <p style="font-size: var(--wk-text-sm); color: var(--wk-text-secondary); margin-top: var(--wk-space-6);">The WeKruit site also uses a scroll-based entrance animation: large serif headlines fade in from a muted/transparent state as the user scrolls, creating a sense of depth and narrative flow.</p>
+  </section>
+
+  <hr class="ds-divider" />
+
+  <!-- ════════════ 9. QUICK REFERENCE ════════════ -->
+  <section class="ds-section">
+    <h2 class="ds-section-title">Quick Reference &mdash; CSS Variables</h2>
+    <p class="ds-section-desc">Copy the full <code>:root</code> block below into any project to get started. Toggle dark mode above to preview both themes live.</p>
+
+    <div class="code-block">:root {
+  /* Brand */
+  --wk-brand-espresso:     #2B180A;
+
+  /* Surfaces */
+  --wk-surface-page:       #FCF6EF;
+  --wk-surface-raised:     #F6F0E9;
+  --wk-surface-sunken:     #EFE7DD;
+  --wk-surface-card:       #F5EFE8;
+  --wk-surface-white:      #FFFFFF;
+
+  /* Text */
+  --wk-text-primary:       #2B180A;
+  --wk-text-secondary:     #94877C;
+  --wk-text-tertiary:      #B0A59B;
+
+  /* Accents */
+  --wk-accent-amber:       #E8923A;
+  --wk-accent-teal:        #3AAFB0;
+  --wk-accent-coral:       #E86B4A;
+
+  /* Typography */
+  --wk-font-display:       'Halant', serif;
+  --wk-font-body:          'Geist', sans-serif;
+
+  /* Radius */
+  --wk-radius-lg:          12px;
+  --wk-radius-2xl:         20px;
+  --wk-radius-full:        9999px;
+}
+
+[data-theme="dark"] {
+  --wk-brand-espresso:     #F5E6D4;
+  --wk-surface-page:       #1A1210;
+  --wk-surface-raised:     #241C18;
+  --wk-surface-sunken:     #12100E;
+  --wk-surface-card:       #2A2220;
+  --wk-surface-white:      #302824;
+  --wk-text-primary:       #F5E6D4;
+  --wk-text-secondary:     #A89888;
+  --wk-text-tertiary:      #7A6E64;
+  --wk-accent-amber:       #F0A050;
+  --wk-accent-teal:        #4DC4C4;
+  --wk-accent-coral:       #F07858;
+}</div>
+  </section>
+
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  const next = current === 'dark' ? null : 'dark';
+  if (next) {
+    html.setAttribute('data-theme', 'dark');
+    document.getElementById('themeLabel').textContent = 'Dark';
+  } else {
+    html.removeAttribute('data-theme');
+    document.getElementById('themeLabel').textContent = 'Light';
+  }
+}
+</script>
+</body>
+</html>

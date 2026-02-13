@@ -1,0 +1,22 @@
+name: CD → Staging
+
+on:
+  push:
+    branches: [staging]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      api-app: valet-api-stg
+      worker-app: valet-worker-stg
+      web-app: valet-web-stg
+      hatchet-app: valet-hatchet-stg
+      api-url: https://valet-api-stg.fly.dev
+    secrets:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

@@ -1,0 +1,65 @@
+# ===========================================================================
+# Hatchet Engine — Workflow orchestration for browser automation
+# ===========================================================================
+# Deployed as hatchet-lite (bundles engine + API + dashboard)
+# External deps: Supabase Postgres + CloudAMQP RabbitMQ
+#
+# Per-environment secrets (set via `fly secrets set -a <app>`):
+#   DATABASE_URL              — Supabase session pooler URL (port 5432)
+#   SERVER_TASKQUEUE_RABBITMQ_URL — CloudAMQP AMQPS URL
+#   SERVER_AUTH_COOKIE_DOMAIN — e.g. valet-hatchet-dev.fly.dev
+#   SERVER_GRPC_BROADCAST_ADDRESS — e.g. valet-hatchet-dev.fly.dev:443
+#   DATABASE_MAX_CONNS        — Max DB pool conns (keep ≤5 for free Supabase)
+#   DATABASE_MIN_CONNS        — Min DB pool conns (keep 1)
+#   DATABASE_MAX_QUEUE_CONNS  — Max queue DB conns (keep ≤5)
+#   DATABASE_MIN_QUEUE_CONNS  — Min queue DB conns (keep 1)
+#
+# Networking:
+#   Port 443 (HTTPS) — gRPC for worker connections (h2_backend + h2 ALPN)
+#   Port 8443        — Dashboard + REST API
+#
+# Deploy:
+#   fly deploy --config fly/hatchet.toml --app <hatchet-app-name> --remote-only
+# ===========================================================================
+
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = 30
+
+[build]
+  image = "ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest"
+
+[env]
+  SERVER_AUTH_COOKIE_INSECURE = "false"
+  SERVER_GRPC_BIND_ADDRESS = "0.0.0.0"
+  SERVER_GRPC_PORT = "7077"
+  SERVER_GRPC_INSECURE = "t"
+
+# gRPC endpoint for worker connections on port 443 (standard HTTPS)
+# Fly terminates TLS, negotiates h2 ALPN, and proxies h2c to the gRPC backend.
+# This follows Fly.io's official gRPC service guide.
+[http_service]
+  internal_port = 7077
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.http_options]
+    h2_backend = true
+
+  [http_service.tls_options]
+    alpn = ["h2"]
+
+# Dashboard + REST API on port 8443
+[[services]]
+  protocol = "tcp"
+  internal_port = 8888
+  [[services.ports]]
+    port = 8443
+    handlers = ["tls", "http"]
+
+[[vm]]
+  memory = "1024mb"
+  cpu_kind = "shared"
+  cpus = 1

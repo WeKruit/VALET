@@ -1,0 +1,18 @@
+name: valet
+
+# ===========================================================================
+# DEPRECATED — All services are now cloud-hosted
+# ===========================================================================
+#
+# Hatchet is deployed on Fly.io:
+#   Dev:  https://valet-hatchet-dev.fly.dev
+#   Stg:  https://valet-hatchet-stg.fly.dev
+#   Prod: https://valet-hatchet.fly.dev
+#
+# See fly/hatchet.toml for deployment config.
+# No Docker needed for local development — just run: pnpm dev
+#
+# To delete this file: rm docker/docker-compose.yml && rmdir docker/
+# ===========================================================================
+
+services: {}
