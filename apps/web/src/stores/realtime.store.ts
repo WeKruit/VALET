@@ -10,7 +10,7 @@ interface RealtimeStore {
 }
 
 export const useRealtimeStore = create<RealtimeStore>((set) => ({
-  status: "disconnected",
+  status: "connecting",
   setStatus: (status) => set({ status }),
   lastMessage: null,
   setLastMessage: (msg) => set({ lastMessage: msg }),

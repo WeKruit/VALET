@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useState, useCallback } from "react";
 import {
   Card,
@@ -8,9 +9,10 @@ import {
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
 import { Input } from "@valet/ui/components/input";
-import { Pencil, Check, ShieldCheck, Brain, BookOpen } from "lucide-react";
+import { Pencil, Check, ShieldCheck, Brain, BookOpen, Inbox } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
+import { LoadingSpinner } from "@/components/common/loading-spinner";
 
 interface FilledField {
   fieldName: string;
@@ -20,70 +22,21 @@ interface FilledField {
   requiresReview: boolean;
 }
 
-interface FieldReviewProps {
-  taskId: string;
-  onApproved?: () => void;
+interface TaskData {
+  jobTitle?: string | null;
+  companyName?: string | null;
+  jobLocation?: string | null;
+  jobUrl: string;
+  platform: string;
+  fieldsFilled: number;
+  confidenceScore?: number | null;
 }
 
-// Mock data - real data comes through WebSocket/API
-const MOCK_FIELDS: FilledField[] = [
-  {
-    fieldName: "First Name",
-    value: "John",
-    confidence: 0.98,
-    source: "resume",
-    requiresReview: false,
-  },
-  {
-    fieldName: "Last Name",
-    value: "Doe",
-    confidence: 0.98,
-    source: "resume",
-    requiresReview: false,
-  },
-  {
-    fieldName: "Email",
-    value: "john.doe@example.com",
-    confidence: 0.95,
-    source: "resume",
-    requiresReview: false,
-  },
-  {
-    fieldName: "Phone",
-    value: "(555) 123-4567",
-    confidence: 0.92,
-    source: "resume",
-    requiresReview: false,
-  },
-  {
-    fieldName: "Current Company",
-    value: "Acme Corp",
-    confidence: 0.85,
-    source: "resume",
-    requiresReview: false,
-  },
-  {
-    fieldName: "Years of Experience",
-    value: "5",
-    confidence: 0.72,
-    source: "llm_generated",
-    requiresReview: true,
-  },
-  {
-    fieldName: "Why are you interested?",
-    value: "I'm passionate about building impactful products and this role aligns with my experience in full-stack development.",
-    confidence: 0.65,
-    source: "llm_generated",
-    requiresReview: true,
-  },
-  {
-    fieldName: "Salary Expectation",
-    value: "120000",
-    confidence: 0.55,
-    source: "qa_bank",
-    requiresReview: true,
-  },
-];
+interface FieldReviewProps {
+  taskId: string;
+  task?: TaskData;
+  onApproved?: () => void;
+}
 
 const sourceConfig: Record<
   FilledField["source"],
@@ -106,7 +59,73 @@ function getConfidenceBg(score: number): string {
   return "bg-red-50 dark:bg-red-950/30";
 }
 
-export function FieldReview({ taskId, onApproved }: FieldReviewProps) {
+/** Build fields from real task metadata. */
+function buildFieldsFromTask(task: TaskData): FilledField[] {
+  const fields: FilledField[] = [];
+
+  if (task.jobTitle) {
+    fields.push({
+      fieldName: "Job Title",
+      value: task.jobTitle,
+      confidence: 0.95,
+      source: "resume",
+      requiresReview: false,
+    });
+  }
+
+  if (task.companyName) {
+    fields.push({
+      fieldName: "Company",
+      value: task.companyName,
+      confidence: 0.95,
+      source: "resume",
+      requiresReview: false,
+    });
+  }
+
+  if (task.jobLocation) {
+    fields.push({
+      fieldName: "Location",
+      value: task.jobLocation,
+      confidence: 0.85,
+      source: "resume",
+      requiresReview: false,
+    });
+  }
+
+  fields.push({
+    fieldName: "Application URL",
+    value: task.jobUrl,
+    confidence: 1.0,
+    source: "resume",
+    requiresReview: false,
+  });
+
+  fields.push({
+    fieldName: "Platform",
+    value: task.platform,
+    confidence: 1.0,
+    source: "resume",
+    requiresReview: false,
+  });
+
+  // If the task has filled fields but we don't have granular data yet,
+  // show a summary indicator
+  if (task.fieldsFilled > fields.length) {
+    const remaining = task.fieldsFilled - fields.length;
+    fields.push({
+      fieldName: `+ ${remaining} additional field${remaining === 1 ? "" : "s"}`,
+      value: "Auto-filled by VALET",
+      confidence: task.confidenceScore ?? 0.8,
+      source: "llm_generated",
+      requiresReview: (task.confidenceScore ?? 0.8) < 0.85,
+    });
+  }
+
+  return fields;
+}
+
+export function FieldReview({ taskId, task, onApproved }: FieldReviewProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
 
@@ -135,8 +154,43 @@ export function FieldReview({ taskId, onApproved }: FieldReviewProps) {
     });
   }, [taskId, overrides, approveTask]);
 
-  const fields = MOCK_FIELDS;
+  const fields = task ? buildFieldsFromTask(task) : [];
   const reviewCount = fields.filter((f) => f.requiresReview).length;
+
+  // No task data available yet — show loading state
+  if (!task) {
+    return (
+      <Card className="border-[var(--wk-status-warning)] border-2">
+        <CardContent className="flex justify-center py-8">
+          <LoadingSpinner />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Task has no meaningful fields to review
+  if (fields.length === 0) {
+    return (
+      <Card className="border-[var(--wk-status-warning)] border-2">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-surface-sunken)]">
+            <Inbox className="h-5 w-5 text-[var(--wk-text-tertiary)]" />
+          </div>
+          <p className="mt-3 text-sm text-[var(--wk-text-secondary)]">
+            No field data available for review yet.
+          </p>
+          <Button
+            variant="primary"
+            className="mt-4"
+            disabled={approveTask.isPending}
+            onClick={handleApprove}
+          >
+            {approveTask.isPending ? "Approving..." : "Approve & Submit"}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-[var(--wk-status-warning)] border-2">
@@ -154,6 +208,7 @@ export function FieldReview({ taskId, onApproved }: FieldReviewProps) {
             variant={isEditing ? "primary" : "ghost"}
             size="sm"
             onClick={() => setIsEditing(!isEditing)}
+            aria-label={isEditing ? "Done editing fields" : "Edit fields"}
           >
             {isEditing ? (
               <>
@@ -173,8 +228,8 @@ export function FieldReview({ taskId, onApproved }: FieldReviewProps) {
         </p>
       </CardHeader>
       <CardContent className="space-y-1">
-        {/* Header row */}
-        <div className="grid grid-cols-[1fr_1.5fr_80px_100px] gap-3 px-3 py-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+        {/* Header row - hidden on mobile */}
+        <div className="hidden md:grid grid-cols-[1fr_1.5fr_80px_100px] gap-3 px-3 py-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
           <span>Field</span>
           <span>Value</span>
           <span>Confidence</span>
@@ -191,43 +246,85 @@ export function FieldReview({ taskId, onApproved }: FieldReviewProps) {
             return (
               <div
                 key={field.fieldName}
-                className={`grid grid-cols-[1fr_1.5fr_80px_100px] gap-3 items-center rounded-[var(--wk-radius-md)] px-3 py-2.5 transition-colors ${
+                className={`rounded-[var(--wk-radius-md)] px-3 py-2.5 transition-colors ${
                   field.requiresReview
                     ? "bg-amber-50/50 dark:bg-amber-950/10"
                     : "hover:bg-[var(--wk-surface-sunken)]"
                 }`}
               >
-                <span className="text-sm font-medium truncate">
-                  {field.fieldName}
-                </span>
-
-                {isEditing ? (
-                  <Input
-                    value={currentValue}
-                    onChange={(e) =>
-                      handleFieldChange(field.fieldName, e.target.value)
-                    }
-                    className="h-8 text-sm"
-                  />
-                ) : (
-                  <span className="text-sm text-[var(--wk-text-secondary)] truncate">
-                    {currentValue}
+                {/* Desktop: grid layout */}
+                <div className="hidden md:grid grid-cols-[1fr_1.5fr_80px_100px] gap-3 items-center">
+                  <span className="text-sm font-medium truncate">
+                    {field.fieldName}
                   </span>
-                )}
 
-                <span
-                  className={`inline-flex items-center justify-center rounded-[var(--wk-radius-sm)] px-2 py-0.5 text-xs font-medium ${getConfidenceColor(field.confidence)} ${getConfidenceBg(field.confidence)}`}
-                >
-                  {Math.round(field.confidence * 100)}%
-                </span>
+                  {isEditing ? (
+                    <Input
+                      value={currentValue}
+                      onChange={(e) =>
+                        handleFieldChange(field.fieldName, e.target.value)
+                      }
+                      className="h-8 text-sm"
+                      aria-label={`Edit ${field.fieldName}`}
+                    />
+                  ) : (
+                    <span className="text-sm text-[var(--wk-text-secondary)] truncate">
+                      {currentValue}
+                    </span>
+                  )}
 
-                <Badge
-                  variant={source.variant}
-                  className="text-[10px] gap-1 w-fit"
-                >
-                  <SourceIcon className="h-3 w-3" />
-                  {source.label}
-                </Badge>
+                  <span
+                    className={`inline-flex items-center justify-center rounded-[var(--wk-radius-sm)] px-2 py-0.5 text-xs font-medium ${getConfidenceColor(field.confidence)} ${getConfidenceBg(field.confidence)}`}
+                  >
+                    {Math.round(field.confidence * 100)}%
+                  </span>
+
+                  <Badge
+                    variant={source.variant}
+                    className="text-[10px] gap-1 w-fit"
+                  >
+                    <SourceIcon className="h-3 w-3" />
+                    {source.label}
+                  </Badge>
+                </div>
+
+                {/* Mobile: stacked layout */}
+                <div className="md:hidden space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium truncate">
+                      {field.fieldName}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`inline-flex items-center justify-center rounded-[var(--wk-radius-sm)] px-2 py-0.5 text-xs font-medium ${getConfidenceColor(field.confidence)} ${getConfidenceBg(field.confidence)}`}
+                      >
+                        {Math.round(field.confidence * 100)}%
+                      </span>
+                      <Badge
+                        variant={source.variant}
+                        className="text-[10px] gap-1 w-fit"
+                      >
+                        <SourceIcon className="h-3 w-3" />
+                        {source.label}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {isEditing ? (
+                    <Input
+                      value={currentValue}
+                      onChange={(e) =>
+                        handleFieldChange(field.fieldName, e.target.value)
+                      }
+                      className="h-8 text-sm"
+                      aria-label={`Edit ${field.fieldName}`}
+                    />
+                  ) : (
+                    <p className="text-sm text-[var(--wk-text-secondary)]">
+                      {currentValue}
+                    </p>
+                  )}
+                </div>
               </div>
             );
           })}

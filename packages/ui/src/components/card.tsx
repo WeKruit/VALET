@@ -10,8 +10,8 @@ const Card = React.forwardRef<
     className={cn(
       "bg-[var(--wk-surface-card)] text-[var(--wk-text-primary)]",
       "rounded-[var(--wk-radius-2xl)]",
-      "border border-[var(--wk-border-subtle)]",
-      "shadow-[var(--wk-shadow-sm)]",
+      "border border-[var(--wk-border-default)]",
+      "shadow-[var(--wk-shadow-md)]",
       className
     )}
     {...props}

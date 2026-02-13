@@ -1,19 +1,19 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import type { S3Client } from "@aws-sdk/client-s3";
 import {
-  S3Client,
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 import {
   users,
   tasks,
-  taskEvents,
   resumes,
   qaBank,
   consentRecords,
   type Database,
 } from "@valet/db";
 import { RETENTION_POLICY } from "@valet/shared/constants";
+import type { EmailService } from "../../services/email.service.js";
 
 const S3_BUCKET = process.env.S3_BUCKET_RESUMES ?? "resumes";
 
@@ -33,17 +33,20 @@ interface GdprServiceDeps {
   db: Database;
   logger: any; // pino logger
   s3: S3Client;
+  emailService: EmailService;
 }
 
 export class GdprService {
   private db: Database;
   private logger: any;
   private s3: S3Client;
+  private emailService: EmailService;
 
-  constructor({ db, logger, s3 }: GdprServiceDeps) {
+  constructor({ db, logger, s3, emailService }: GdprServiceDeps) {
     this.db = db;
     this.logger = logger;
     this.s3 = s3;
+    this.emailService = emailService;
   }
 
   /**
@@ -155,6 +158,11 @@ export class GdprService {
       },
       "Account soft-deleted, permanent erasure scheduled",
     );
+
+    // Fire-and-forget deletion confirmation email
+    this.emailService
+      .sendAccountDeletion(user.email, user.name, RETENTION_POLICY.DELETED_ACCOUNT)
+      .catch(() => {});
 
     return {
       message:

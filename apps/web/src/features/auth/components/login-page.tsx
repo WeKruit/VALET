@@ -1,40 +1,80 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@valet/ui/components/button";
+import { Input } from "@valet/ui/components/input";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, setAccessToken, API_BASE_URL } from "@/lib/api-client";
+import { api, setAccessToken } from "@/lib/api-client";
 import { useAuth } from "../hooks/use-auth";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 const REDIRECT_URI = `${window.location.origin}/login`;
+
+const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+
+type LoginForm = z.infer<typeof loginSchema>;
 
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setUser } = useAuth();
 
+  function handleAuthSuccess(data: {
+    accessToken: string;
+    user: { id: string; email: string; name: string; avatarUrl: string | null };
+  }) {
+    setAccessToken(data.accessToken);
+    setUser({
+      id: data.user.id,
+      email: data.user.email,
+      name: data.user.name,
+      avatarUrl: data.user.avatarUrl ?? undefined,
+      onboardingComplete: false,
+      copilotAppsCompleted: 0,
+      autopilotUnlocked: false,
+    });
+    navigate("/onboarding");
+  }
+
   const googleAuth = api.auth.google.useMutation({
     onSuccess: (data) => {
       if (data.status === 200 || data.status === 201) {
-        setAccessToken(data.body.accessToken);
-        localStorage.setItem("wk-refresh-token", data.body.refreshToken);
-        setUser({
-          id: data.body.user.id,
-          email: data.body.user.email,
-          name: data.body.user.name,
-          avatarUrl: data.body.user.avatarUrl ?? undefined,
-          onboardingComplete: false,
-          copilotAppsCompleted: 0,
-          autopilotUnlocked: false,
-        });
-        navigate("/onboarding");
+        handleAuthSuccess(data.body);
       }
     },
     onError: () => {
       toast.error("Sign-in failed. Please try again.");
     },
   });
+
+  const emailLogin = api.auth.login.useMutation({
+    onSuccess: (data) => {
+      if (data.status === 200) {
+        handleAuthSuccess(data.body);
+      }
+    },
+    onError: () => {
+      toast.error("Sign-in failed. Please check your credentials.");
+    },
+  });
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+  });
+
+  function onEmailSubmit(data: LoginForm) {
+    emailLogin.mutate({ body: { email: data.email, password: data.password } });
+  }
 
   useEffect(() => {
     const code = searchParams.get("code");
@@ -43,7 +83,6 @@ export function LoginPage() {
         body: { code, redirectUri: REDIRECT_URI },
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -65,7 +104,7 @@ export function LoginPage() {
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
-  const isLoading = googleAuth.isPending || isRedirecting;
+  const isGoogleLoading = googleAuth.isPending || isRedirecting;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--wk-surface-page)]">
@@ -97,14 +136,87 @@ export function LoginPage() {
               </p>
             </div>
 
+            {/* Email/password form */}
+            <form onSubmit={handleSubmit(onEmailSubmit)} className="space-y-3">
+              <div className="space-y-1.5">
+                <label htmlFor="email" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  {...register("email")}
+                />
+                {errors.email && (
+                  <p className="text-xs text-red-500">{errors.email.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="password" className="text-sm font-medium">
+                    Password
+                  </label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-[var(--wk-text-secondary)] underline underline-offset-2 hover:text-[var(--wk-text-primary)] transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  {...register("password")}
+                />
+                {errors.password && (
+                  <p className="text-xs text-red-500">{errors.password.message}</p>
+                )}
+              </div>
+
+              {emailLogin.isError && (
+                <p className="text-xs text-red-500">
+                  {(emailLogin.error as { body?: { message?: string } })?.body?.message ??
+                    "Sign-in failed. Please check your credentials."}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                disabled={emailLogin.isPending}
+              >
+                {emailLogin.isPending ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : null}
+                {emailLogin.isPending ? "Signing in..." : "Sign in"}
+              </Button>
+            </form>
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-[var(--wk-border-subtle)]" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-[var(--wk-surface-white)] px-2 text-[var(--wk-text-tertiary)]">
+                  or
+                </span>
+              </div>
+            </div>
+
+            {/* Google OAuth */}
             <Button
               variant="secondary"
               size="lg"
               className="w-full"
               onClick={handleGoogleLogin}
-              disabled={isLoading}
+              disabled={isGoogleLoading}
             >
-              {isLoading ? (
+              {isGoogleLoading ? (
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
                 <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
@@ -126,12 +238,36 @@ export function LoginPage() {
                   />
                 </svg>
               )}
-              {isLoading ? "Signing in..." : "Sign in with Google"}
+              {isGoogleLoading ? "Signing in..." : "Sign in with Google"}
             </Button>
           </div>
 
-          <p className="mt-4 text-center text-xs text-[var(--wk-text-tertiary)]">
-            By signing in, you agree to our Terms of Service and Privacy Policy.
+          <p className="mt-4 text-center text-sm text-[var(--wk-text-secondary)]">
+            Don't have an account?{" "}
+            <Link
+              to="/register"
+              className="font-medium text-[var(--wk-text-primary)] underline underline-offset-2 hover:text-[var(--wk-text-secondary)] transition-colors"
+            >
+              Sign up
+            </Link>
+          </p>
+
+          <p className="mt-3 text-center text-xs text-[var(--wk-text-tertiary)]">
+            By signing in, you agree to our{" "}
+            <Link
+              to="/legal/terms"
+              className="underline underline-offset-2 hover:text-[var(--wk-text-secondary)] transition-colors"
+            >
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link
+              to="/legal/privacy"
+              className="underline underline-offset-2 hover:text-[var(--wk-text-secondary)] transition-colors"
+            >
+              Privacy Policy
+            </Link>
+            .
           </p>
         </div>
 

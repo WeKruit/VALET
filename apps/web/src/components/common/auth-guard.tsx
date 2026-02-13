@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useConsent } from "@/features/consent/hooks/use-consent";

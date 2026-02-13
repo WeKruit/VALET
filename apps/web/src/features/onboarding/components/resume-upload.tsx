@@ -1,6 +1,6 @@
+import * as React from "react";
 import { useState, useCallback } from "react";
 import { Card, CardContent } from "@valet/ui/components/card";
-import { Button } from "@valet/ui/components/button";
 import { Upload, FileText, Check, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -39,7 +39,6 @@ export function ResumeUpload({ onUploadComplete }: ResumeUploadProps) {
         processFile(file);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 

@@ -1,3 +1,4 @@
+/* global document, window */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -6,6 +7,8 @@ type Theme = "light" | "dark" | "system";
 interface UIStore {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (open: boolean) => void;
   theme: Theme;
   setTheme: (theme: Theme) => void;
 }
@@ -15,6 +18,8 @@ export const useUIStore = create<UIStore>()(
     (set) => ({
       sidebarOpen: true,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      mobileSidebarOpen: false,
+      setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
       theme: "light",
       setTheme: (theme) => {
         set({ theme });
@@ -35,6 +40,12 @@ export const useUIStore = create<UIStore>()(
         }
       },
     }),
-    { name: "wk-ui" }
+    {
+      name: "wk-ui",
+      partialize: (state) => ({
+        sidebarOpen: state.sidebarOpen,
+        theme: state.theme,
+      }),
+    }
   )
 );

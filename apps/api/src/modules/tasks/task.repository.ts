@@ -1,6 +1,6 @@
-import { eq, and, desc, asc, count, sql, type SQL } from "drizzle-orm";
+import { eq, and, desc, asc, count, sql, ilike, or, type SQL } from "drizzle-orm";
 import { tasks, type Database } from "@valet/db";
-import type { TaskStatus, Platform, ApplicationMode } from "@valet/shared/schemas";
+import type { TaskStatus, Platform, ApplicationMode, ExternalStatus } from "@valet/shared/schemas";
 
 export interface TaskRecord {
   id: string;
@@ -9,15 +9,37 @@ export interface TaskRecord {
   platform: Platform;
   status: TaskStatus;
   mode: ApplicationMode;
+  resumeId: string | null;
+  jobTitle: string | null;
+  companyName: string | null;
+  jobLocation: string | null;
+  externalStatus: ExternalStatus | null;
   progress: number;
   currentStep: string | null;
   confidenceScore: number | null;
-  workflowRunId: string | null;
+  matchScore: number | null;
+  fieldsFilled: number;
+  durationSeconds: number | null;
   errorCode: string | null;
   errorMessage: string | null;
+  retryCount: number;
+  workflowRunId: string | null;
+  browserProfileId: string | null;
+  screenshots: Record<string, unknown> | null;
+  llmUsage: Record<string, unknown> | null;
+  notes: string | null;
   createdAt: Date;
   updatedAt: Date;
+  startedAt: Date | null;
   completedAt: Date | null;
+}
+
+function toTaskRecord(row: Record<string, unknown>): TaskRecord {
+  return {
+    ...row,
+    screenshots: (row.screenshots as Record<string, unknown>) ?? null,
+    llmUsage: (row.llmUsage as Record<string, unknown>) ?? null,
+  } as TaskRecord;
 }
 
 export class TaskRepository {
@@ -33,7 +55,8 @@ export class TaskRepository {
       .from(tasks)
       .where(and(eq(tasks.id, id), eq(tasks.userId, userId)))
       .limit(1);
-    return (rows[0] as TaskRecord | undefined) ?? null;
+    const row = rows[0];
+    return row ? toTaskRecord(row as Record<string, unknown>) : null;
   }
 
   async findMany(
@@ -43,6 +66,7 @@ export class TaskRepository {
       pageSize: number;
       status?: string;
       platform?: string;
+      search?: string;
       sortBy: string;
       sortOrder: string;
     },
@@ -55,15 +79,27 @@ export class TaskRepository {
     if (query.platform) {
       conditions.push(eq(tasks.platform, query.platform as Platform));
     }
+    if (query.search) {
+      const pattern = `%${query.search}%`;
+      conditions.push(
+        or(
+          ilike(tasks.jobTitle, pattern),
+          ilike(tasks.companyName, pattern),
+          ilike(tasks.jobUrl, pattern),
+        )!,
+      );
+    }
 
     const whereClause = and(...conditions);
 
-    const sortColumn =
-      query.sortBy === "updatedAt"
-        ? tasks.updatedAt
-        : query.sortBy === "status"
-          ? tasks.status
-          : tasks.createdAt;
+    const sortColumnMap = {
+      updatedAt: tasks.updatedAt,
+      status: tasks.status,
+      jobTitle: tasks.jobTitle,
+      companyName: tasks.companyName,
+      createdAt: tasks.createdAt,
+    } as const;
+    const sortColumn = sortColumnMap[query.sortBy as keyof typeof sortColumnMap] ?? tasks.createdAt;
 
     const orderFn = query.sortOrder === "asc" ? asc : desc;
 
@@ -82,9 +118,33 @@ export class TaskRepository {
     ]);
 
     return {
-      data: data as TaskRecord[],
+      data: data.map((r) => toTaskRecord(r as Record<string, unknown>)),
       total: totalResult[0]?.count ?? 0,
     };
+  }
+
+  async findAllForExport(userId: string): Promise<TaskRecord[]> {
+    const data = await this.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.userId, userId))
+      .orderBy(desc(tasks.createdAt));
+
+    return data.map((r) => toTaskRecord(r as Record<string, unknown>));
+  }
+
+  async updateExternalStatus(
+    id: string,
+    userId: string,
+    externalStatus: ExternalStatus | null,
+  ): Promise<TaskRecord | null> {
+    const rows = await this.db
+      .update(tasks)
+      .set({ externalStatus, updatedAt: new Date() })
+      .where(and(eq(tasks.id, id), eq(tasks.userId, userId)))
+      .returning();
+    const row = rows[0];
+    return row ? toTaskRecord(row as Record<string, unknown>) : null;
   }
 
   async create(data: {
@@ -104,10 +164,10 @@ export class TaskRepository {
         notes: data.notes ?? null,
       })
       .returning();
-    return rows[0] as TaskRecord;
+    return toTaskRecord(rows[0] as Record<string, unknown>);
   }
 
-  async updateStatus(id: string, status: TaskStatus) {
+  async updateStatus(id: string, status: TaskStatus): Promise<TaskRecord | null> {
     const now = new Date();
     const extra: Record<string, unknown> = { updatedAt: now };
     if (status === "completed" || status === "failed" || status === "cancelled") {
@@ -122,7 +182,8 @@ export class TaskRepository {
       .set({ status, ...extra })
       .where(eq(tasks.id, id))
       .returning();
-    return rows[0] ?? null;
+    const row = rows[0];
+    return row ? toTaskRecord(row as Record<string, unknown>) : null;
   }
 
   async cancel(id: string) {

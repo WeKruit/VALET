@@ -1,9 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   authenticate,
-  clearAuth,
   createTestUser,
-  mockGoogleOAuth,
   mockAuthMe,
 } from "./helpers/auth";
 
@@ -63,12 +61,20 @@ test.describe("Authentication", () => {
     await authenticate(page.context(), user);
     await mockAuthMe(page, user);
 
+    // Mock the logout endpoint
+    await page.route("**/api/v1/auth/logout", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true }),
+      });
+    });
+
     await page.goto("/dashboard");
 
-    // TODO: Click the actual logout button once the header dropdown is implemented.
-    // For now, simulate logout by clearing cookies and navigating.
-    await clearAuth(page.context());
-    await page.goto("/dashboard");
+    // Open the user menu dropdown and click Sign out
+    await page.getByLabel("User menu").click();
+    await page.getByRole("menuitem", { name: /sign out/i }).click();
 
     // Should redirect to login
     await expect(page).toHaveURL(/\/login/);

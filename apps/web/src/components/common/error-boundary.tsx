@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import * as Sentry from "@sentry/react";
 
 interface Props {
   children: ReactNode;
@@ -7,22 +8,28 @@ interface Props {
 
 interface State {
   hasError: boolean;
-  error: Error | null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  static getDerivedStateFromError(): State {
+    return { hasError: true };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("ErrorBoundary caught:", error, info.componentStack);
+    Sentry.captureException(error, {
+      contexts: { react: { componentStack: info.componentStack ?? undefined } },
+    });
   }
+
+  private handleReturnHome = () => {
+    this.setState({ hasError: false });
+    window.location.href = "/";
+  };
 
   render() {
     if (this.state.hasError) {
@@ -40,19 +47,23 @@ export class ErrorBoundary extends Component<Props, State> {
               Something went wrong
             </h1>
             <p className="text-sm text-[var(--wk-text-secondary)]">
-              An unexpected error occurred. Please try refreshing the page.
+              An unexpected error occurred. Our team has been notified and is
+              looking into it. Please try again.
             </p>
-            {this.state.error && (
-              <pre className="mt-4 max-h-32 overflow-auto rounded-[var(--wk-radius-lg)] bg-[var(--wk-surface-raised)] p-3 text-left text-xs text-[var(--wk-text-tertiary)]">
-                {this.state.error.message}
-              </pre>
-            )}
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 inline-flex items-center justify-center rounded-[var(--wk-radius-lg)] bg-[var(--wk-text-primary)] px-4 py-2 text-sm font-medium text-[var(--wk-surface-page)] hover:opacity-90 transition-opacity"
-            >
-              Refresh page
-            </button>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center justify-center rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-white)] px-4 py-2 text-sm font-medium text-[var(--wk-text-primary)] hover:bg-[var(--wk-surface-raised)] transition-colors"
+              >
+                Refresh page
+              </button>
+              <button
+                onClick={this.handleReturnHome}
+                className="inline-flex items-center justify-center rounded-[var(--wk-radius-lg)] bg-[var(--wk-text-primary)] px-4 py-2 text-sm font-medium text-[var(--wk-surface-page)] hover:opacity-90 transition-opacity"
+              >
+                Return to dashboard
+              </button>
+            </div>
           </div>
         </div>
       );

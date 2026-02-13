@@ -16,6 +16,9 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code (may contain credentials)
+.claude/
 *.swp
 *.swo
 

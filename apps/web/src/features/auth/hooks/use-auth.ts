@@ -1,12 +1,14 @@
+/* global window */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { api, clearAccessToken } from "@/lib/api-client";
+import { api, getAccessToken, clearAccessToken, API_BASE_URL } from "@/lib/api-client";
 
 interface User {
   id: string;
   email: string;
   name: string;
   avatarUrl?: string;
+  subscriptionTier?: "free" | "starter" | "pro" | "enterprise";
   onboardingComplete: boolean;
   copilotAppsCompleted: number;
   autopilotUnlocked: boolean;
@@ -20,6 +22,12 @@ interface AuthStore {
   logout: () => void;
 }
 
+function clearLocalAuthState() {
+  clearAccessToken();
+  localStorage.removeItem("wk-auth");
+  window.location.href = "/login";
+}
+
 export const useAuth = create<AuthStore>()(
   persist(
     (set) => ({
@@ -28,10 +36,24 @@ export const useAuth = create<AuthStore>()(
       setUser: (user) => set({ user }),
       setLoading: (isLoading) => set({ isLoading }),
       logout: () => {
+        const accessToken = getAccessToken();
         set({ user: null });
-        clearAccessToken();
-        localStorage.removeItem("wk-refresh-token");
-        window.location.href = "/login";
+
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (accessToken) {
+          headers["Authorization"] = `Bearer ${accessToken}`;
+        }
+        // Fire-and-forget: call logout API (cookie sent automatically)
+        fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({}),
+          credentials: "include",
+        }).finally(() => {
+          clearLocalAuthState();
+        });
       },
     }),
     { name: "wk-auth" }

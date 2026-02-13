@@ -15,7 +15,7 @@ const SelectTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       "flex h-10 w-full items-center justify-between",
-      "bg-[var(--wk-surface-white)] text-[var(--wk-text-primary)]",
+      "bg-[var(--wk-surface-sunken)] text-[var(--wk-text-primary)]",
       "rounded-[var(--wk-radius-md)]",
       "border border-[var(--wk-border-default)]",
       "px-3 py-2 text-sm",
@@ -23,7 +23,7 @@ const SelectTrigger = React.forwardRef<
       "placeholder:text-[var(--wk-text-tertiary)]",
       "cursor-pointer",
       "hover:border-[var(--wk-border-strong)]",
-      "focus:outline-none focus:ring-2 focus:ring-[var(--wk-border-strong)] focus:ring-offset-2",
+      "focus:outline-none focus:ring-2 focus:ring-[var(--wk-accent-amber)] focus:border-[var(--wk-accent-amber)] focus:ring-offset-2 focus:ring-offset-[var(--wk-surface-page)]",
       "disabled:cursor-not-allowed disabled:opacity-50",
       "transition-colors duration-[var(--wk-duration-fast)] ease-[var(--wk-ease-default)]",
       "[&>span]:line-clamp-1",
