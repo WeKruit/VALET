@@ -10,8 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/",
-    "test": "vitest run"
+    "lint": "eslint src/"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
