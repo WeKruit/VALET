@@ -35,7 +35,10 @@
     "onlyBuiltDependencies": [
       "bcrypt",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "esbuild": ">=0.25.0"
+    }
   },
   "packageManager": "pnpm@10.28.1",
   "engines": {

@@ -57,7 +57,10 @@ jobs:
 
       - name: Security scan
         run: |
-          pnpm audit --audit-level=high || true
+          # Fail on high/critical vulnerabilities
+          pnpm audit --audit-level=high
+          # Log moderate vulnerabilities for awareness (non-blocking)
+          pnpm audit --audit-level=moderate 2>&1 || echo "::warning::Moderate vulnerabilities found — see audit output above"
           # Check no secrets in frontend bundle
           if grep -r "sk-" apps/web/dist/ 2>/dev/null; then
             echo "FATAL: API key found in frontend bundle"
