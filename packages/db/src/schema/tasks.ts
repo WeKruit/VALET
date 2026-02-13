@@ -10,7 +10,7 @@ import {
   timestamp,
   index,
 } from "drizzle-orm/pg-core";
-import { users } from "./users";
+import { users } from "./users.js";
 
 export const taskStatusEnum = pgEnum("task_status", [
   "created",

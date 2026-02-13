@@ -6,7 +6,7 @@ import {
   timestamp,
   index,
 } from "drizzle-orm/pg-core";
-import { tasks } from "./tasks";
+import { tasks } from "./tasks.js";
 
 export const applicationFields = pgTable(
   "application_fields",

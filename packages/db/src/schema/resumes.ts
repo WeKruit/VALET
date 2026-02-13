@@ -11,7 +11,7 @@ import {
   timestamp,
   index,
 } from "drizzle-orm/pg-core";
-import { users } from "./users";
+import { users } from "./users.js";
 
 export const resumeStatusEnum = pgEnum("resume_status", [
   "uploading",
