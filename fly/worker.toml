@@ -15,7 +15,7 @@ kill_timeout = 60
 # Worker has no HTTP service - it connects to Hatchet via gRPC
 # Use a process group instead
 [processes]
-  worker = "node apps/worker/dist/index.js"
+  worker = "node apps/worker/dist/main.js"
 
 # No auto-stop for workers - they need to stay running to poll for tasks
 [[vm]]
