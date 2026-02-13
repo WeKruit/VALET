@@ -25,9 +25,6 @@ COPY apps/api/ ./apps/api/
 # Build only the api and its dependencies
 RUN pnpm turbo build --filter=@valet/api
 
-# Prune dev dependencies
-RUN CI=true pnpm prune --prod
-
 # ---- Runtime Stage ----
 FROM node:20-slim AS runtime
 
