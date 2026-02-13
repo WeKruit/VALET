@@ -4,13 +4,29 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./schemas": "./src/schemas/index.ts",
-    "./constants": "./src/constants/index.ts",
-    "./errors": "./src/errors/index.ts",
-    "./types": "./src/types/index.ts",
-    "./env": "./src/env.ts"
+    "./schemas": {
+      "types": "./src/schemas/index.ts",
+      "default": "./dist/schemas/index.js"
+    },
+    "./constants": {
+      "types": "./src/constants/index.ts",
+      "default": "./dist/constants/index.js"
+    },
+    "./errors": {
+      "types": "./src/errors/index.ts",
+      "default": "./dist/errors/index.js"
+    },
+    "./types": {
+      "types": "./src/types/index.ts",
+      "default": "./dist/types/index.js"
+    },
+    "./env": {
+      "types": "./src/env.ts",
+      "default": "./dist/env.js"
+    }
   },
   "scripts": {
+    "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest run"
