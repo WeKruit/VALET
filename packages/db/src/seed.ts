@@ -1,5 +1,5 @@
-import { createDatabase } from "./client";
-import { users, tasks, resumes, qaBank, consentRecords } from "./schema/index";
+import { createDatabase } from "./client.js";
+import { users, tasks, resumes, qaBank, consentRecords } from "./schema/index.js";
 
 const DATABASE_URL =
   process.env["DATABASE_URL"] ?? "postgres://wekruit:wekruit_dev@localhost:5432/wekruit";

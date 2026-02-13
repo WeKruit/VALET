@@ -1,14 +1,14 @@
 import { relations } from "drizzle-orm";
-import { users } from "./users";
-import { tasks } from "./tasks";
-import { taskEvents } from "./task-events";
-import { resumes } from "./resumes";
-import { qaBank } from "./qa-bank";
-import { consentRecords } from "./consent-records";
-import { browserProfiles } from "./browser-profiles";
-import { applicationResults } from "./application-results";
-import { auditTrail } from "./audit-trail";
-import { applicationFields } from "./application-fields";
+import { users } from "./users.js";
+import { tasks } from "./tasks.js";
+import { taskEvents } from "./task-events.js";
+import { resumes } from "./resumes.js";
+import { qaBank } from "./qa-bank.js";
+import { consentRecords } from "./consent-records.js";
+import { browserProfiles } from "./browser-profiles.js";
+import { applicationResults } from "./application-results.js";
+import { auditTrail } from "./audit-trail.js";
+import { applicationFields } from "./application-fields.js";
 
 export const usersRelations = relations(users, ({ many }) => ({
   tasks: many(tasks),
