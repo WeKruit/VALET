@@ -238,12 +238,12 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 )}
               </div>
             )}
-            <Link to={`/apply?url=${encodeURIComponent(task.jobUrl)}`}>
-              <Button variant="secondary" size="sm" className="mt-2">
+            <Button asChild variant="secondary" size="sm" className="mt-2">
+              <Link to={`/apply?url=${encodeURIComponent(task.jobUrl)}`}>
                 <RefreshCw className="h-3.5 w-3.5" />
                 Retry Application
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       )}

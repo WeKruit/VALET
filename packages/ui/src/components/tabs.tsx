@@ -35,9 +35,12 @@ const TabsTrigger = React.forwardRef<
       "px-3 py-1.5",
       "text-sm font-medium",
       "ring-offset-background",
+      "cursor-pointer",
       "transition-all duration-[var(--wk-duration-fast)] ease-[var(--wk-ease-default)]",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
       "disabled:pointer-events-none disabled:opacity-50",
+      "hover:text-[var(--wk-text-primary)] hover:bg-[var(--wk-surface-white)]/60",
+      "active:scale-[0.97]",
       "data-[state=active]:bg-[var(--wk-surface-white)] data-[state=active]:text-[var(--wk-text-primary)]",
       "data-[state=active]:shadow-[var(--wk-shadow-sm)]",
       className

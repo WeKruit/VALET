@@ -21,7 +21,10 @@ export function ModeSelection({ onSelect }: ModeSelectionProps) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Copilot */}
-        <Card className="cursor-pointer hover:ring-2 hover:ring-[var(--wk-copilot)]">
+        <Card
+          className="cursor-pointer hover:ring-2 hover:ring-[var(--wk-copilot)] transition-shadow"
+          onClick={() => onSelect("copilot")}
+        >
           <CardContent className="p-6 space-y-4 text-center">
             <div className="flex justify-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-[var(--wk-copilot)]">
@@ -42,7 +45,7 @@ export function ModeSelection({ onSelect }: ModeSelectionProps) {
             <Button
               variant="secondary"
               className="w-full"
-              onClick={() => onSelect("copilot")}
+              onClick={(e) => { e.stopPropagation(); onSelect("copilot"); }}
             >
               Keep Using Copilot
             </Button>
@@ -50,7 +53,10 @@ export function ModeSelection({ onSelect }: ModeSelectionProps) {
         </Card>
 
         {/* Autopilot */}
-        <Card className="cursor-pointer hover:ring-2 hover:ring-[var(--wk-autopilot)]">
+        <Card
+          className="cursor-pointer hover:ring-2 hover:ring-[var(--wk-autopilot)] transition-shadow"
+          onClick={() => onSelect("autopilot")}
+        >
           <CardContent className="p-6 space-y-4 text-center">
             <div className="flex justify-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-50 text-[var(--wk-autopilot)]">
@@ -71,7 +77,7 @@ export function ModeSelection({ onSelect }: ModeSelectionProps) {
             <Button
               variant="primary"
               className="w-full bg-[var(--wk-autopilot)] hover:opacity-90"
-              onClick={() => onSelect("autopilot")}
+              onClick={(e) => { e.stopPropagation(); onSelect("autopilot"); }}
             >
               Try Autopilot
             </Button>

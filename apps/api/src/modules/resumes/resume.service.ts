@@ -113,6 +113,31 @@ export class ResumeService {
     await this.resumeRepo.delete(id);
   }
 
+  async retryParse(id: string, userId: string) {
+    const resume = await this.getById(id, userId);
+
+    if (resume.status === "parsed") {
+      throw AppError.conflict("Resume is already parsed");
+    }
+
+    // Reset status to parsing
+    await this.resumeRepo.update(id, {
+      status: "parsing",
+      parsedData: null,
+      parsingConfidence: null,
+      rawText: null,
+      parsedAt: null,
+    });
+
+    await this.hatchet.admin.runWorkflow("resume-parse", {
+      resumeId: id,
+      storageKey: resume.fileKey,
+      userId,
+    });
+
+    return { id, status: "parsing" as const };
+  }
+
   async setDefault(id: string, userId: string) {
     await this.getById(id, userId);
     await this.resumeRepo.setDefault(id, userId);

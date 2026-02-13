@@ -17,8 +17,9 @@ const Input = React.forwardRef<
         "ring-offset-background",
         "file:border-0 file:bg-transparent file:text-sm file:font-medium",
         "placeholder:text-[var(--wk-text-tertiary)]",
+        "hover:border-[var(--wk-border-strong)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2",
-        "disabled:cursor-not-allowed disabled:opacity-50",
+        "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--wk-border-default)]",
         "transition-colors duration-[var(--wk-duration-fast)] ease-[var(--wk-ease-default)]",
         className
       )}

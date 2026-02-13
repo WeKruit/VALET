@@ -24,12 +24,12 @@ export function TasksPage() {
             Track and manage all your job applications
           </p>
         </div>
-        <Link to="/apply">
-          <Button variant="primary">
+        <Button asChild variant="primary">
+          <Link to="/apply">
             <Plus className="mr-1 h-4 w-4" />
             New Application
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </div>
 
       {isLoading ? (

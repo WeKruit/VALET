@@ -74,6 +74,8 @@ export function Sidebar() {
           <NavLink
             key={item.path}
             to={item.path}
+            title={!sidebarOpen ? item.label : undefined}
+            aria-label={item.label}
             className={({ isActive }) =>
               cn(
                 "group relative flex items-center gap-3 px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium",
@@ -107,8 +109,10 @@ export function Sidebar() {
       <div className="px-2 py-4 border-t border-[var(--wk-border-subtle)] space-y-1">
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          title={theme === "dark" ? "Light mode" : "Dark mode"}
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           className={cn(
-            "flex items-center gap-3 w-full px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium",
+            "flex items-center gap-3 w-full px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium cursor-pointer",
             "text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)]",
             "transition-all duration-200 ease-[var(--wk-ease-default)]",
             !sidebarOpen && "justify-center"
@@ -126,8 +130,10 @@ export function Sidebar() {
 
         <button
           onClick={toggleSidebar}
+          title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           className={cn(
-            "flex items-center gap-3 w-full px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium",
+            "flex items-center gap-3 w-full px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium cursor-pointer",
             "text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)]",
             "transition-all duration-200 ease-[var(--wk-ease-default)]",
             !sidebarOpen && "justify-center"

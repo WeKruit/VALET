@@ -1,6 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Halant:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "@valet/ui/globals.css";
+
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+@config "../../tailwind.config.ts";
 
 body {
   font-family: var(--wk-font-body);

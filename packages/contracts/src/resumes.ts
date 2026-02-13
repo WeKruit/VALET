@@ -45,7 +45,6 @@ export const resumeContract = c.router({
     method: "DELETE",
     path: "/api/v1/resumes/:id",
     pathParams: z.object({ id: z.string().uuid() }),
-    body: z.object({}),
     responses: {
       204: z.void(),
       404: errorResponse,
@@ -63,6 +62,18 @@ export const resumeContract = c.router({
     },
     summary: "Set a resume as the default",
   },
+  retryParse: {
+    method: "POST",
+    path: "/api/v1/resumes/:id/retry",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      202: resumeUploadResponse,
+      404: errorResponse,
+      409: errorResponse,
+    },
+    summary: "Retry parsing a failed or stuck resume",
+  },
 });
 
 /** CRUD-only contract (excludes upload) for ts-rest server router.
@@ -74,4 +85,5 @@ export const resumeCrudContract = c.router({
   getById: resumeContract.getById,
   delete: resumeContract.delete,
   setDefault: resumeContract.setDefault,
+  retryParse: resumeContract.retryParse,
 });

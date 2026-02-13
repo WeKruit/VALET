@@ -82,11 +82,9 @@ export function RecentApplications() {
               Your completed applications will appear here with status and
               timestamps.
             </p>
-            <Link to="/apply" className="mt-4">
-              <Button variant="primary" size="sm">
-                Start your first application
-              </Button>
-            </Link>
+            <Button asChild variant="primary" size="sm" className="mt-4">
+              <Link to="/apply">Start your first application</Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-2">

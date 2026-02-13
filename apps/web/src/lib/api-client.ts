@@ -83,7 +83,7 @@ export const api = initTsrReactQuery(apiContract, {
       !(body instanceof FormData)
     ) {
       const formData = new FormData();
-      for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+      for (const [key, value] of Object.entries(body as unknown as Record<string, unknown>)) {
         if (value !== undefined && value !== null) {
           formData.append(key, value as Blob | string);
         }

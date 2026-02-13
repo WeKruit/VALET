@@ -1,8 +1,26 @@
 import { initServer } from "@ts-rest/fastify";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { resumeCrudContract } from "@valet/contracts";
+import type { ResumeResponse } from "@valet/shared/schemas";
 
 const s = initServer();
+
+/** Map Drizzle row (jsonb parsedData is `unknown`) to contract shape. */
+function toResumeResponse(row: Record<string, unknown>): ResumeResponse {
+  return {
+    id: row.id as string,
+    userId: row.userId as string,
+    filename: row.filename as string,
+    mimeType: row.mimeType as string,
+    fileSizeBytes: row.fileSizeBytes as number,
+    isDefault: row.isDefault as boolean,
+    status: row.status as ResumeResponse["status"],
+    parsedData: (row.parsedData as ResumeResponse["parsedData"]) ?? null,
+    parsingConfidence: row.parsingConfidence as number | null,
+    createdAt: row.createdAt as Date,
+    parsedAt: row.parsedAt as Date | null,
+  };
+}
 
 /**
  * ts-rest router for resume CRUD operations (list, getById, delete, setDefault).
@@ -13,13 +31,13 @@ export const resumeRouter = s.router(resumeCrudContract, {
   list: async ({ request }) => {
     const { resumeService } = request.diScope.cradle;
     const resumes = await resumeService.listByUser(request.userId);
-    return { status: 200 as const, body: { data: resumes } };
+    return { status: 200 as const, body: { data: resumes.map((r) => toResumeResponse(r as unknown as Record<string, unknown>)) } };
   },
 
   getById: async ({ params, request }) => {
     const { resumeService } = request.diScope.cradle;
     const resume = await resumeService.getById(params.id, request.userId);
-    return { status: 200 as const, body: resume };
+    return { status: 200 as const, body: toResumeResponse(resume as unknown as Record<string, unknown>) };
   },
 
   delete: async ({ params, request }) => {
@@ -32,7 +50,13 @@ export const resumeRouter = s.router(resumeCrudContract, {
     const { resumeService } = request.diScope.cradle;
     await resumeService.setDefault(params.id, request.userId);
     const resume = await resumeService.getById(params.id, request.userId);
-    return { status: 200 as const, body: resume };
+    return { status: 200 as const, body: toResumeResponse(resume as unknown as Record<string, unknown>) };
+  },
+
+  retryParse: async ({ params, request }) => {
+    const { resumeService } = request.diScope.cradle;
+    const result = await resumeService.retryParse(params.id, request.userId);
+    return { status: 202 as const, body: result };
   },
 });
 

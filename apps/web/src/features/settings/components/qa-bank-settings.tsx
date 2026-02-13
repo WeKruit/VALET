@@ -214,6 +214,7 @@ export function QaBankSettings() {
     }
   }
 
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const isSaving = createEntry.isPending || updateEntry.isPending;
 
   if (isLoading) {
@@ -306,13 +307,7 @@ export function QaBankSettings() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={deleteEntry.isPending}
-                            onClick={() =>
-                              deleteEntry.mutate({
-                                params: { id: entry.id },
-                                body: {},
-                              })
-                            }
+                            onClick={() => setDeleteConfirmId(entry.id)}
                             title="Delete answer"
                           >
                             <Trash2 className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
@@ -381,7 +376,7 @@ export function QaBankSettings() {
             <div>
               <label className="text-sm font-medium">Answer</label>
               <textarea
-                className="mt-1 flex min-h-[100px] w-full rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-white)] px-3 py-2 text-sm text-[var(--wk-text-primary)] placeholder:text-[var(--wk-text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2"
+                className="mt-1 flex min-h-[100px] w-full rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)] bg-[var(--wk-surface-white)] px-3 py-2 text-sm text-[var(--wk-text-primary)] placeholder:text-[var(--wk-text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2 transition-colors"
                 placeholder="Your answer..."
                 value={form.answer}
                 onChange={(e) =>
@@ -420,6 +415,37 @@ export function QaBankSettings() {
               onClick={handleSubmit}
             >
               {isSaving ? "Saving..." : editingEntry ? "Update" : "Add Answer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Answer</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this saved answer? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDeleteConfirmId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteEntry.isPending}
+              onClick={() => {
+                if (deleteConfirmId) {
+                  deleteEntry.mutate(
+                    { params: { id: deleteConfirmId }, body: {} },
+                    { onSuccess: () => setDeleteConfirmId(null) }
+                  );
+                }
+              }}
+            >
+              {deleteEntry.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

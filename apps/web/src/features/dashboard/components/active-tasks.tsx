@@ -60,11 +60,9 @@ export function ActiveTasks() {
             <p className="mt-1 max-w-xs text-sm text-[var(--wk-text-secondary)]">
               Start your first application to see live progress here.
             </p>
-            <Link to="/apply" className="mt-4">
-              <Button variant="primary" size="sm">
-                Start your first application
-              </Button>
-            </Link>
+            <Button asChild variant="primary" size="sm" className="mt-4">
+              <Link to="/apply">Start your first application</Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">

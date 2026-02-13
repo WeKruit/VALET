@@ -21,8 +21,11 @@ const SelectTrigger = React.forwardRef<
       "px-3 py-2 text-sm",
       "ring-offset-background",
       "placeholder:text-[var(--wk-text-tertiary)]",
+      "cursor-pointer",
+      "hover:border-[var(--wk-border-strong)]",
       "focus:outline-none focus:ring-2 focus:ring-[var(--wk-border-strong)] focus:ring-offset-2",
       "disabled:cursor-not-allowed disabled:opacity-50",
+      "transition-colors duration-[var(--wk-duration-fast)] ease-[var(--wk-ease-default)]",
       "[&>span]:line-clamp-1",
       className
     )}
@@ -124,9 +127,11 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center",
+      "relative flex w-full cursor-pointer select-none items-center",
       "rounded-[var(--wk-radius-md)]",
       "py-1.5 pl-8 pr-2 text-sm outline-none",
+      "transition-colors duration-[var(--wk-duration-fast)]",
+      "hover:bg-[var(--wk-surface-raised)]",
       "focus:bg-[var(--wk-surface-raised)] focus:text-[var(--wk-text-primary)]",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
 import { Button } from "@valet/ui/components/button";
@@ -19,6 +19,8 @@ import {
   Briefcase,
   GraduationCap,
   Link as LinkIcon,
+  FileText,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -79,6 +81,27 @@ export function ProfileSettings() {
       toast.error("Failed to save profile. Please try again.");
     },
   });
+
+  // Fetch parsed resumes for skill import
+  const { data: resumesData } = api.resumes.list.useQuery({
+    queryKey: ["resumes"],
+    queryData: {},
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const resumeSkills = useMemo(() => {
+    const resumes = resumesData?.status === 200 ? resumesData.body.data : [];
+    const allSkills = new Set<string>();
+    for (const r of resumes) {
+      if (r.status === "parsed" && r.parsedData?.skills) {
+        for (const s of r.parsedData.skills) allSkills.add(s);
+      }
+    }
+    return Array.from(allSkills);
+  }, [resumesData]);
+
+  const [showImportPicker, setShowImportPicker] = useState(false);
+  const [selectedImportSkills, setSelectedImportSkills] = useState<Set<string>>(new Set());
 
   const profile = data?.status === 200 ? data.body : null;
 
@@ -358,6 +381,21 @@ export function ProfileSettings() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>Skills</CardTitle>
+          {resumeSkills.length > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                // Pre-select skills not already in profile
+                const toImport = new Set(resumeSkills.filter((s) => !skills.includes(s)));
+                setSelectedImportSkills(toImport);
+                setShowImportPicker(true);
+              }}
+            >
+              <FileText className="mr-1 h-4 w-4" />
+              Import from Resume
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -373,6 +411,67 @@ export function ProfileSettings() {
             </Button>
           </div>
 
+          {/* Import picker inline */}
+          {showImportPicker && (
+            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-sunken)]/30 p-3 space-y-2">
+              <p className="text-xs font-medium text-[var(--wk-text-secondary)]">
+                Select skills from your parsed resume to import:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {resumeSkills.map((skill) => {
+                  const alreadyAdded = skills.includes(skill);
+                  const isSelected = selectedImportSkills.has(skill);
+                  return (
+                    <button
+                      key={skill}
+                      disabled={alreadyAdded}
+                      onClick={() => {
+                        setSelectedImportSkills((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(skill)) next.delete(skill);
+                          else next.add(skill);
+                          return next;
+                        });
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-[var(--wk-radius-full)] px-2.5 py-1 text-xs font-medium transition-colors ${
+                        alreadyAdded
+                          ? "bg-[var(--wk-surface-sunken)] text-[var(--wk-text-tertiary)] cursor-not-allowed"
+                          : isSelected
+                            ? "bg-[var(--wk-text-primary)] text-[var(--wk-surface-page)]"
+                            : "bg-[var(--wk-surface-white)] text-[var(--wk-text-secondary)] border border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)]"
+                      }`}
+                    >
+                      {isSelected && <Check className="h-3 w-3" />}
+                      {skill}
+                      {alreadyAdded && <span className="text-[10px]">(added)</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowImportPicker(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={selectedImportSkills.size === 0}
+                  onClick={() => {
+                    setSkills((prev) => [...prev, ...Array.from(selectedImportSkills)]);
+                    setShowImportPicker(false);
+                    toast.success(`${selectedImportSkills.size} skill${selectedImportSkills.size === 1 ? "" : "s"} imported. Click Save to persist.`);
+                  }}
+                >
+                  Import {selectedImportSkills.size > 0 ? `(${selectedImportSkills.size})` : ""}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {skills.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {skills.map((skill) => (
@@ -380,7 +479,7 @@ export function ProfileSettings() {
                   {skill}
                   <button
                     onClick={() => removeSkill(skill)}
-                    className="ml-1 rounded-full p-0.5 hover:bg-[var(--wk-surface-sunken)]"
+                    className="ml-1 cursor-pointer rounded-full p-0.5 transition-colors hover:bg-[var(--wk-surface-sunken)]"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -459,6 +558,8 @@ export function ProfileSettings() {
                       variant="ghost"
                       size="sm"
                       onClick={() => openEditWork(i)}
+                      title="Edit work experience"
+                      aria-label={`Edit ${entry.title} at ${entry.company}`}
                     >
                       <Pencil className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
                     </Button>
@@ -466,12 +567,25 @@ export function ProfileSettings() {
                       variant="ghost"
                       size="sm"
                       onClick={() => deleteWork(i)}
+                      title="Remove work experience"
+                      aria-label={`Remove ${entry.title} at ${entry.company}`}
                     >
                       <Trash2 className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
                     </Button>
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {workHistory.length > 0 && (
+            <div className="flex justify-end pt-4">
+              <Button
+                variant="primary"
+                disabled={updateProfile.isPending}
+                onClick={() => updateProfile.mutate({ body: { workHistory: workHistory as unknown[] } })}
+              >
+                {updateProfile.isPending ? "Saving..." : "Save Work History"}
+              </Button>
             </div>
           )}
         </CardContent>
@@ -529,6 +643,8 @@ export function ProfileSettings() {
                       variant="ghost"
                       size="sm"
                       onClick={() => openEditEdu(i)}
+                      title="Edit education"
+                      aria-label={`Edit ${entry.degree} at ${entry.school}`}
                     >
                       <Pencil className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
                     </Button>
@@ -536,12 +652,25 @@ export function ProfileSettings() {
                       variant="ghost"
                       size="sm"
                       onClick={() => deleteEdu(i)}
+                      title="Remove education"
+                      aria-label={`Remove ${entry.degree} at ${entry.school}`}
                     >
                       <Trash2 className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
                     </Button>
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {education.length > 0 && (
+            <div className="flex justify-end pt-4">
+              <Button
+                variant="primary"
+                disabled={updateProfile.isPending}
+                onClick={() => updateProfile.mutate({ body: { education: education as unknown[] } })}
+              >
+                {updateProfile.isPending ? "Saving..." : "Save Education"}
+              </Button>
             </div>
           )}
         </CardContent>
@@ -611,7 +740,7 @@ export function ProfileSettings() {
             <div>
               <label className="text-sm font-medium">Description</label>
               <textarea
-                className="mt-1 flex min-h-[80px] w-full rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-white)] px-3 py-2 text-sm text-[var(--wk-text-primary)] placeholder:text-[var(--wk-text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2"
+                className="mt-1 flex min-h-[80px] w-full rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)] bg-[var(--wk-surface-white)] px-3 py-2 text-sm text-[var(--wk-text-primary)] placeholder:text-[var(--wk-text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2 transition-colors"
                 placeholder="Describe your responsibilities and achievements..."
                 value={workForm.description}
                 onChange={(e) =>

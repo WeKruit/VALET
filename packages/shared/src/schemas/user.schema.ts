@@ -26,6 +26,8 @@ export const updateUserProfileRequest = z.object({
   githubUrl: z.string().url().optional(),
   portfolioUrl: z.string().url().optional(),
   skills: z.array(z.string()).optional(),
+  workHistory: z.array(z.unknown()).optional(),
+  education: z.array(z.unknown()).optional(),
 });
 
 export const updatePreferencesRequest = userPreferences.partial();

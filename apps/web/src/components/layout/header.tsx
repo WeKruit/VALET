@@ -33,17 +33,23 @@ export function Header() {
 
   const pageTitle = getPageTitle(location.pathname);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside or pressing Escape
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
     if (menuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
-      return () =>
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
         document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleKeyDown);
+      };
     }
   }, [menuOpen]);
 
@@ -56,7 +62,11 @@ export function Header() {
 
       <div className="flex items-center gap-2">
         {/* Notifications */}
-        <button className="relative flex items-center justify-center h-9 w-9 rounded-[var(--wk-radius-lg)] text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] transition-colors duration-150">
+        <button
+          title="Notifications"
+          aria-label="Notifications"
+          className="relative flex items-center justify-center h-9 w-9 rounded-[var(--wk-radius-lg)] text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] transition-colors duration-150 cursor-pointer"
+        >
           <Bell className="h-5 w-5" />
         </button>
 
@@ -64,8 +74,11 @@ export function Header() {
         <div ref={menuRef} className="relative">
           <button
             onClick={() => setMenuOpen((prev) => !prev)}
+            aria-label="User menu"
+            aria-expanded={menuOpen}
+            aria-haspopup="true"
             className={cn(
-              "flex items-center gap-2 h-9 pl-1 pr-2 rounded-[var(--wk-radius-lg)]",
+              "flex items-center gap-2 h-9 pl-1 pr-2 rounded-[var(--wk-radius-lg)] cursor-pointer",
               "hover:bg-[var(--wk-surface-raised)] transition-colors duration-150",
               menuOpen && "bg-[var(--wk-surface-raised)]"
             )}
@@ -92,6 +105,7 @@ export function Header() {
           {/* Dropdown */}
           {menuOpen && (
             <div
+              role="menu"
               className={cn(
                 "absolute right-0 top-full mt-1 w-48 py-1",
                 "bg-[var(--wk-surface-white)] text-[var(--wk-text-primary)]",
@@ -111,32 +125,35 @@ export function Header() {
                 </div>
               )}
               <button
+                role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
                   navigate("/settings");
                 }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)] transition-colors duration-100"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm cursor-pointer text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)] transition-colors duration-100"
               >
                 <User className="h-4 w-4" />
                 Profile
               </button>
               <button
+                role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
                   navigate("/settings");
                 }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)] transition-colors duration-100"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm cursor-pointer text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)] transition-colors duration-100"
               >
                 <Settings className="h-4 w-4" />
                 Settings
               </button>
               <div className="my-1 h-px bg-[var(--wk-border-subtle)]" />
               <button
+                role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
                   logout();
                 }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--wk-status-error)] hover:bg-[var(--wk-surface-raised)] transition-colors duration-100"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm cursor-pointer text-[var(--wk-status-error)] hover:bg-[var(--wk-surface-raised)] transition-colors duration-100"
               >
                 <LogOut className="h-4 w-4" />
                 Sign out

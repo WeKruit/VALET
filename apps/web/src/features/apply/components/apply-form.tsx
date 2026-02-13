@@ -103,15 +103,21 @@ export function ApplyForm() {
       queryKey: ["resumes"],
       queryData: {},
       staleTime: 1000 * 60 * 5,
+      refetchInterval: (query) => {
+        const resumes = query.state.data?.status === 200 ? query.state.data.body.data : [];
+        return resumes.some((r) => r.status === "parsing" || r.status === "uploading") ? 3000 : false;
+      },
     });
 
   const resumes = resumesData?.status === 200 ? resumesData.body.data : [];
+  const readyResumes = resumes.filter((r) => r.status === "parsed");
   const defaultResume =
-    resumes.find((r) => r.isDefault) ?? resumes[0] ?? null;
+    readyResumes.find((r) => r.isDefault) ?? readyResumes[0] ?? null;
 
-  // Auto-select default resume when loaded
+  // Auto-select default resume when loaded (only from parsed resumes)
   const activeResumeId = selectedResumeId || defaultResume?.id || "";
-  const activeResume = resumes.find((r) => r.id === activeResumeId) ?? null;
+  const activeResume = readyResumes.find((r) => r.id === activeResumeId) ?? null;
+  const hasStuckResumes = resumes.some((r) => r.status === "parsing" || r.status === "parse_failed");
 
   const createTask = api.tasks.create.useMutation({
     onSuccess: (data) => {
@@ -263,49 +269,64 @@ export function ApplyForm() {
                 </p>
               </div>
             </div>
+          ) : readyResumes.length === 0 ? (
+            <div className="flex items-start gap-3 p-4 rounded-[var(--wk-radius-lg)] bg-amber-50 border border-amber-200">
+              <AlertTriangle className="h-5 w-5 text-[var(--wk-status-warning)] shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-[var(--wk-text-primary)]">
+                  No resumes ready
+                </p>
+                <p className="text-sm text-[var(--wk-text-secondary)]">
+                  {resumes.length} resume{resumes.length > 1 ? "s" : ""} uploaded
+                  but {resumes.some((r) => r.status === "parsing") ? "still processing" : "failed to parse"}.
+                  Go to{" "}
+                  <Link
+                    to="/settings"
+                    className="text-[var(--wk-copilot)] hover:underline font-medium"
+                  >
+                    Settings
+                  </Link>{" "}
+                  to retry or delete, then re-upload.
+                </p>
+              </div>
+            </div>
           ) : (
-            <Select
-              value={activeResumeId}
-              onValueChange={setSelectedResumeId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a resume" />
-              </SelectTrigger>
-              <SelectContent>
-                {resumes.map((resume) => (
-                  <SelectItem key={resume.id} value={resume.id}>
-                    <div className="flex items-center gap-2">
-                      <span>{resume.filename}</span>
-                      {resume.isDefault && (
-                        <Badge variant="info" className="text-[10px] px-1.5 py-0">
-                          Default
+            <>
+              <Select
+                value={activeResumeId}
+                onValueChange={setSelectedResumeId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a resume" />
+                </SelectTrigger>
+                <SelectContent>
+                  {readyResumes.map((resume) => (
+                    <SelectItem key={resume.id} value={resume.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{resume.filename}</span>
+                        {resume.isDefault && (
+                          <Badge variant="info" className="text-[10px] px-1.5 py-0">
+                            Default
+                          </Badge>
+                        )}
+                        <Badge variant="success" className="text-[10px] px-1.5 py-0">
+                          Ready
                         </Badge>
-                      )}
-                      <Badge
-                        variant={
-                          resume.status === "parsed"
-                            ? "success"
-                            : resume.status === "parsing"
-                              ? "warning"
-                              : resume.status === "parse_failed"
-                                ? "error"
-                                : "secondary"
-                        }
-                        className="text-[10px] px-1.5 py-0"
-                      >
-                        {resume.status === "parsed"
-                          ? "Ready"
-                          : resume.status === "parsing"
-                            ? "Processing"
-                            : resume.status === "parse_failed"
-                              ? "Failed"
-                              : "Uploading"}
-                      </Badge>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {hasStuckResumes && (
+                <p className="text-xs text-[var(--wk-text-tertiary)] mt-1">
+                  {resumes.length - readyResumes.length} resume{resumes.length - readyResumes.length > 1 ? "s" : ""} still
+                  processing or failed.{" "}
+                  <Link to="/settings" className="text-[var(--wk-copilot)] hover:underline">
+                    Manage in Settings
+                  </Link>
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -333,6 +354,7 @@ export function ApplyForm() {
               "bg-[var(--wk-surface-white)] text-[var(--wk-text-primary)]",
               "rounded-[var(--wk-radius-md)]",
               "border border-[var(--wk-border-default)]",
+              "hover:border-[var(--wk-border-strong)]",
               "px-3 py-2 text-sm",
               "placeholder:text-[var(--wk-text-tertiary)]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2",
@@ -399,7 +421,7 @@ export function ApplyForm() {
               onClick={() =>
                 setUrl("https://www.linkedin.com/jobs/view/12345")
               }
-              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
+              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-blue-50 border border-blue-200">
                 <Briefcase className="h-3 w-3 text-blue-700" />
@@ -412,7 +434,7 @@ export function ApplyForm() {
               onClick={() =>
                 setUrl("https://boards.greenhouse.io/company/jobs/12345")
               }
-              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
+              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-emerald-50 border border-emerald-200">
                 <Briefcase className="h-3 w-3 text-emerald-700" />
@@ -425,7 +447,7 @@ export function ApplyForm() {
               onClick={() =>
                 setUrl("https://jobs.lever.co/company/12345")
               }
-              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
+              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-purple-50 border border-purple-200">
                 <Briefcase className="h-3 w-3 text-purple-700" />
@@ -438,7 +460,7 @@ export function ApplyForm() {
                   "https://myworkday.com/example/d/job-posting/12345"
                 )
               }
-              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
+              className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-orange-50 border border-orange-200">
                 <Briefcase className="h-3 w-3 text-orange-700" />

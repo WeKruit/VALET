@@ -47,35 +47,70 @@ function createLLMRouter() {
 
 const RESUME_PARSE_PROMPT = `You are a resume parser. Extract structured data from the following resume text.
 
-Return a JSON object with exactly these fields:
+Return a JSON object with exactly these fields (use null for missing fields, [] for empty arrays):
 {
   "fullName": "string",
   "email": "string or null",
   "phone": "string or null",
-  "location": "string or null",
+  "location": "city, state or full address string, or null",
   "summary": "brief professional summary string or null",
   "workHistory": [
     {
       "company": "string",
       "title": "string",
+      "location": "city, state or null",
       "startDate": "YYYY-MM or null",
       "endDate": "YYYY-MM or null (null if current)",
-      "description": "string",
-      "achievements": ["string"]
+      "description": "one-line role summary",
+      "bullets": ["individual responsibility/achievement as a single sentence each"],
+      "achievements": ["notable quantified achievements"]
     }
   ],
   "education": [
     {
       "school": "string",
-      "degree": "string",
+      "degree": "e.g. B.S., M.S., Ph.D.",
+      "fieldOfStudy": "e.g. Computer Science, or null",
       "startDate": "YYYY-MM or null",
       "endDate": "YYYY-MM or null",
-      "gpa": "string or null"
+      "expectedGraduation": "YYYY-MM if not yet graduated, else null",
+      "gpa": "string or null",
+      "honors": "e.g. cum laude, Dean's List, or null"
     }
   ],
-  "skills": ["string"],
+  "projects": [
+    {
+      "name": "string",
+      "description": "brief description",
+      "technologies": ["tech used"],
+      "url": "project URL or null",
+      "startDate": "YYYY-MM or null",
+      "endDate": "YYYY-MM or null"
+    }
+  ],
+  "skills": ["string - individual skill, not categories"],
   "certifications": ["string"],
-  "languages": ["string"],
+  "languages": ["string - spoken/written languages"],
+  "interests": ["string - hobbies, interests, extracurriculars"],
+  "awards": [
+    {
+      "title": "string",
+      "issuer": "organization or null",
+      "date": "YYYY-MM or YYYY or null"
+    }
+  ],
+  "volunteerWork": [
+    {
+      "organization": "string",
+      "role": "string or null",
+      "description": "string or null",
+      "startDate": "YYYY-MM or null",
+      "endDate": "YYYY-MM or null"
+    }
+  ],
+  "websites": ["LinkedIn URL, GitHub URL, portfolio URL, etc."],
+  "totalYearsExperience": number or null,
+  "workAuthorization": "e.g. US Citizen, H1B, OPT, Permanent Resident, or null if not mentioned",
   "inferredAnswers": [
     {
       "question": "common job application question",
@@ -87,13 +122,24 @@ Return a JSON object with exactly these fields:
   "parseConfidence": 0.0-1.0
 }
 
+IMPORTANT parsing rules:
+- For workHistory.bullets: split each job description into individual sentences/bullet points. Each bullet should be one responsibility or achievement.
+- For skills: extract individual skills, NOT categories. "Python, Java, C++" → ["Python", "Java", "C++"], NOT ["Programming Languages"].
+- For totalYearsExperience: calculate from work history date ranges. If unclear, estimate from earliest start date to latest end date.
+- For education.expectedGraduation: set this if the degree is not yet completed (e.g. "Expected May 2025").
+- For interests: include hobbies, extracurricular activities, and any personal interests mentioned.
+- For websites: extract any URLs (LinkedIn, GitHub, portfolio, personal site).
+
 For inferredAnswers, generate answers to common job application questions like:
-- Years of experience
-- Highest education level
+- Years of experience in the field
+- Highest education level completed
 - Current/most recent job title
 - Are you authorized to work in [country based on location]?
 - Willing to relocate?
 - Expected salary range (if inferable)
+- Available start date
+- Willing to work remotely/hybrid/in-office?
+- Do you require visa sponsorship?
 
 Resume text:
 `;

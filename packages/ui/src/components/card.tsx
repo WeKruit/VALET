@@ -12,8 +12,6 @@ const Card = React.forwardRef<
       "rounded-[var(--wk-radius-2xl)]",
       "border border-[var(--wk-border-subtle)]",
       "shadow-[var(--wk-shadow-sm)]",
-      "transition-shadow duration-[var(--wk-duration-base)] ease-[var(--wk-ease-default)]",
-      "hover:shadow-[var(--wk-shadow-md)]",
       className
     )}
     {...props}

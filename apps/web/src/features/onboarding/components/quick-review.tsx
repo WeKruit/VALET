@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
 import { Button } from "@valet/ui/components/button";
@@ -14,10 +15,14 @@ interface ParsedProfile {
 
 interface QuickReviewProps {
   profile: ParsedProfile;
-  onConfirm: () => void;
+  onConfirm: (updates: { phone: string; location: string }) => void;
+  isSaving?: boolean;
 }
 
-export function QuickReview({ profile, onConfirm }: QuickReviewProps) {
+export function QuickReview({ profile, onConfirm, isSaving }: QuickReviewProps) {
+  const [phone, setPhone] = useState(profile.phone);
+  const [location, setLocation] = useState(profile.location);
+
   return (
     <div className="max-w-lg mx-auto space-y-6">
       <div className="text-center space-y-2">
@@ -25,7 +30,8 @@ export function QuickReview({ profile, onConfirm }: QuickReviewProps) {
           Does this look right?
         </h2>
         <p className="text-sm text-[var(--wk-text-secondary)]">
-          We'll use this to fill your applications.
+          We'll use this to fill your applications. You can edit phone and
+          location if needed.
         </p>
       </div>
 
@@ -47,11 +53,21 @@ export function QuickReview({ profile, onConfirm }: QuickReviewProps) {
               </div>
               <div>
                 <label className="text-sm font-medium">Phone</label>
-                <Input value={profile.phone} readOnly className="mt-1 bg-[var(--wk-surface-sunken)]" />
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. +1 (555) 123-4567"
+                  className="mt-1"
+                />
               </div>
               <div>
                 <label className="text-sm font-medium">Location</label>
-                <Input value={profile.location} readOnly className="mt-1 bg-[var(--wk-surface-sunken)]" />
+                <Input
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="e.g. San Francisco, CA"
+                  className="mt-1"
+                />
               </div>
             </div>
           </div>
@@ -99,9 +115,10 @@ export function QuickReview({ profile, onConfirm }: QuickReviewProps) {
         variant="cta"
         size="lg"
         className="w-full"
-        onClick={onConfirm}
+        disabled={isSaving}
+        onClick={() => onConfirm({ phone, location })}
       >
-        Looks Good -- Let's Go
+        {isSaving ? "Saving..." : "Looks Good — Let's Go"}
       </Button>
     </div>
   );

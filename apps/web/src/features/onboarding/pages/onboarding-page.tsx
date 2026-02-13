@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { CheckCircle, Upload, FileSearch, Rocket } from "lucide-react";
 import { ResumeUpload } from "../components/resume-upload";
 import { QuickReview } from "../components/quick-review";
@@ -7,6 +6,7 @@ import { DisclaimerStep } from "../components/disclaimer-step";
 import { api } from "@/lib/api-client";
 import { useConsent } from "@/features/consent/hooks/use-consent";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
+import { toast } from "sonner";
 
 type OnboardingStep = "upload" | "review" | "disclaimer";
 
@@ -18,8 +18,13 @@ const STEPS = [
 
 export function OnboardingPage() {
   const [step, setStep] = useState<OnboardingStep>("upload");
-  const navigate = useNavigate();
   const { markCopilotAccepted } = useConsent();
+
+  const updateProfile = api.users.updateProfile.useMutation({
+    onError: () => {
+      toast.error("Failed to save profile. Please try again.");
+    },
+  });
 
   const {
     data: profileData,
@@ -129,7 +134,22 @@ export function OnboardingPage() {
         {step === "review" && !profileLoading && (
           <QuickReview
             profile={profile}
-            onConfirm={() => setStep("disclaimer")}
+            isSaving={updateProfile.isPending}
+            onConfirm={(updates) => {
+              if (updates.phone || updates.location) {
+                updateProfile.mutate(
+                  {
+                    body: {
+                      ...(updates.phone && { phone: updates.phone }),
+                      ...(updates.location && { location: updates.location }),
+                    },
+                  },
+                  { onSuccess: () => setStep("disclaimer") }
+                );
+              } else {
+                setStep("disclaimer");
+              }
+            }}
           />
         )}
 
@@ -137,7 +157,9 @@ export function OnboardingPage() {
           <DisclaimerStep
             onAccepted={() => {
               markCopilotAccepted();
-              navigate("/dashboard");
+              // Hard redirect to ensure AuthGuard reinitializes with
+              // the updated consent cache from localStorage
+              window.location.replace("/dashboard");
             }}
           />
         )}

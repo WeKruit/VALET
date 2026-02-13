@@ -11,11 +11,11 @@ export function TaskDetailPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Link to="/tasks">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link to="/tasks">
               <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <h1 className="font-display text-2xl font-semibold tracking-tight">
             Task Not Found
           </h1>
@@ -31,9 +31,9 @@ export function TaskDetailPage() {
             <p className="mt-1 max-w-sm text-sm text-[var(--wk-text-secondary)]">
               This task may have been deleted or the URL is incorrect.
             </p>
-            <Link to="/tasks" className="mt-4">
-              <Button variant="secondary">Back to Tasks</Button>
-            </Link>
+            <Button asChild variant="secondary" className="mt-4">
+              <Link to="/tasks">Back to Tasks</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -43,11 +43,11 @@ export function TaskDetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link to="/tasks">
-          <Button variant="ghost" size="icon">
+        <Button asChild variant="ghost" size="icon">
+          <Link to="/tasks">
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <h1 className="font-display text-2xl font-semibold tracking-tight">
           Application Progress
         </h1>
