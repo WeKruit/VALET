@@ -26,7 +26,7 @@ COPY apps/worker/ ./apps/worker/
 RUN pnpm turbo build --filter=@valet/worker
 
 # Prune dev dependencies
-RUN pnpm prune --prod
+RUN CI=true pnpm prune --prod
 
 # ---- Runtime Stage ----
 FROM node:20-slim AS runtime
