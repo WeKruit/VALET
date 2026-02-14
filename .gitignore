@@ -36,8 +36,9 @@ coverage/
 # Docker volumes
 docker/data/
 
-# Drizzle
-packages/db/drizzle/meta/
+# Drizzle (keep meta/_journal.json tracked — needed for migrations in Docker)
+packages/db/drizzle/meta/*.json
+!packages/db/drizzle/meta/_journal.json
 
 # MinIO data
 minio-data/
