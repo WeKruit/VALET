@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Navigate, Link } from "react-router-dom";
-import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useAuth, useCurrentUser } from "@/features/auth/hooks/use-auth";
 
 interface AdminGuardProps {
   children: React.ReactNode;
@@ -9,9 +9,19 @@ interface AdminGuardProps {
 /** Restricts access to users with admin or superadmin role. Shows 404 for non-admins. */
 export function AdminGuard({ children }: AdminGuardProps) {
   const { user } = useAuth();
+  const { isLoading } = useCurrentUser();
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Show loading while fetching user data
+  if (isLoading || !user.role) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--wk-border-default)] border-t-[var(--wk-text-primary)]" />
+      </div>
+    );
   }
 
   if (user.role !== "admin" && user.role !== "superadmin") {
