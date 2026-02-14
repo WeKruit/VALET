@@ -1,4 +1,3 @@
-/* global window */
 import { initTsrReactQuery } from "@ts-rest/react-query/v5";
 import { apiContract } from "@valet/contracts";
 
