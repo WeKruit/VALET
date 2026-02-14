@@ -7,12 +7,12 @@ interface User {
   id: string;
   email: string;
   name: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
   role?: "user" | "admin" | "superadmin";
   subscriptionTier?: "free" | "starter" | "pro" | "enterprise";
-  onboardingComplete: boolean;
-  copilotAppsCompleted: number;
-  autopilotUnlocked: boolean;
+  onboardingComplete?: boolean;
+  copilotAppsCompleted?: number;
+  autopilotUnlocked?: boolean;
 }
 
 interface AuthStore {
