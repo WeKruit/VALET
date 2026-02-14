@@ -12,9 +12,9 @@ export const userSchema = z.object({
   avatarUrl: z.string().url().nullable(),
   role: userRole,
   subscriptionTier: subscriptionTier,
-  onboardingComplete: z.boolean(),
-  copilotAppsCompleted: z.number().int().min(0),
-  autopilotUnlocked: z.boolean(),
+  onboardingComplete: z.boolean().optional(),
+  copilotAppsCompleted: z.number().int().min(0).optional(),
+  autopilotUnlocked: z.boolean().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
