@@ -53,7 +53,8 @@ export const authRouter = s.router(authContract, {
         return { status: 201 as const, body: responseBody };
       }
       return { status: 200 as const, body: responseBody };
-    } catch {
+    } catch (error) {
+      request.log.error({ err: error }, "Google auth failed");
       throw AppError.badRequest("Failed to authenticate with Google");
     }
   },

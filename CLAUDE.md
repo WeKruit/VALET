@@ -106,14 +106,23 @@ hotfix/*    ← urgent prod fixes (branch from main)
 | Staging    | staging   | https://valet-api-stg.fly.dev     | https://valet-web-stg.fly.dev    | https://valet-hatchet-stg.fly.dev    |
 | Production | main      | https://valet-api.fly.dev         | https://valet-web.fly.dev        | https://valet-hatchet-prod.fly.dev   |
 
-### Google OAuth Callback URLs
+### Google OAuth Redirect URIs
 
-Add ALL of these to Google Cloud Console → Credentials → OAuth 2.0 Client:
+The frontend uses client-side OAuth flow (`window.location.origin + "/login"`).
+Add ALL of these to Google Cloud Console → Credentials → OAuth 2.0 Client → **Authorized redirect URIs**:
 
 ```
-http://localhost:8000/api/v1/auth/google/callback
-https://valet-api-stg.fly.dev/api/v1/auth/google/callback
-https://valet-api.fly.dev/api/v1/auth/google/callback
+http://localhost:5173/login
+https://valet-web-stg.fly.dev/login
+https://valet-web.fly.dev/login
+```
+
+Also add these to **Authorized JavaScript origins**:
+
+```
+http://localhost:5173
+https://valet-web-stg.fly.dev
+https://valet-web.fly.dev
 ```
 
 ## Secrets Management

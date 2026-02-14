@@ -353,7 +353,9 @@ export class AuthService {
     });
 
     if (!tokenResponse.ok) {
-      throw new Error("Failed to exchange Google authorization code");
+      const errorBody = await tokenResponse.text();
+      console.error(`Google token exchange failed (${tokenResponse.status}): ${errorBody}`);
+      throw new Error(`Google token exchange failed: ${errorBody}`);
     }
 
     const tokenData = (await tokenResponse.json()) as { id_token: string };
