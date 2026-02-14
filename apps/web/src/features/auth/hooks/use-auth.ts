@@ -8,6 +8,7 @@ interface User {
   email: string;
   name: string;
   avatarUrl?: string;
+  role?: "user" | "admin" | "superadmin";
   subscriptionTier?: "free" | "starter" | "pro" | "enterprise";
   onboardingComplete: boolean;
   copilotAppsCompleted: number;

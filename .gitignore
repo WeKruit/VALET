@@ -42,3 +42,15 @@ packages/db/drizzle/meta/0*_snapshot.json
 
 # MinIO data
 minio-data/
+
+# SSH keys
+*.pem
+*.ppk
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+**/.terraform/
+**/terraform.tfstate*

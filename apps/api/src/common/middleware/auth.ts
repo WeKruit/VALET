@@ -7,6 +7,7 @@ declare module "fastify" {
   interface FastifyRequest {
     userId: string;
     userEmail: string;
+    userRole: string;
   }
 }
 
@@ -76,6 +77,7 @@ export async function authMiddleware(
 
     request.userId = payload.sub;
     request.userEmail = payload.email as string;
+    request.userRole = (payload.role as string) ?? "user";
   } catch (err) {
     if (err instanceof AppError) throw err;
     logSecurityEvent(request, SECURITY_EVENT_TYPES.AUTH_FAILURE, {

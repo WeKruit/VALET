@@ -25,6 +25,7 @@ interface UserData {
   email: string;
   name: string;
   avatarUrl: string | null;
+  role: string;
   subscriptionTier: string;
   createdAt: Date;
   updatedAt: Date;
@@ -152,7 +153,7 @@ export class AuthService {
       throw AppError.unauthorized("Account is deactivated");
     }
 
-    const tokens = await this.generateTokens(user.id, user.email);
+    const tokens = await this.generateTokens(user.id, user.email, (user as unknown as Record<string, unknown>).role as string ?? "user");
 
     return {
       tokens,
@@ -263,7 +264,7 @@ export class AuthService {
 
     const { user, isNew } = await this.findOrCreateGoogleUser(googleUser);
 
-    const tokens = await this.generateTokens(user.id, user.email);
+    const tokens = await this.generateTokens(user.id, user.email, user.role ?? "user");
 
     return {
       tokens,
@@ -304,6 +305,7 @@ export class AuthService {
       return this.generateTokens(
         payload.sub,
         payload.email as string,
+        (payload.role as string) ?? "user",
       );
     } catch {
       throw new Error("Invalid or expired refresh token");
@@ -325,7 +327,7 @@ export class AuthService {
 
   async verifyAccessToken(
     token: string,
-  ): Promise<{ userId: string; email: string }> {
+  ): Promise<{ userId: string; email: string; role: string }> {
     const { payload } = await jose.jwtVerify(token, this.jwtSecret, {
       algorithms: ["HS256"],
     });
@@ -333,6 +335,7 @@ export class AuthService {
     return {
       userId: payload.sub!,
       email: payload.email as string,
+      role: (payload.role as string) ?? "user",
     };
   }
 
@@ -433,15 +436,16 @@ export class AuthService {
   private async generateTokens(
     userId: string,
     email: string,
+    role: string = "user",
   ): Promise<TokenPair> {
-    const accessToken = await new jose.SignJWT({ sub: userId, email })
+    const accessToken = await new jose.SignJWT({ sub: userId, email, role })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("15m")
       .setIssuer("valet-api")
       .sign(this.jwtSecret);
 
-    const refreshToken = await new jose.SignJWT({ sub: userId, email })
+    const refreshToken = await new jose.SignJWT({ sub: userId, email, role })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("7d")

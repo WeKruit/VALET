@@ -18,10 +18,10 @@
  */
 
 import type { Hatchet } from "@hatchet-dev/typescript-sdk";
-import { StickyStrategy } from "@hatchet-dev/typescript-sdk/workflow";
-import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk/protoc/v1/workflows";
-import type { Context, DurableContext } from "@hatchet-dev/typescript-sdk/v1/client/worker/context";
-import type { JsonValue } from "@hatchet-dev/typescript-sdk/v1/types";
+import { StickyStrategy } from "@hatchet-dev/typescript-sdk/workflow.js";
+import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk/protoc/v1/workflows.js";
+import type { Context, DurableContext } from "@hatchet-dev/typescript-sdk/v1/client/worker/context.js";
+import type { JsonValue } from "@hatchet-dev/typescript-sdk/v1/types.js";
 import type Redis from "ioredis";
 import { eq, and } from "drizzle-orm";
 import pino from "pino";
@@ -283,8 +283,9 @@ export function registerJobApplicationWorkflowV2(
       input: WorkflowInput,
       _ctx: Context<WorkflowInput>,
     ): Promise<StartBrowserOutput> => {
+      const browserEngine = process.env.BROWSER_ENGINE ?? "adspower";
       logger.info(
-        { taskId: input.taskId, tier: input.tier },
+        { taskId: input.taskId, tier: input.tier, browserEngine },
         "Starting browser",
       );
 

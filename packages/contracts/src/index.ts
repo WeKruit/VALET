@@ -11,6 +11,7 @@ import { gdprContract } from "./gdpr.js";
 import { billingContract } from "./billing.js";
 import { dashboardContract } from "./dashboard.js";
 import { notificationContract } from "./notifications.js";
+import { sandboxContract } from "./sandbox.js";
 
 const c = initContract();
 
@@ -27,6 +28,7 @@ export const apiContract = c.router({
   billing: billingContract,
   dashboard: dashboardContract,
   notifications: notificationContract,
+  sandboxes: sandboxContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -44,4 +46,5 @@ export {
   billingContract,
   dashboardContract,
   notificationContract,
+  sandboxContract,
 };

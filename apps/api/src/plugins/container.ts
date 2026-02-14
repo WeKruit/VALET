@@ -26,6 +26,11 @@ import { BillingService } from "../modules/billing/billing.service.js";
 import { DashboardService } from "../modules/dashboard/dashboard.service.js";
 import { NotificationRepository } from "../modules/notifications/notification.repository.js";
 import { NotificationService } from "../modules/notifications/notification.service.js";
+import { SandboxRepository } from "../modules/sandboxes/sandbox.repository.js";
+import { SandboxService } from "../modules/sandboxes/sandbox.service.js";
+import { SandboxHealthMonitor } from "../modules/sandboxes/sandbox-health-monitor.js";
+import { EC2Service } from "../modules/sandboxes/ec2.service.js";
+import { AutoStopMonitor } from "../modules/sandboxes/auto-stop-monitor.js";
 
 export interface AppCradle {
   db: Database;
@@ -52,6 +57,11 @@ export interface AppCradle {
   dashboardService: DashboardService;
   notificationRepo: NotificationRepository;
   notificationService: NotificationService;
+  sandboxRepo: SandboxRepository;
+  sandboxService: SandboxService;
+  sandboxHealthMonitor: SandboxHealthMonitor;
+  ec2Service: EC2Service;
+  autoStopMonitor: AutoStopMonitor;
 }
 
 declare module "@fastify/awilix" {
@@ -115,5 +125,10 @@ export default fp(async (fastify: FastifyInstance) => {
     dashboardService: asClass(DashboardService, { lifetime: Lifetime.SINGLETON }),
     notificationRepo: asClass(NotificationRepository, { lifetime: Lifetime.SINGLETON }),
     notificationService: asClass(NotificationService, { lifetime: Lifetime.SINGLETON }),
+    sandboxRepo: asClass(SandboxRepository, { lifetime: Lifetime.SINGLETON }),
+    sandboxService: asClass(SandboxService, { lifetime: Lifetime.SINGLETON }),
+    sandboxHealthMonitor: asClass(SandboxHealthMonitor, { lifetime: Lifetime.SINGLETON }),
+    ec2Service: asClass(EC2Service, { lifetime: Lifetime.SINGLETON }),
+    autoStopMonitor: asClass(AutoStopMonitor, { lifetime: Lifetime.SINGLETON }),
   });
 });

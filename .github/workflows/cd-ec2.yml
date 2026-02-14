@@ -1,0 +1,420 @@
+# =============================================================================
+# CD -> EC2 Worker (Dynamic Fleet Deployment)
+# =============================================================================
+#
+# Deploys the Valet browser worker to all active EC2 sandbox instances.
+# Fetches the sandbox fleet from the API instead of static GitHub secrets.
+#
+# Supports:
+#   - Automatic deployment on push to staging/main (all active sandboxes)
+#   - Manual deployment via workflow_dispatch (specific or all sandboxes)
+#   - Parallel deployment to multiple instances via matrix strategy
+#   - Health check verification with automatic rollback on failure
+#   - Per-instance concurrency to prevent overlapping deploys
+#   - API-driven status updates (deploying -> active/unhealthy)
+#
+# === GitHub Secrets ===
+#
+#   VALET_API_TOKEN      Admin API token for sandbox management
+#   SANDBOX_SSH_KEY      Single SSH private key (PEM) shared across all sandboxes
+#
+# =============================================================================
+
+name: CD -> EC2 Worker
+
+on:
+  push:
+    branches: [staging, main]
+    paths:
+      - "apps/worker/**"
+      - "packages/shared/**"
+      - "packages/contracts/**"
+      - "packages/db/**"
+      - "packages/llm/**"
+      - "pnpm-lock.yaml"
+
+  workflow_dispatch:
+    inputs:
+      target_ips:
+        description: >
+          Comma-separated IPs to deploy to (e.g. "34.197.248.80,35.123.45.67").
+          Leave empty to deploy to all active sandboxes.
+        required: false
+        type: string
+      environment:
+        description: "Target environment"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+# Global concurrency: only one fleet-wide deploy per environment at a time.
+concurrency:
+  group: deploy-ec2-fleet-${{ github.event.inputs.environment || (github.ref_name == 'main' && 'production' || 'staging') }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Step 1: Build the worker and discover the fleet
+  # ---------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      sandbox_matrix: ${{ steps.fleet.outputs.sandbox_matrix }}
+    environment: ${{ steps.env.outputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Discover sandbox fleet
+        id: fleet
+        run: |
+          ENV="${{ steps.env.outputs.environment }}"
+
+          # --- Priority 1: Manual target IPs from workflow_dispatch ---
+          if [[ -n "${{ github.event.inputs.target_ips }}" ]]; then
+            IPS=$(echo '${{ github.event.inputs.target_ips }}' | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | jq -R . | jq -s .)
+            MATRIX=$(echo "$IPS" | jq '[.[] | {ip: ., sandbox_id: "manual"}]')
+            echo "sandbox_matrix=$MATRIX" >> $GITHUB_OUTPUT
+            echo "Using manual target IPs: $IPS"
+            exit 0
+          fi
+
+          # --- Priority 2: Query active sandboxes from API ---
+          case "$ENV" in
+            production) API_URL="https://valet-api.fly.dev" ;;
+            *)          API_URL="https://valet-api-stg.fly.dev" ;;
+          esac
+
+          FLEET_RESPONSE=$(curl -sf "$API_URL/api/v1/admin/sandboxes?status=active&environment=$ENV" \
+            -H "Authorization: Bearer ${{ secrets.VALET_API_TOKEN }}" 2>/dev/null) || FLEET_RESPONSE=""
+
+          if [[ -n "$FLEET_RESPONSE" ]] && echo "$FLEET_RESPONSE" | jq -e '.[] | .public_ip' &>/dev/null; then
+            MATRIX=$(echo "$FLEET_RESPONSE" | jq '[.[] | {ip: .public_ip, sandbox_id: (.id // .sandbox_id // "unknown")}]')
+            echo "sandbox_matrix=$MATRIX" >> $GITHUB_OUTPUT
+            echo "Discovered $(echo "$MATRIX" | jq length) sandboxes from API"
+            exit 0
+          fi
+
+          echo "::warning::API fleet discovery failed. Falling back to GitHub secrets."
+
+          # --- Priority 3: Legacy SANDBOX_IPS secret (fallback) ---
+          SANDBOX_IPS_JSON='${{ secrets.SANDBOX_IPS }}'
+          if [[ -n "$SANDBOX_IPS_JSON" && "$SANDBOX_IPS_JSON" != "null" ]]; then
+            MATRIX=$(echo "$SANDBOX_IPS_JSON" | jq '[.[] | {ip: ., sandbox_id: "legacy"}]')
+            echo "sandbox_matrix=$MATRIX" >> $GITHUB_OUTPUT
+            echo "Using SANDBOX_IPS secret"
+            exit 0
+          fi
+
+          echo "::error::No sandbox IPs configured. Set up sandboxes via API or add SANDBOX_IPS to GitHub secrets."
+          exit 1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build worker and dependencies
+        run: |
+          pnpm --filter @valet/shared build
+          pnpm --filter @valet/contracts build
+          pnpm --filter @valet/db build
+          pnpm --filter @valet/llm build
+          pnpm --filter @valet/worker build
+
+      - name: Create deployment tarball
+        run: |
+          tar -czf /tmp/valet-worker.tar.gz \
+            apps/worker/dist/ \
+            apps/worker/package.json \
+            packages/shared/dist/ \
+            packages/shared/package.json \
+            packages/db/dist/ \
+            packages/db/package.json \
+            packages/contracts/dist/ \
+            packages/contracts/package.json \
+            packages/llm/dist/ \
+            packages/llm/package.json \
+            package.json \
+            pnpm-workspace.yaml \
+            pnpm-lock.yaml
+
+          echo "Tarball size: $(du -h /tmp/valet-worker.tar.gz | cut -f1)"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: valet-worker-${{ github.sha }}
+          path: /tmp/valet-worker.tar.gz
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Deploy to each sandbox in parallel
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ needs.build.outputs.environment }}
+
+    strategy:
+      matrix:
+        sandbox: ${{ fromJson(needs.build.outputs.sandbox_matrix) }}
+      fail-fast: false
+      max-parallel: 5
+
+    # Per-instance concurrency
+    concurrency:
+      group: deploy-ec2-instance-${{ matrix.sandbox.ip }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Mark sandbox as deploying
+        if: matrix.sandbox.sandbox_id != 'manual' && matrix.sandbox.sandbox_id != 'legacy'
+        continue-on-error: true
+        run: |
+          case "${{ needs.build.outputs.environment }}" in
+            production) API_URL="https://valet-api.fly.dev" ;;
+            *)          API_URL="https://valet-api-stg.fly.dev" ;;
+          esac
+
+          curl -sf -X PATCH "$API_URL/api/v1/admin/sandboxes/${{ matrix.sandbox.sandbox_id }}" \
+            -H "Authorization: Bearer ${{ secrets.VALET_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"status": "deploying"}' 2>/dev/null || true
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: valet-worker-${{ github.sha }}
+          path: /tmp
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SANDBOX_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ matrix.sandbox.ip }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Upload tarball to sandbox
+        run: |
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            /tmp/valet-worker.tar.gz \
+            ubuntu@${{ matrix.sandbox.ip }}:/tmp/valet-worker.tar.gz
+
+      - name: Deploy on sandbox (with backup + rollback)
+        id: deploy
+        run: |
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            ubuntu@${{ matrix.sandbox.ip }} bash -s << 'DEPLOY_SCRIPT'
+          set -euo pipefail
+
+          APP_DIR="/opt/valet/app"
+          BACKUP_DIR="/opt/valet/app-backup"
+
+          # --- Create backup of current deployment ---
+          if [[ -d "$APP_DIR/apps" ]]; then
+            echo "==> Creating backup of current deployment..."
+            sudo rm -rf "$BACKUP_DIR"
+            sudo cp -a "$APP_DIR" "$BACKUP_DIR"
+          else
+            echo "==> No existing deployment to back up (first deploy)"
+          fi
+
+          echo "==> Extracting tarball..."
+          sudo mkdir -p "$APP_DIR"
+          sudo tar -xzf /tmp/valet-worker.tar.gz -C "$APP_DIR" --strip-components=0
+          sudo rm -f /tmp/valet-worker.tar.gz
+
+          OWNER="valet"
+          id valet &>/dev/null || OWNER="ubuntu"
+          sudo chown -R "$OWNER:$OWNER" "$APP_DIR"
+
+          echo "==> Installing production dependencies..."
+          cd "$APP_DIR"
+          sudo -u "$OWNER" bash -c "cd $APP_DIR && pnpm install --prod --frozen-lockfile" || {
+            echo "WARN: --frozen-lockfile failed, retrying without..."
+            sudo -u "$OWNER" bash -c "cd $APP_DIR && pnpm install --prod"
+          }
+
+          echo "==> Restarting valet-worker service..."
+          sudo systemctl daemon-reload
+          sudo systemctl restart valet-worker
+
+          echo "==> Waiting for service to stabilize (5s)..."
+          sleep 5
+
+          if sudo systemctl is-active --quiet valet-worker; then
+            echo "SUCCESS: valet-worker is running"
+          else
+            echo "ERROR: valet-worker failed to start"
+            sudo journalctl -u valet-worker -n 30 --no-pager
+            exit 1
+          fi
+          DEPLOY_SCRIPT
+
+      - name: Health check (with retries)
+        id: health
+        run: |
+          INSTANCE_IP="${{ matrix.sandbox.ip }}"
+          MAX_RETRIES=3
+          RETRY_DELAY=10
+          HEALTH_OK=false
+
+          for attempt in $(seq 1 $MAX_RETRIES); do
+            echo "Health check attempt $attempt/$MAX_RETRIES for $INSTANCE_IP..."
+
+            SERVICE_STATUS=$(ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+              ubuntu@$INSTANCE_IP \
+              "sudo systemctl is-active valet-worker 2>/dev/null" 2>/dev/null || echo "inactive")
+
+            if [[ "$SERVICE_STATUS" == "active" ]]; then
+              RESTART_COUNT=$(ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+                ubuntu@$INSTANCE_IP \
+                "sudo systemctl show valet-worker --property=NRestarts --value 2>/dev/null" 2>/dev/null || echo "0")
+
+              if [[ "$RESTART_COUNT" -lt 3 ]]; then
+                echo "Health check PASSED: service active, restarts=$RESTART_COUNT"
+                HEALTH_OK=true
+                break
+              else
+                echo "WARNING: Service active but $RESTART_COUNT restarts detected (possible crash loop)"
+              fi
+            else
+              echo "Service status: $SERVICE_STATUS"
+            fi
+
+            if [[ $attempt -lt $MAX_RETRIES ]]; then
+              echo "Retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+
+          if [[ "$HEALTH_OK" != "true" ]]; then
+            echo "::error::Health check failed for $INSTANCE_IP after $MAX_RETRIES attempts"
+            echo "health_failed=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Update sandbox status (active)
+        if: success() && matrix.sandbox.sandbox_id != 'manual' && matrix.sandbox.sandbox_id != 'legacy'
+        continue-on-error: true
+        run: |
+          case "${{ needs.build.outputs.environment }}" in
+            production) API_URL="https://valet-api.fly.dev" ;;
+            *)          API_URL="https://valet-api-stg.fly.dev" ;;
+          esac
+
+          curl -sf -X PATCH "$API_URL/api/v1/admin/sandboxes/${{ matrix.sandbox.sandbox_id }}" \
+            -H "Authorization: Bearer ${{ secrets.VALET_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"status": "active"}' 2>/dev/null || true
+
+      - name: Update sandbox status (unhealthy)
+        if: failure() && matrix.sandbox.sandbox_id != 'manual' && matrix.sandbox.sandbox_id != 'legacy'
+        continue-on-error: true
+        run: |
+          case "${{ needs.build.outputs.environment }}" in
+            production) API_URL="https://valet-api.fly.dev" ;;
+            *)          API_URL="https://valet-api-stg.fly.dev" ;;
+          esac
+
+          curl -sf -X PATCH "$API_URL/api/v1/admin/sandboxes/${{ matrix.sandbox.sandbox_id }}" \
+            -H "Authorization: Bearer ${{ secrets.VALET_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"status": "unhealthy"}' 2>/dev/null || true
+
+      - name: Rollback on failure
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          echo "::warning::Rolling back deployment on ${{ matrix.sandbox.ip }}..."
+
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            ubuntu@${{ matrix.sandbox.ip }} bash -s << 'ROLLBACK_SCRIPT'
+          set -euo pipefail
+
+          APP_DIR="/opt/valet/app"
+          BACKUP_DIR="/opt/valet/app-backup"
+
+          if [[ -d "$BACKUP_DIR/apps" ]]; then
+            echo "==> Restoring from backup..."
+            sudo rm -rf "$APP_DIR"
+            sudo mv "$BACKUP_DIR" "$APP_DIR"
+            sudo systemctl restart valet-worker
+            sleep 5
+            if sudo systemctl is-active --quiet valet-worker; then
+              echo "ROLLBACK SUCCESS: Previous version restored and running"
+            else
+              echo "ROLLBACK WARNING: Previous version restored but service failed to start"
+              sudo journalctl -u valet-worker -n 20 --no-pager
+            fi
+          else
+            echo "ROLLBACK SKIPPED: No backup available (was this the first deploy?)"
+          fi
+          ROLLBACK_SCRIPT
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/ec2_key
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          STATUS="SUCCESS"
+          if [[ "${{ steps.health.outcome }}" == "failure" ]]; then
+            STATUS="FAILED (rolled back)"
+          elif [[ "${{ steps.deploy.outcome }}" == "failure" ]]; then
+            STATUS="FAILED"
+          fi
+
+          echo "### EC2 Worker Deploy -- ${{ matrix.sandbox.ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance | ${{ matrix.sandbox.ip }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sandbox ID | ${{ matrix.sandbox.sandbox_id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Step 3: Post-deploy summary
+  # ---------------------------------------------------------------------------
+  summary:
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fleet deploy summary
+        run: |
+          echo "### Fleet Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy result | ${{ needs.deploy.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY

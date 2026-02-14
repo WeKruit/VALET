@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import { AppLayout } from "./components/layout/app-layout";
 import { AuthGuard } from "./components/common/auth-guard";
+import { AdminGuard } from "./lib/guards/admin-guard";
 import { NotFoundPage } from "./components/common/not-found-page";
 import { LoadingSpinner } from "./components/common/loading-spinner";
 
@@ -73,6 +74,16 @@ const PrivacyPolicyPage = lazy(() =>
     default: m.PrivacyPolicyPage,
   })),
 );
+const SandboxesPage = lazy(() =>
+  import("./features/admin/pages/sandboxes-page").then((m) => ({
+    default: m.SandboxesPage,
+  })),
+);
+const SandboxDetailPage = lazy(() =>
+  import("./features/admin/pages/sandbox-detail-page").then((m) => ({
+    default: m.SandboxDetailPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -121,6 +132,8 @@ export function AppRouter() {
           <Route path="/apply" element={<ApplyPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/settings/*" element={<SettingsPage />} />
+          <Route path="/admin/sandboxes" element={<AdminGuard><SandboxesPage /></AdminGuard>} />
+          <Route path="/admin/sandboxes/:id" element={<AdminGuard><SandboxDetailPage /></AdminGuard>} />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { workHistoryEntry, educationEntry } from "./resume.schema.js";
 
+export const userRole = z.enum(["user", "admin", "superadmin"]);
+
 export const subscriptionTier = z.enum(["free", "starter", "pro", "enterprise"]);
 
 export const userSchema = z.object({
@@ -8,6 +10,7 @@ export const userSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
   avatarUrl: z.string().url().nullable(),
+  role: userRole,
   subscriptionTier: subscriptionTier,
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
@@ -77,6 +80,7 @@ export const userProfileResponse = userSchema.extend({
 });
 
 // ─── Inferred Types ───
+export type UserRole = z.infer<typeof userRole>;
 export type SubscriptionTier = z.infer<typeof subscriptionTier>;
 export type User = z.infer<typeof userSchema>;
 export type UserPreferences = z.infer<typeof userPreferences>;

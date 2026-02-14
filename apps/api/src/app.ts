@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import { initServer } from "@ts-rest/fastify";
+import { diContainer } from "@fastify/awilix";
 import { errorHandler } from "./common/middleware/error-handler.js";
 import { authMiddleware } from "./common/middleware/auth.js";
 import { requestLogger } from "./common/middleware/request-logger.js";
@@ -27,6 +28,7 @@ import { gdprRouter } from "./modules/gdpr/gdpr.routes.js";
 import { billingRouter, billingWebhookRoute } from "./modules/billing/billing.routes.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
+import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -92,6 +94,7 @@ export async function buildApp() {
   fastify.register(s.plugin(billingRouter));
   fastify.register(s.plugin(dashboardRouter));
   fastify.register(s.plugin(notificationRouter));
+  fastify.register(s.plugin(sandboxRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
@@ -101,6 +104,20 @@ export async function buildApp() {
 
   // WebSocket
   await registerWebSocket(fastify);
+
+  // Start sandbox health monitor and auto-stop monitor after server is ready
+  fastify.addHook("onReady", async () => {
+    const { sandboxHealthMonitor, autoStopMonitor } = diContainer.cradle;
+    sandboxHealthMonitor.start();
+    autoStopMonitor.start();
+  });
+
+  // Stop monitors on close
+  fastify.addHook("onClose", async () => {
+    const { sandboxHealthMonitor, autoStopMonitor } = diContainer.cradle;
+    sandboxHealthMonitor.stop();
+    autoStopMonitor.stop();
+  });
 
   return fastify;
 }

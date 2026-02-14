@@ -9,9 +9,9 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type. t3.xlarge provides 4 vCPU / 16 GB RAM, suitable for running AdsPower with multiple browser profiles"
+  description = "EC2 instance type. t3.large (2 vCPU / 8 GB) — minimum for AdsPower Electron + browser profiles"
   type        = string
-  default     = "t3.xlarge"
+  default     = "t3.large"
 }
 
 variable "instance_count" {
@@ -20,8 +20,8 @@ variable "instance_count" {
   default     = 1
 
   validation {
-    condition     = var.instance_count >= 1 && var.instance_count <= 10
-    error_message = "instance_count must be between 1 and 10."
+    condition     = var.instance_count >= 0 && var.instance_count <= 10
+    error_message = "instance_count must be between 0 and 10."
   }
 }
 
@@ -43,15 +43,15 @@ variable "environment" {
 }
 
 variable "key_name" {
-  description = "Name of an existing AWS EC2 key pair for SSH access. Create one in the AWS Console under EC2 > Key Pairs"
+  description = "AWS SSH key pair name — all sandboxes use the same key. Create in AWS Console under EC2 > Key Pairs"
   type        = string
-  # No default — must be provided by the operator
+  default     = "valet-worker"
 }
 
 variable "volume_size" {
-  description = "Root EBS volume size in GB. 80 GB accommodates AdsPower profiles, browser cache, and application data"
+  description = "Root EBS volume size in GB. 40 GB is fine for dev; scale up for production with many profiles"
   type        = number
-  default     = 80
+  default     = 40
 
   validation {
     condition     = var.volume_size >= 30 && var.volume_size <= 500

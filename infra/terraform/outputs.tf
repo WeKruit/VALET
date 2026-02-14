@@ -7,6 +7,11 @@ output "instance_public_ips" {
   value       = aws_eip.valet_worker[*].public_ip
 }
 
+output "instance_ids" {
+  description = "EC2 instance IDs for each worker instance"
+  value       = aws_instance.valet_worker[*].id
+}
+
 output "instance_private_ips" {
   description = "Private IP addresses of each worker instance (for internal VPC communication)"
   value       = aws_instance.valet_worker[*].private_ip

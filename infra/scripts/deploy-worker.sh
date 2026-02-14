@@ -2,12 +2,17 @@
 # =============================================================================
 # deploy-worker.sh — Deploy the Valet worker to an EC2 instance
 # =============================================================================
-# Usage: ./deploy-worker.sh <ec2-ip> [ssh-key-path]
+# Usage: ./deploy-worker.sh --host <ec2-ip> --key <ssh-key-path> [--skip-build] [--rollback-on-failure]
 #
 # Deploys the Valet Hatchet worker to an EC2 instance provisioned via
 # Terraform with cloud-init. Builds the worker locally, creates a tarball
 # with all required workspace packages, uploads it, installs dependencies,
 # and configures the systemd service.
+#
+# Options:
+#   --skip-build          Skip local build step (use existing dist/ artifacts)
+#   --rollback-on-failure Automatically rollback to previous version if health
+#                         check fails (default: prompt interactively)
 #
 # Prerequisites:
 #   - EC2 instance provisioned via Terraform (cloud-init complete)
@@ -39,23 +44,68 @@ die()     { error "$*"; exit 1; }
 # ---------------------------------------------------------------------------
 # Parse arguments
 # ---------------------------------------------------------------------------
-if [[ $# -lt 1 ]]; then
-    echo -e "${BOLD}Usage:${NC} $0 <ec2-ip> [ssh-key-path]"
+EC2_IP=""
+SSH_KEY=""
+SKIP_BUILD=false
+ROLLBACK_ON_FAILURE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --host)
+            EC2_IP="$2"
+            shift 2
+            ;;
+        --key)
+            SSH_KEY="$2"
+            shift 2
+            ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        --rollback-on-failure)
+            ROLLBACK_ON_FAILURE=true
+            shift
+            ;;
+        -*)
+            die "Unknown option: $1"
+            ;;
+        *)
+            # Backward-compatible positional args: <ec2-ip> [ssh-key-path]
+            if [[ -z "$EC2_IP" ]]; then
+                EC2_IP="$1"
+            elif [[ -z "$SSH_KEY" ]]; then
+                SSH_KEY="$1"
+            else
+                die "Unexpected argument: $1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$EC2_IP" ]]; then
+    echo -e "${BOLD}Usage:${NC} $0 --host <ip> --key <path-to-key> [--skip-build] [--rollback-on-failure]"
     echo ""
-    echo "  ec2-ip         Public IP or hostname of the EC2 instance"
-    echo "  ssh-key-path   Path to SSH private key (default: ~/.ssh/valet-worker.pem)"
+    echo "  --host <ip>            Public IP or hostname of the EC2 instance"
+    echo "  --key <path>           Path to SSH private key (default: ~/.ssh/valet-worker.pem)"
+    echo "  --skip-build           Skip local build (use existing dist/ artifacts)"
+    echo "  --rollback-on-failure  Auto-rollback on health check failure (no prompt)"
+    echo ""
+    echo "Positional args also supported: $0 <ec2-ip> [ssh-key-path]"
     echo ""
     echo "Examples:"
+    echo "  $0 --host 54.123.45.67 --key ~/.ssh/valet-worker.pem"
+    echo "  $0 --host 54.123.45.67 --key /tmp/deploy-key.pem --skip-build"
     echo "  $0 54.123.45.67"
-    echo "  $0 54.123.45.67 ~/.ssh/my-key.pem"
     exit 1
 fi
 
-EC2_IP="$1"
-SSH_KEY="${2:-$HOME/.ssh/valet-worker.pem}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/valet-worker.pem}"
 SSH_USER="ubuntu"
 REMOTE_APP_DIR="/opt/valet/app"
 REMOTE_ENV_DIR="/opt/valet"
+REMOTE_BACKUP_DIR="/opt/valet/app-backup"
 
 # Resolve monorepo root (two levels up from infra/scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -87,19 +137,22 @@ fi
 success "SSH connection established"
 
 # ---------------------------------------------------------------------------
-# Step 2: Build the worker locally
+# Step 2: Build the worker locally (unless --skip-build)
 # ---------------------------------------------------------------------------
-info "Building worker and dependencies locally..."
-cd "$REPO_ROOT"
+if [[ "$SKIP_BUILD" == "true" ]]; then
+    info "Skipping build (--skip-build)"
+else
+    info "Building worker and dependencies locally..."
+    cd "$REPO_ROOT"
 
-# Build all workspace dependencies first, then the worker
-pnpm --filter @valet/shared build
-pnpm --filter @valet/contracts build
-pnpm --filter @valet/db build
-pnpm --filter @valet/llm build
-pnpm --filter @valet/worker build
+    pnpm --filter @valet/shared build
+    pnpm --filter @valet/contracts build
+    pnpm --filter @valet/db build
+    pnpm --filter @valet/llm build
+    pnpm --filter @valet/worker build
 
-success "Build complete"
+    success "Build complete"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 3: Create deployment tarball
@@ -139,20 +192,30 @@ success "Upload complete"
 rm -f "$TARBALL_PATH"
 
 # ---------------------------------------------------------------------------
-# Step 5: Deploy on the remote instance
+# Step 5: Deploy on the remote instance (with backup)
 # ---------------------------------------------------------------------------
 info "Deploying on remote instance..."
 
-$SSH_CMD bash -s "$TARBALL_NAME" "$REMOTE_APP_DIR" "$REMOTE_ENV_DIR" << 'DEPLOY_SCRIPT'
+$SSH_CMD bash -s "$TARBALL_NAME" "$REMOTE_APP_DIR" "$REMOTE_ENV_DIR" "$REMOTE_BACKUP_DIR" << 'DEPLOY_SCRIPT'
 set -euo pipefail
 
 TARBALL_NAME="$1"
 APP_DIR="$2"
 ENV_DIR="$3"
+BACKUP_DIR="$4"
 
 echo "==> Preparing directories..."
 sudo mkdir -p "$APP_DIR"
 sudo chown -R valet:valet "$APP_DIR" 2>/dev/null || sudo chown -R ubuntu:ubuntu "$APP_DIR"
+
+# --- Create backup of current deployment ---
+if [[ -d "$APP_DIR/apps" ]]; then
+    echo "==> Creating backup of current deployment..."
+    sudo rm -rf "$BACKUP_DIR"
+    sudo cp -a "$APP_DIR" "$BACKUP_DIR"
+else
+    echo "==> No existing deployment to back up (first deploy)"
+fi
 
 echo "==> Extracting tarball..."
 sudo tar -xzf "/tmp/$TARBALL_NAME" -C "$APP_DIR" --strip-components=0
@@ -281,7 +344,102 @@ DEPLOY_SCRIPT
 success "Deployment complete"
 
 # ---------------------------------------------------------------------------
-# Step 6: Print summary
+# Step 6: Health check with retries
+# ---------------------------------------------------------------------------
+info "Running health check (3 attempts with backoff)..."
+
+HEALTH_OK=false
+MAX_RETRIES=3
+RETRY_DELAY=5
+
+for attempt in $(seq 1 $MAX_RETRIES); do
+    info "Health check attempt $attempt/$MAX_RETRIES..."
+
+    # Check systemd service status
+    SERVICE_STATUS=$($SSH_CMD "sudo systemctl is-active valet-worker 2>/dev/null" 2>/dev/null || echo "inactive")
+
+    if [[ "$SERVICE_STATUS" == "active" ]]; then
+        # Check for crash loops
+        RESTART_COUNT=$($SSH_CMD "sudo systemctl show valet-worker --property=NRestarts --value 2>/dev/null" 2>/dev/null || echo "0")
+
+        if [[ "$RESTART_COUNT" -lt 3 ]]; then
+            success "Health check PASSED (service active, restarts=$RESTART_COUNT)"
+            HEALTH_OK=true
+            break
+        else
+            warn "Service active but $RESTART_COUNT restarts detected (possible crash loop)"
+        fi
+    else
+        warn "Service status: $SERVICE_STATUS"
+    fi
+
+    if [[ $attempt -lt $MAX_RETRIES ]]; then
+        info "Retrying in ${RETRY_DELAY}s..."
+        sleep $RETRY_DELAY
+        RETRY_DELAY=$((RETRY_DELAY * 2))
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Step 7: Rollback if health check failed
+# ---------------------------------------------------------------------------
+if [[ "$HEALTH_OK" != "true" ]]; then
+    error "Health check FAILED after $MAX_RETRIES attempts"
+
+    SHOULD_ROLLBACK=false
+    if [[ "$ROLLBACK_ON_FAILURE" == "true" ]]; then
+        SHOULD_ROLLBACK=true
+    else
+        echo ""
+        read -r -p "  Rollback to previous version? [y/N] " CONFIRM
+        if [[ "$CONFIRM" == "y" || "$CONFIRM" == "Y" ]]; then
+            SHOULD_ROLLBACK=true
+        fi
+    fi
+
+    if [[ "$SHOULD_ROLLBACK" == "true" ]]; then
+        info "Rolling back to previous version..."
+
+        $SSH_CMD bash -s "$REMOTE_APP_DIR" "$REMOTE_BACKUP_DIR" << 'ROLLBACK_SCRIPT'
+        set -euo pipefail
+
+        APP_DIR="$1"
+        BACKUP_DIR="$2"
+
+        if [[ -d "$BACKUP_DIR/apps" ]]; then
+            echo "==> Restoring from backup..."
+            sudo rm -rf "$APP_DIR"
+            sudo mv "$BACKUP_DIR" "$APP_DIR"
+            sudo systemctl restart valet-worker
+            sleep 5
+            if sudo systemctl is-active --quiet valet-worker; then
+                echo "ROLLBACK SUCCESS: Previous version restored and running"
+            else
+                echo "ROLLBACK WARNING: Previous version restored but service failed to start"
+                sudo journalctl -u valet-worker -n 20 --no-pager
+            fi
+        else
+            echo "ROLLBACK SKIPPED: No backup available (was this the first deploy?)"
+        fi
+ROLLBACK_SCRIPT
+
+        # Check if rollback succeeded
+        ROLLBACK_STATUS=$($SSH_CMD "sudo systemctl is-active valet-worker 2>/dev/null" 2>/dev/null || echo "inactive")
+        if [[ "$ROLLBACK_STATUS" == "active" ]]; then
+            success "Rollback successful — previous version is running"
+        else
+            error "Rollback failed — manual intervention required"
+        fi
+    else
+        warn "Rollback skipped. Check logs manually:"
+        echo -e "  ssh -i $SSH_KEY $SSH_USER@$EC2_IP 'sudo journalctl -u valet-worker -n 50 --no-pager'"
+    fi
+
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Step 8: Print summary
 # ---------------------------------------------------------------------------
 echo ""
 echo -e "${BOLD}=========================================${NC}"

@@ -11,3 +11,5 @@ export * from "./application.schema.js";
 export * from "./billing.schema.js";
 export * from "./dashboard.schema.js";
 export * from "./notification.schema.js";
+export * from "./sandbox.schema.js";
+export * from "./sandbox-secret.schema.js";

@@ -90,11 +90,11 @@ resource "aws_security_group" "valet_worker" {
     cidr_blocks = var.allowed_cidr
   }
 
-  # Health-check API endpoint (optional, used by monitoring)
+  # Health-check API endpoint (used by sandbox health monitor on port 8000)
   ingress {
     description = "Health check API"
-    from_port   = 8080
-    to_port     = 8080
+    from_port   = 8000
+    to_port     = 8000
     protocol    = "tcp"
     cidr_blocks = var.allowed_cidr
   }

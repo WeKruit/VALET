@@ -28,9 +28,10 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
+import { LiveView } from "./live-view";
 
 interface TaskDetailProps {
   taskId: string;
@@ -71,7 +72,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
   const { data, isLoading, isError } = useTask(taskId);
   const { status: wsStatus } = useTaskWebSocket(taskId);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [showLiveView, setShowLiveView] = useState(true);
   const queryClient = useQueryClient();
+  const noVncUrl = useMemo(() => import.meta.env.VITE_NOVNC_URL ?? "", []);
 
   const cancelTask = api.tasks.cancel.useMutation({
     onSuccess: () => {
@@ -248,6 +251,15 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Live View - only for active tasks */}
+      {!isTerminal && noVncUrl && (
+        <LiveView
+          url={noVncUrl}
+          isVisible={showLiveView}
+          onToggle={() => setShowLiveView(!showLiveView)}
+        />
+      )}
 
       {/* Field Review Panel - only for waiting_human */}
       {isWaitingReview && (
