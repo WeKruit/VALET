@@ -42,5 +42,7 @@ export default defineConfig({
     "browser_profiles",
     "proxy_bindings",
     "notifications",
+    "action_manuals",
+    "manual_steps",
   ],
 });

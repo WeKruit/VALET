@@ -15,6 +15,20 @@
       "when": 1739400000000,
       "tag": "0001_add_auth_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1739800000000,
+      "tag": "0002_add_external_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1740200000000,
+      "tag": "0003_add_action_manuals",
+      "breakpoints": true
     }
   ]
 }

@@ -10,4 +10,5 @@ export * from "./application-results.js";
 export * from "./audit-trail.js";
 export * from "./application-fields.js";
 export * from "./notifications.js";
+export * from "./action-manuals.js";
 export * from "./relations.js";
