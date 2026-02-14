@@ -24,6 +24,9 @@ function toUserResponse(user: Record<string, unknown>) {
     avatarUrl: (user.avatarUrl as string | null) ?? null,
     role: (user.role as string as "user" | "admin" | "superadmin") ?? "user",
     subscriptionTier: (user.subscriptionTier as string) as "free" | "starter" | "pro" | "enterprise",
+    onboardingComplete: (user.onboardingComplete as boolean) ?? false,
+    copilotAppsCompleted: (user.copilotAppsCompleted as number) ?? 0,
+    autopilotUnlocked: (user.autopilotUnlocked as boolean) ?? false,
     createdAt: user.createdAt as Date,
     updatedAt: user.updatedAt as Date,
   };
