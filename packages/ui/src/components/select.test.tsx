@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import {
   Select,
   SelectTrigger,
@@ -10,6 +10,33 @@ import {
   SelectGroup,
   SelectLabel,
 } from "./select";
+
+// Radix Select internally relies on ResizeObserver and pointer capture APIs,
+// neither of which jsdom supports. We polyfill them and configure userEvent
+// to skip pointer event validation so the portal renders correctly.
+beforeAll(() => {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+
+  // jsdom lacks pointer capture methods that Radix Select calls internally
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+
+  // jsdom lacks scrollIntoView
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
+});
 
 describe("Select", () => {
   function renderSelect(props: { onValueChange?: (val: string) => void; defaultValue?: string } = {}) {
@@ -37,7 +64,7 @@ describe("Select", () => {
   });
 
   it("opens the dropdown when trigger is clicked", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderSelect();
 
     await user.click(screen.getByRole("combobox"));
@@ -47,7 +74,7 @@ describe("Select", () => {
   });
 
   it("displays group label in dropdown", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderSelect();
 
     await user.click(screen.getByRole("combobox"));
@@ -56,7 +83,7 @@ describe("Select", () => {
 
   it("selects an option when clicked", async () => {
     const onValueChange = vi.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderSelect({ onValueChange });
 
     await user.click(screen.getByRole("combobox"));
@@ -66,7 +93,7 @@ describe("Select", () => {
   });
 
   it("shows selected value in trigger", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderSelect();
 
     await user.click(screen.getByRole("combobox"));

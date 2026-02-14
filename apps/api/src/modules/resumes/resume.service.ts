@@ -1,6 +1,7 @@
+import path from "node:path";
 import type { Hatchet } from "@hatchet-dev/typescript-sdk";
+import type { S3Client } from "@aws-sdk/client-s3";
 import {
-  S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
@@ -10,7 +11,29 @@ import { UPLOAD_LIMITS } from "@valet/shared/constants";
 
 const MAX_RESUMES = 5;
 const ALLOWED_MIME_TYPES: Set<string> = new Set(UPLOAD_LIMITS.ALLOWED_MIME_TYPES);
+const ALLOWED_EXTENSIONS: Set<string> = new Set([".pdf", ".docx"]);
 const S3_BUCKET = process.env.S3_BUCKET_RESUMES ?? "resumes";
+
+/** Magic byte signatures for allowed file types */
+const MAGIC_BYTES: Record<string, { bytes: number[]; offset: number }> = {
+  ".pdf": { bytes: [0x25, 0x50, 0x44, 0x46], offset: 0 },   // %PDF
+  ".docx": { bytes: [0x50, 0x4b, 0x03, 0x04], offset: 0 },  // PK\x03\x04 (ZIP)
+};
+
+function validateMagicBytes(data: Buffer, ext: string): boolean {
+  const sig = MAGIC_BYTES[ext];
+  if (!sig) return false;
+  if (data.length < sig.offset + sig.bytes.length) return false;
+  return sig.bytes.every((byte, i) => data[sig.offset + i] === byte);
+}
+
+function sanitizeFilename(filename: string): string {
+  return filename
+    .replace(/[^a-zA-Z0-9._-]/g, "_")  // Only safe chars
+    .replace(/^\.+/, "")                 // Strip leading dots
+    .replace(/\.{2,}/g, ".")            // Collapse multiple dots
+    .slice(0, 255);                      // Limit length
+}
 
 export class ResumeService {
   private resumeRepo: ResumeRepository;
@@ -53,6 +76,17 @@ export class ResumeService {
       throw AppError.badRequest("Only PDF and DOCX files are supported");
     }
 
+    const ext = path.extname(file.filename).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      throw AppError.badRequest("Only PDF and DOCX files are supported");
+    }
+
+    if (!validateMagicBytes(file.data, ext)) {
+      throw AppError.badRequest(
+        "File content does not match its extension",
+      );
+    }
+
     if (file.data.length > UPLOAD_LIMITS.MAX_RESUME_SIZE_BYTES) {
       throw AppError.badRequest("File size must not exceed 10MB");
     }
@@ -64,7 +98,8 @@ export class ResumeService {
       );
     }
 
-    const storageKey = `resumes/${userId}/${crypto.randomUUID()}-${file.filename}`;
+    const sanitizedFilename = sanitizeFilename(file.filename);
+    const storageKey = `resumes/${userId}/${crypto.randomUUID()}-${sanitizedFilename}`;
 
     await this.s3.send(
       new PutObjectCommand({

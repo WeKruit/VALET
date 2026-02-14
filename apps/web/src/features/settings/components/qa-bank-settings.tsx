@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/c
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
 import { Input } from "@valet/ui/components/input";
+import { Textarea } from "@valet/ui/components/textarea";
 import {
   Dialog,
   DialogContent,
@@ -375,8 +376,8 @@ export function QaBankSettings() {
 
             <div>
               <label className="text-sm font-medium">Answer</label>
-              <textarea
-                className="mt-1 flex min-h-[100px] w-full rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)] bg-[var(--wk-surface-white)] px-3 py-2 text-sm text-[var(--wk-text-primary)] placeholder:text-[var(--wk-text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2 transition-colors"
+              <Textarea
+                className="mt-1 min-h-[100px]"
                 placeholder="Your answer..."
                 value={form.answer}
                 onChange={(e) =>

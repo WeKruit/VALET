@@ -1,6 +1,8 @@
+import * as React from "react";
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
+import { Textarea } from "@valet/ui/components/textarea";
 import { Button } from "@valet/ui/components/button";
 import { Badge } from "@valet/ui/components/badge";
 import {
@@ -23,6 +25,10 @@ import {
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import type {
+  WorkHistoryEntry as WorkHistorySchema,
+  EducationEntry as EducationSchema,
+} from "@valet/shared/schemas";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -144,11 +150,11 @@ export function ProfileSettings() {
   function handleSavePersonalInfo() {
     updateProfile.mutate({
       body: {
-        ...(phone && { phone }),
-        ...(location && { location }),
-        ...(linkedinUrl && { linkedinUrl }),
-        ...(githubUrl && { githubUrl }),
-        ...(portfolioUrl && { portfolioUrl }),
+        phone: phone.trim(),
+        location: location.trim(),
+        linkedinUrl: linkedinUrl.trim(),
+        githubUrl: githubUrl.trim(),
+        portfolioUrl: portfolioUrl.trim(),
       },
     });
   }
@@ -582,7 +588,7 @@ export function ProfileSettings() {
               <Button
                 variant="primary"
                 disabled={updateProfile.isPending}
-                onClick={() => updateProfile.mutate({ body: { workHistory: workHistory as unknown[] } })}
+                onClick={() => updateProfile.mutate({ body: { workHistory: workHistory as WorkHistorySchema[] } })}
               >
                 {updateProfile.isPending ? "Saving..." : "Save Work History"}
               </Button>
@@ -667,7 +673,7 @@ export function ProfileSettings() {
               <Button
                 variant="primary"
                 disabled={updateProfile.isPending}
-                onClick={() => updateProfile.mutate({ body: { education: education as unknown[] } })}
+                onClick={() => updateProfile.mutate({ body: { education: education as EducationSchema[] } })}
               >
                 {updateProfile.isPending ? "Saving..." : "Save Education"}
               </Button>
@@ -739,8 +745,8 @@ export function ProfileSettings() {
             </div>
             <div>
               <label className="text-sm font-medium">Description</label>
-              <textarea
-                className="mt-1 flex min-h-[80px] w-full rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)] bg-[var(--wk-surface-white)] px-3 py-2 text-sm text-[var(--wk-text-primary)] placeholder:text-[var(--wk-text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2 transition-colors"
+              <Textarea
+                className="mt-1"
                 placeholder="Describe your responsibilities and achievements..."
                 value={workForm.description}
                 onChange={(e) =>

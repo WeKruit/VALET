@@ -1,14 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type * as ReactRouterDom from "react-router-dom";
 import { MemoryRouter } from "react-router-dom";
 import { ApplyForm } from "./apply-form";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>(
-    "react-router-dom"
-  );
+  const actual =
+    await vi.importActual<typeof ReactRouterDom>("react-router-dom");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -33,6 +33,33 @@ vi.mock("@/lib/api-client", () => ({
         }),
       },
     },
+    resumes: {
+      list: {
+        useQuery: () => ({
+          data: {
+            status: 200,
+            body: {
+              data: [
+                {
+                  id: "resume-1",
+                  filename: "resume.pdf",
+                  status: "parsed",
+                  isDefault: true,
+                },
+              ],
+            },
+          },
+          isLoading: false,
+        }),
+      },
+    },
+  },
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
   },
 }));
 
@@ -53,7 +80,7 @@ describe("ApplyForm", () => {
   it("renders the heading and description", () => {
     renderApplyForm();
     expect(
-      screen.getByText("Ready to apply to your first job!")
+      screen.getByText("Ready to apply to your next job!")
     ).toBeInTheDocument();
     expect(
       screen.getByText(/paste a job url below/i)
@@ -63,7 +90,7 @@ describe("ApplyForm", () => {
   it("renders the URL input with placeholder", () => {
     renderApplyForm();
     expect(
-      screen.getByPlaceholderText("Paste a job URL here...")
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/...")
     ).toBeInTheDocument();
   });
 
@@ -86,14 +113,14 @@ describe("ApplyForm", () => {
     expect(screen.getByText("Copilot mode")).toBeInTheDocument();
   });
 
-  // ─── Platform Detection ───
+  // --- Platform Detection ---
 
   it("detects LinkedIn platform from URL", async () => {
     const user = userEvent.setup();
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "https://www.linkedin.com/jobs/view/12345"
     );
 
@@ -106,11 +133,13 @@ describe("ApplyForm", () => {
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "https://boards.greenhouse.io/company/jobs/12345"
     );
 
-    expect(screen.getByText("Greenhouse")).toBeInTheDocument();
+    // "Greenhouse" appears in both platform badge and sample links
+    const badges = screen.getAllByText("Greenhouse");
+    expect(badges.length).toBeGreaterThanOrEqual(2);
   });
 
   it("detects Lever platform from URL", async () => {
@@ -118,21 +147,23 @@ describe("ApplyForm", () => {
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "https://jobs.lever.co/company/12345"
     );
 
-    expect(screen.getByText("Lever")).toBeInTheDocument();
+    // "Lever" appears in both platform badge and sample links
+    const badges = screen.getAllByText("Lever");
+    expect(badges.length).toBeGreaterThanOrEqual(2);
   });
 
-  // ─── URL Validation ───
+  // --- URL Validation ---
 
   it("keeps button disabled for invalid URL", async () => {
     const user = userEvent.setup();
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "not-a-url"
     );
 
@@ -146,7 +177,7 @@ describe("ApplyForm", () => {
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "https://www.indeed.com/job/12345"
     );
 
@@ -160,7 +191,7 @@ describe("ApplyForm", () => {
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "https://www.linkedin.com/jobs/view/12345"
     );
 
@@ -169,14 +200,14 @@ describe("ApplyForm", () => {
     ).toBeEnabled();
   });
 
-  // ─── Submission ───
+  // --- Submission ---
 
   it("calls create task mutation with correct payload on submit", async () => {
     const user = userEvent.setup();
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "https://www.linkedin.com/jobs/view/12345"
     );
 
@@ -188,7 +219,7 @@ describe("ApplyForm", () => {
       body: {
         jobUrl: "https://www.linkedin.com/jobs/view/12345",
         mode: "copilot",
-        resumeId: "00000000-0000-0000-0000-000000000000",
+        resumeId: "resume-1",
       },
     });
   });
@@ -198,7 +229,7 @@ describe("ApplyForm", () => {
     renderApplyForm();
 
     await user.type(
-      screen.getByPlaceholderText("Paste a job URL here..."),
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
       "https://www.linkedin.com/jobs/view/12345"
     );
 
@@ -209,7 +240,7 @@ describe("ApplyForm", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/tasks/task-123");
   });
 
-  // ─── Sample Links ───
+  // --- Sample Links ---
 
   it("fills input when clicking LinkedIn sample link", async () => {
     const user = userEvent.setup();
@@ -218,7 +249,7 @@ describe("ApplyForm", () => {
     await user.click(screen.getByText("LinkedIn Easy Apply"));
 
     const input = screen.getByPlaceholderText(
-      "Paste a job URL here..."
+      "https://www.linkedin.com/jobs/view/..."
     ) as HTMLInputElement;
     expect(input.value).toBe("https://www.linkedin.com/jobs/view/12345");
   });
@@ -230,7 +261,7 @@ describe("ApplyForm", () => {
     await user.click(screen.getByText("Greenhouse"));
 
     const input = screen.getByPlaceholderText(
-      "Paste a job URL here..."
+      "https://www.linkedin.com/jobs/view/..."
     ) as HTMLInputElement;
     expect(input.value).toBe(
       "https://boards.greenhouse.io/company/jobs/12345"

@@ -5,7 +5,7 @@ import { TaskList } from "./task-list";
 
 // Mock the utils
 vi.mock("@/lib/utils", () => ({
-  formatRelativeTime: (date: string) => "2 hours ago",
+  formatRelativeTime: (_date: Date | string) => "2 hours ago",
   cn: (...args: any[]) => args.filter(Boolean).join(" "),
 }));
 
@@ -13,42 +13,54 @@ const mockTasks = [
   {
     id: "task-1",
     jobUrl: "https://www.linkedin.com/jobs/view/111",
+    jobTitle: null,
+    companyName: null,
     platform: "LinkedIn",
     status: "in_progress",
+    externalStatus: null,
     mode: "copilot" as const,
     progress: 65,
     currentStep: "filling",
-    createdAt: "2026-02-12T10:00:00Z",
+    createdAt: new Date("2026-02-12T10:00:00Z"),
   },
   {
     id: "task-2",
     jobUrl: "https://boards.greenhouse.io/company/jobs/222",
+    jobTitle: null,
+    companyName: null,
     platform: "Greenhouse",
     status: "completed",
+    externalStatus: "applied",
     mode: "autopilot" as const,
     progress: 100,
     currentStep: null,
-    createdAt: "2026-02-11T08:00:00Z",
+    createdAt: new Date("2026-02-11T08:00:00Z"),
   },
   {
     id: "task-3",
     jobUrl: "https://jobs.lever.co/company/333",
+    jobTitle: null,
+    companyName: null,
     platform: "Lever",
     status: "waiting_human",
+    externalStatus: null,
     mode: "copilot" as const,
     progress: 80,
     currentStep: "review",
-    createdAt: "2026-02-12T12:00:00Z",
+    createdAt: new Date("2026-02-12T12:00:00Z"),
   },
   {
     id: "task-4",
     jobUrl: "https://www.linkedin.com/jobs/view/444",
+    jobTitle: null,
+    companyName: null,
     platform: "LinkedIn",
     status: "failed",
+    externalStatus: null,
     mode: "copilot" as const,
     progress: 30,
     currentStep: null,
-    createdAt: "2026-02-10T14:00:00Z",
+    createdAt: new Date("2026-02-10T14:00:00Z"),
   },
 ];
 
@@ -61,7 +73,7 @@ function renderTaskList(tasks = mockTasks) {
 }
 
 describe("TaskList", () => {
-  // ─── Empty State ───
+  // --- Empty State ---
 
   it("renders empty state when no tasks", () => {
     renderTaskList([]);
@@ -71,7 +83,7 @@ describe("TaskList", () => {
     ).toBeInTheDocument();
   });
 
-  // ─── Task Rendering ───
+  // --- Task Rendering ---
 
   it("renders all task items", () => {
     renderTaskList();
@@ -118,7 +130,7 @@ describe("TaskList", () => {
     expect(timeLabels.length).toBe(4);
   });
 
-  // ─── Progress Bar ───
+  // --- Progress Bar ---
 
   it("renders progress bar for in_progress tasks", () => {
     renderTaskList();
@@ -130,18 +142,21 @@ describe("TaskList", () => {
       {
         id: "task-2",
         jobUrl: "https://boards.greenhouse.io/company/jobs/222",
+        jobTitle: null,
+        companyName: null,
         platform: "Greenhouse",
         status: "completed",
+        externalStatus: null,
         mode: "autopilot" as const,
         progress: 100,
         currentStep: null,
-        createdAt: "2026-02-11T08:00:00Z",
+        createdAt: new Date("2026-02-11T08:00:00Z"),
       },
     ]);
     expect(screen.queryByText("100%")).not.toBeInTheDocument();
   });
 
-  // ─── Links ───
+  // --- Links ---
 
   it("renders links to task detail pages", () => {
     renderTaskList();
@@ -152,15 +167,21 @@ describe("TaskList", () => {
     expect(links[3]).toHaveAttribute("href", "/tasks/task-4");
   });
 
-  // ─── Single Task ───
+  // --- Single Task ---
 
   it("renders a single task correctly", () => {
-    renderTaskList([mockTasks[0]]);
+    renderTaskList([mockTasks[0]!]);
+    // jobTitle is null so it falls back to jobUrl
     expect(
       screen.getByText("https://www.linkedin.com/jobs/view/111")
     ).toBeInTheDocument();
     expect(screen.getByText("copilot")).toBeInTheDocument();
     expect(screen.getByText("65%")).toBeInTheDocument();
     expect(screen.getByText("in progress")).toBeInTheDocument();
+  });
+
+  it("renders external status badge when present", () => {
+    renderTaskList();
+    expect(screen.getByText("applied")).toBeInTheDocument();
   });
 });

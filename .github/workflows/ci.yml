@@ -48,7 +48,7 @@ jobs:
         run: pnpm turbo typecheck
 
       - name: Unit tests
-        run: pnpm turbo test
+        run: pnpm test
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/valet_test
 
@@ -57,9 +57,13 @@ jobs:
 
       - name: Security scan
         run: |
-          pnpm audit --audit-level=high || true
-          # Check no secrets in frontend bundle
-          if grep -r "sk-" apps/web/dist/ 2>/dev/null; then
-            echo "FATAL: API key found in frontend bundle"
+          # Fail on high/critical vulnerabilities
+          pnpm audit --audit-level=high
+          # Log moderate vulnerabilities for awareness (non-blocking)
+          pnpm audit --audit-level=moderate 2>&1 || echo "::warning::Moderate vulnerabilities found — see audit output above"
+          # Check no secrets in frontend bundle (match real key patterns, not minified variable names)
+          PATTERNS='sk-ant-|sk-proj-|sk_live_|sk_test_|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}|glpat-'
+          if grep -rE "$PATTERNS" apps/web/dist/ 2>/dev/null; then
+            echo "FATAL: API key or secret found in frontend bundle"
             exit 1
           fi

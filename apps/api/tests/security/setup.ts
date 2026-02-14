@@ -92,7 +92,7 @@ export const PRIVATE_IP_PATTERNS = [
 // ---- Build test app -------------------------------------------------------
 
 export async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, bodyLimit: 10 * 1024 * 1024 });
 
   // -- Security headers (mirrors plugins/security.ts) --
   const helmet = await import("@fastify/helmet");
@@ -138,7 +138,9 @@ export async function buildTestApp(): Promise<FastifyInstance> {
     max: 100,
     timeWindow: "1 minute",
     keyGenerator: (request) => (request as any).userId ?? request.ip,
-    errorResponseBuilder: () => ({
+    errorResponseBuilder: (_req, context) => ({
+      statusCode: context.statusCode,
+      code: "RATE_LIMIT_EXCEEDED",
       error: "RATE_LIMIT_EXCEEDED",
       message: "Too many requests. Please try again later.",
     }),
@@ -148,20 +150,30 @@ export async function buildTestApp(): Promise<FastifyInstance> {
   const cookie = await import("@fastify/cookie");
   await app.register(cookie.default);
 
-  // -- Body size limit (mirrors @fastify/multipart 10 MB limit) --
-  app.addContentTypeParser(
-    "application/json",
-    { bodyLimit: 10 * 1024 * 1024 },
-    app.getDefaultJsonParser("error", "error"),
-  );
-
   // -- Auth middleware (mirrors common/middleware/auth.ts) --
   app.addHook("onRequest", async (request, _reply) => {
     const path = request.url.split("?")[0];
     const publicPaths = ["/api/v1/auth/google", "/api/v1/auth/refresh", "/api/v1/health"];
-    if (publicPaths.some((p) => path!.startsWith(p))) return;
+    const isPublic = publicPaths.some((p) => path!.startsWith(p));
 
     const authHeader = request.headers.authorization;
+
+    // On public routes, optionally extract userId for rate-limit keying
+    if (isPublic) {
+      if (authHeader?.startsWith("Bearer ")) {
+        try {
+          const token = authHeader.slice(7);
+          const { payload } = await jose.jwtVerify(token, SECRET_KEY, { algorithms: ["HS256"] });
+          if (payload.sub) {
+            (request as any).userId = payload.sub;
+          }
+        } catch {
+          // Ignore token errors on public routes
+        }
+      }
+      return;
+    }
+
     if (!authHeader?.startsWith("Bearer ")) {
       throw { statusCode: 401, code: "UNAUTHORIZED", message: "Missing or invalid authorization header" };
     }

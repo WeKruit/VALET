@@ -1,10 +1,15 @@
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import { initServer } from "@ts-rest/fastify";
 import { errorHandler } from "./common/middleware/error-handler.js";
 import { authMiddleware } from "./common/middleware/auth.js";
 import { requestLogger } from "./common/middleware/request-logger.js";
-import { registerRateLimit } from "./common/middleware/rate-limit.js";
+import {
+  registerRateLimit,
+  registerRouteRateLimits,
+} from "./common/middleware/rate-limit.js";
+import sentryPlugin from "./plugins/sentry.js";
 import databasePlugin from "./plugins/database.js";
 import redisPlugin from "./plugins/redis.js";
 import containerPlugin from "./plugins/container.js";
@@ -18,7 +23,10 @@ import { userRouter } from "./modules/users/user.routes.js";
 import { resumeRouter, resumeUploadRoute } from "./modules/resumes/resume.routes.js";
 import { qaBankRouter } from "./modules/qa-bank/qa-bank.routes.js";
 import { consentRouter } from "./modules/consent/consent.routes.js";
-import gdprRoutes from "./modules/gdpr/gdpr.routes.js";
+import { gdprRouter } from "./modules/gdpr/gdpr.routes.js";
+import { billingRouter, billingWebhookRoute } from "./modules/billing/billing.routes.js";
+import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
+import { notificationRouter } from "./modules/notifications/notification.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -42,7 +50,11 @@ export async function buildApp() {
     }
   });
 
+  // Sentry must be registered before other plugins to capture all errors
+  await fastify.register(sentryPlugin);
+
   // Plugins
+  await fastify.register(cookie);
   await fastify.register(securityPlugin);
   await fastify.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -56,6 +68,9 @@ export async function buildApp() {
   // Auth middleware
   fastify.addHook("onRequest", authMiddleware);
   fastify.addHook("onRequest", requestLogger);
+
+  // Per-route rate limits (after auth so request.userId is available)
+  await registerRouteRateLimits(fastify);
 
   // Health check
   fastify.get("/api/v1/health", async () => ({
@@ -73,12 +88,16 @@ export async function buildApp() {
   fastify.register(s.plugin(resumeRouter));
   fastify.register(s.plugin(qaBankRouter));
   fastify.register(s.plugin(consentRouter));
+  fastify.register(s.plugin(gdprRouter));
+  fastify.register(s.plugin(billingRouter));
+  fastify.register(s.plugin(dashboardRouter));
+  fastify.register(s.plugin(notificationRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
 
-  // GDPR routes (non-ts-rest, standalone Fastify routes)
-  await fastify.register(gdprRoutes);
+  // Standalone webhook route (outside ts-rest — needs raw body + no auth)
+  await fastify.register(billingWebhookRoute);
 
   // WebSocket
   await registerWebSocket(fastify);

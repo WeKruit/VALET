@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Link } from "react-router-dom";
 import {
   Card,
@@ -42,7 +43,7 @@ const statusConfig: Record<
 };
 
 export function RecentApplications() {
-  const { data, isLoading, isError } = useTasks({ page: 1 });
+  const { data, isLoading, isError, refetch } = useTasks({ page: 1 });
   const tasks = data?.status === 200 ? data.body.data.slice(0, 5) : [];
 
   return (
@@ -67,8 +68,27 @@ export function RecentApplications() {
             <LoadingSpinner />
           </div>
         ) : isError ? (
-          <div className="py-8 text-center text-sm text-[var(--wk-status-error)]">
-            Failed to load recent applications. Please try refreshing.
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-surface-sunken)]">
+              <Inbox className="h-6 w-6 text-[var(--wk-text-tertiary)]" />
+            </div>
+            <h3 className="mt-4 font-display text-lg font-semibold">
+              No applications yet
+            </h3>
+            <p className="mt-1 max-w-xs text-sm text-[var(--wk-text-secondary)]">
+              Your completed applications will appear here with status and timestamps.
+            </p>
+            <div className="flex items-center gap-2 mt-4">
+              <Button asChild variant="primary" size="sm">
+                <Link to="/apply">Start an application</Link>
+              </Button>
+              <button
+                onClick={() => refetch()}
+                className="text-xs font-medium text-[var(--wk-accent-amber)] hover:underline cursor-pointer"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
         ) : tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
@@ -104,7 +124,9 @@ export function RecentApplications() {
                 >
                   <div className="flex flex-col gap-1 min-w-0">
                     <span className="text-sm font-medium truncate">
-                      {task.jobUrl}
+                      {task.jobTitle && task.companyName
+                        ? `${task.jobTitle} at ${task.companyName}`
+                        : task.jobTitle ?? task.companyName ?? task.jobUrl}
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-[var(--wk-text-tertiary)]">

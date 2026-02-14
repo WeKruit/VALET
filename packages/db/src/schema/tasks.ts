@@ -11,6 +11,8 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { users } from "./users.js";
+import { resumes } from "./resumes.js";
+import { browserProfiles } from "./browser-profiles.js";
 
 export const taskStatusEnum = pgEnum("task_status", [
   "created",
@@ -35,6 +37,15 @@ export const applicationModeEnum = pgEnum("application_mode", [
   "autopilot",
 ]);
 
+export const externalStatusEnum = pgEnum("external_status", [
+  "applied",
+  "viewed",
+  "interview",
+  "rejected",
+  "offer",
+  "ghosted",
+]);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -46,10 +57,11 @@ export const tasks = pgTable(
     platform: platformEnum("platform").default("unknown").notNull(),
     status: taskStatusEnum("status").default("created").notNull(),
     mode: applicationModeEnum("mode").default("copilot").notNull(),
-    resumeId: uuid("resume_id"),
+    resumeId: uuid("resume_id").references(() => resumes.id, { onDelete: "set null" }),
     jobTitle: varchar("job_title", { length: 500 }),
     companyName: varchar("company_name", { length: 255 }),
     jobLocation: varchar("job_location", { length: 255 }),
+    externalStatus: externalStatusEnum("external_status"),
     progress: integer("progress").default(0).notNull(),
     currentStep: varchar("current_step", { length: 100 }),
     confidenceScore: real("confidence_score"),
@@ -60,7 +72,7 @@ export const tasks = pgTable(
     errorMessage: text("error_message"),
     retryCount: integer("retry_count").default(0).notNull(),
     workflowRunId: varchar("workflow_run_id", { length: 255 }),
-    browserProfileId: uuid("browser_profile_id"),
+    browserProfileId: uuid("browser_profile_id").references(() => browserProfiles.id, { onDelete: "set null" }),
     screenshots: jsonb("screenshots").default({}),
     llmUsage: jsonb("llm_usage").default({}),
     notes: text("notes"),

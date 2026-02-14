@@ -94,7 +94,7 @@ export function registerJobApplicationWorkflow(
   const startBrowser = workflow.task({
     name: "start-browser",
     executionTimeout: "60s",
-    fn: async (input: WorkflowInput, ctx: Context<WorkflowInput>) => {
+    fn: async (input: WorkflowInput, _ctx: Context<WorkflowInput>) => {
       logger.info({ taskId: input.taskId }, "Starting browser");
 
       await eventLogger.log(input.taskId, "checkpoint", {
@@ -130,7 +130,7 @@ export function registerJobApplicationWorkflow(
     name: "analyze-form",
     executionTimeout: "30s",
     parents: [startBrowser],
-    fn: async (input: WorkflowInput, ctx: Context<WorkflowInput>) => {
+    fn: async (input: WorkflowInput, _ctx: Context<WorkflowInput>) => {
       logger.info({ taskId: input.taskId }, "Analyzing form");
 
       await publishProgress(redis, input.userId, {
@@ -232,7 +232,7 @@ export function registerJobApplicationWorkflow(
     name: "upload-resume",
     executionTimeout: "30s",
     parents: [fillFields],
-    fn: async (input: WorkflowInput, ctx: Context<WorkflowInput>) => {
+    fn: async (input: WorkflowInput, _ctx: Context<WorkflowInput>) => {
       logger.info({ taskId: input.taskId }, "Uploading resume");
 
       await publishProgress(redis, input.userId, {
@@ -353,7 +353,7 @@ export function registerJobApplicationWorkflow(
     name: "verify",
     executionTimeout: "30s",
     parents: [submit],
-    fn: async (input: WorkflowInput, ctx: Context<WorkflowInput>) => {
+    fn: async (input: WorkflowInput, _ctx: Context<WorkflowInput>) => {
       logger.info({ taskId: input.taskId }, "Verifying submission");
 
       await publishProgress(redis, input.userId, {
