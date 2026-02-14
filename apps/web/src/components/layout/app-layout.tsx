@@ -15,8 +15,8 @@ export function AppLayout() {
   // Sync user data from API to Zustand store on mount
   // This ensures localStorage has the latest user data (including new fields like 'role')
   useEffect(() => {
-    if (freshUserData) {
-      setUser(freshUserData);
+    if (freshUserData?.body) {
+      setUser(freshUserData.body);
     }
   }, [freshUserData, setUser]);
 
