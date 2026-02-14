@@ -175,12 +175,18 @@ jobs:
 
           echo "Browser engine '$ENGINE' installed"
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
       - name: Build and deploy worker
         run: |
           INSTANCE_IP="${{ steps.terraform.outputs.instance_ip }}"
 
           # Build locally
-          npm install -g pnpm@10
           pnpm install --frozen-lockfile
           pnpm --filter @valet/shared build
           pnpm --filter @valet/contracts build

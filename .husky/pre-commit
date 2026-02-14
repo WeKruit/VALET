@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run lint-staged to check only staged files
+pnpm exec lint-staged
+
+# Run typecheck to catch type errors before commit
+echo "Running typecheck..."
+pnpm typecheck
+
+# Validate that referenced files exist
+if grep -q "vitest.workspace.ts" package.json; then
+  if [ ! -f "vitest.workspace.ts" ]; then
+    echo "❌ Error: package.json references vitest.workspace.ts but file doesn't exist"
+    exit 1
+  fi
+fi
+
+echo "✅ Pre-commit checks passed"
