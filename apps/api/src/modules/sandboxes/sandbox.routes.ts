@@ -5,21 +5,21 @@ import { adminOnly } from "../../common/middleware/admin.js";
 const s = initServer();
 
 export const sandboxRouter = s.router(sandboxContract, {
-  list: async ({ query, request, reply }) => {
+  list: async ({ query, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const result = await sandboxService.list(query);
     return { status: 200, body: result };
   },
 
-  getById: async ({ params, request, reply }) => {
+  getById: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const sandbox = await sandboxService.getById(params.id);
     return { status: 200, body: sandbox };
   },
 
-  create: async ({ body, request, reply }) => {
+  create: async ({ body, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const sandbox = await sandboxService.create(body);
