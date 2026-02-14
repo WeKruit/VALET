@@ -17,6 +17,9 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code (may contain credentials)
+.claude/
 *.swp
 *.swo
 
@@ -34,7 +37,7 @@ coverage/
 # Docker volumes
 docker/data/
 
-# Drizzle (keep migrations + journal, ignore snapshots)
+# Drizzle (keep migrations + journal tracked, ignore snapshots)
 packages/db/drizzle/meta/0*_snapshot.json
 
 # MinIO data

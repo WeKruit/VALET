@@ -6,6 +6,8 @@ import {
   taskListResponse,
   taskListQuery,
   taskStatsResponse,
+  taskExportQuery,
+  updateExternalStatusRequest,
   errorResponse,
 } from "@valet/shared/schemas";
 
@@ -19,6 +21,15 @@ export const taskContract = c.router({
       200: taskStatsResponse,
     },
     summary: "Get task statistics for the current user",
+  },
+  export: {
+    method: "GET",
+    path: "/api/v1/tasks/export",
+    query: taskExportQuery,
+    responses: {
+      200: z.string(),
+    },
+    summary: "Export tasks as CSV",
   },
   list: {
     method: "GET",
@@ -74,5 +85,16 @@ export const taskContract = c.router({
       404: errorResponse,
     },
     summary: "Approve task fields for submission (Copilot review)",
+  },
+  updateExternalStatus: {
+    method: "PATCH",
+    path: "/api/v1/tasks/:id/external-status",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: updateExternalStatusRequest,
+    responses: {
+      200: taskResponse,
+      404: errorResponse,
+    },
+    summary: "Update the external tracking status of a task",
   },
 });

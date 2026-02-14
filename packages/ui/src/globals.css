@@ -155,38 +155,43 @@
   }
 
   [data-theme="dark"] {
-    --wk-brand-espresso: #F5E6D4;
-    --wk-brand-espresso-90: #E0CDB8;
-    --wk-brand-espresso-80: #C4AD94;
-    --wk-brand-espresso-70: #A89078;
+    --wk-brand-espresso: #F2E0CC;
+    --wk-brand-espresso-90: #D6C4AE;
+    --wk-brand-espresso-80: #BAA892;
+    --wk-brand-espresso-70: #9E8C76;
 
-    --wk-surface-page: #1A1210;
-    --wk-surface-raised: #241C18;
-    --wk-surface-sunken: #12100E;
-    --wk-surface-overlay: rgba(30, 22, 18, 0.64);
-    --wk-surface-card: #2A2220;
-    --wk-surface-white: #302824;
+    /* Richer, warmer dark surfaces with better separation */
+    --wk-surface-page: #161210;
+    --wk-surface-raised: #221C18;
+    --wk-surface-sunken: #1C1714;
+    --wk-surface-overlay: rgba(22, 18, 16, 0.72);
+    --wk-surface-card: #28211D;
+    --wk-surface-white: #332B26;
 
-    --wk-text-primary: #F5E6D4;
-    --wk-text-secondary: #A89888;
-    --wk-text-tertiary: #7A6E64;
-    --wk-text-on-dark: #F5E6D4;
-    --wk-text-on-dark-muted: rgba(245, 230, 212, 0.7);
-    --wk-text-inverse: #1A1210;
+    /* Higher contrast text for better legibility */
+    --wk-text-primary: #F7EDE0;
+    --wk-text-secondary: #BDB0A4;
+    --wk-text-tertiary: #8C8078;
+    --wk-text-on-dark: #F7EDE0;
+    --wk-text-on-dark-muted: rgba(247, 237, 224, 0.75);
+    --wk-text-inverse: #161210;
 
-    --wk-border-subtle: rgba(245, 230, 212, 0.06);
-    --wk-border-default: rgba(245, 230, 212, 0.10);
-    --wk-border-strong: rgba(245, 230, 212, 0.18);
+    /* Stronger borders for better structure */
+    --wk-border-subtle: rgba(247, 237, 224, 0.08);
+    --wk-border-default: rgba(247, 237, 224, 0.14);
+    --wk-border-strong: rgba(247, 237, 224, 0.24);
 
-    --wk-accent-amber: #F0A050;
-    --wk-accent-amber-light: #D4945A;
-    --wk-accent-teal: #4DC4C4;
-    --wk-accent-coral: #F07858;
+    /* Brighter accents for dark backgrounds */
+    --wk-accent-amber: #F5A855;
+    --wk-accent-amber-light: #E0A060;
+    --wk-accent-teal: #56D0D0;
+    --wk-accent-coral: #F58060;
 
-    --wk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.20);
-    --wk-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
-    --wk-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.30);
-    --wk-shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.35);
+    /* Slightly warmer, softer shadows */
+    --wk-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.24);
+    --wk-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32);
+    --wk-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.40);
+    --wk-shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.48);
   }
 }
 

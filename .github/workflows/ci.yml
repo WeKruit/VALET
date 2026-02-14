@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [main, develop, staging]
+    branches: [main, staging]
   pull_request:
-    branches: [main, develop, staging]
+    branches: [main, staging]
 
 env:
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
@@ -48,7 +48,7 @@ jobs:
         run: pnpm turbo typecheck
 
       - name: Unit tests
-        run: pnpm turbo test
+        run: pnpm test
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/valet_test
 
@@ -61,12 +61,17 @@ jobs:
       - name: Check frontend bundle for secrets
         run: |
           FAIL=0
-          for pattern in "sk-ant-" "sk-proj-" "GOCSPX-" "eyJhbG" "postgresql://" "rediss://" "amqps://"; do
+          for pattern in "sk-ant-" "sk-proj-" "sk_live_" "sk_test_" "GOCSPX-" "eyJhbG" "postgresql://" "rediss://" "amqps://"; do
             if grep -r "$pattern" apps/web/dist/ 2>/dev/null; then
               echo "::error::Secret pattern '$pattern' found in frontend bundle!"
               FAIL=1
             fi
           done
+          # Also check for AWS keys and GitHub tokens via regex
+          if grep -rE 'AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}|glpat-' apps/web/dist/ 2>/dev/null; then
+            echo "::error::API key or token found in frontend bundle!"
+            FAIL=1
+          fi
           if [ "$FAIL" = "1" ]; then
             exit 1
           fi

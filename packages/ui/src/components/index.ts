@@ -45,4 +45,33 @@ export {
 } from "./toast";
 export { Badge, badgeVariants, type BadgeProps } from "./badge";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
+export { Textarea } from "./textarea";
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuRadioItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuGroup,
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuRadioGroup,
+} from "./dropdown-menu";
+export { Avatar, AvatarImage, AvatarFallback } from "./avatar";
+export { Skeleton } from "./skeleton";
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "./tooltip";
+export { Progress } from "./progress";
+export { Switch } from "./switch";
+export { Checkbox } from "./checkbox";
 export { cn } from "../lib/utils";

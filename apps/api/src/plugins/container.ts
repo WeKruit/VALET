@@ -20,6 +20,12 @@ import { ConsentService } from "../modules/consent/consent.service.js";
 import { GdprService } from "../modules/gdpr/gdpr.service.js";
 import { TaskEventRepository } from "../modules/task-events/task-event.repository.js";
 import { TaskEventService } from "../modules/task-events/task-event.service.js";
+import { EmailService } from "../services/email.service.js";
+import { SecurityLoggerService } from "../services/security-logger.service.js";
+import { BillingService } from "../modules/billing/billing.service.js";
+import { DashboardService } from "../modules/dashboard/dashboard.service.js";
+import { NotificationRepository } from "../modules/notifications/notification.repository.js";
+import { NotificationService } from "../modules/notifications/notification.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -40,6 +46,12 @@ export interface AppCradle {
   gdprService: GdprService;
   taskEventRepo: TaskEventRepository;
   taskEventService: TaskEventService;
+  emailService: EmailService;
+  securityLogger: SecurityLoggerService;
+  billingService: BillingService;
+  dashboardService: DashboardService;
+  notificationRepo: NotificationRepository;
+  notificationService: NotificationService;
 }
 
 declare module "@fastify/awilix" {
@@ -97,5 +109,11 @@ export default fp(async (fastify: FastifyInstance) => {
     gdprService: asClass(GdprService, { lifetime: Lifetime.SINGLETON }),
     taskEventRepo: asClass(TaskEventRepository, { lifetime: Lifetime.SINGLETON }),
     taskEventService: asClass(TaskEventService, { lifetime: Lifetime.SINGLETON }),
+    emailService: asClass(EmailService, { lifetime: Lifetime.SINGLETON }),
+    securityLogger: asClass(SecurityLoggerService, { lifetime: Lifetime.SINGLETON }),
+    billingService: asClass(BillingService, { lifetime: Lifetime.SINGLETON }),
+    dashboardService: asClass(DashboardService, { lifetime: Lifetime.SINGLETON }),
+    notificationRepo: asClass(NotificationRepository, { lifetime: Lifetime.SINGLETON }),
+    notificationService: asClass(NotificationService, { lifetime: Lifetime.SINGLETON }),
   });
 });

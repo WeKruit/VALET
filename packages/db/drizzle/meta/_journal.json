@@ -5,8 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1770930750630,
+      "when": 1737000000000,
       "tag": "0000_friendly_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1739400000000,
+      "tag": "0001_add_auth_columns",
       "breakpoints": true
     }
   ]

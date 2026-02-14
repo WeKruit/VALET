@@ -1,8 +1,7 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { useRealtimeStore } from "@/stores/realtime.store";
 
-// ─── Mock QueryClient ───
+// --- Mock QueryClient ---
 const mockInvalidateQueries = vi.fn();
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({
@@ -10,10 +9,47 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-// ─── Mock import.meta.env ───
+// --- Mock import.meta.env ---
 vi.stubEnv("VITE_WS_URL", "ws://localhost:8000/api/v1/ws");
 
-// ─── WebSocket Mock ───
+// --- Stable mock functions for the realtime store ---
+const mockSetStatus = vi.fn();
+const mockSetLastMessage = vi.fn();
+let storeState = { status: "disconnected" as string, lastMessage: null as unknown };
+
+vi.mock("@/stores/realtime.store", () => ({
+  useRealtimeStore: Object.assign(
+    (selector?: (s: any) => any) => {
+      if (selector) {
+        return selector({
+          status: storeState.status,
+          lastMessage: storeState.lastMessage,
+          setStatus: mockSetStatus,
+          setLastMessage: mockSetLastMessage,
+        });
+      }
+      return {
+        status: storeState.status,
+        lastMessage: storeState.lastMessage,
+        setStatus: mockSetStatus,
+        setLastMessage: mockSetLastMessage,
+      };
+    },
+    {
+      getState: () => ({
+        status: storeState.status,
+        lastMessage: storeState.lastMessage,
+        setStatus: mockSetStatus,
+        setLastMessage: mockSetLastMessage,
+      }),
+      setState: (partial: any) => {
+        Object.assign(storeState, partial);
+      },
+    }
+  ),
+}));
+
+// --- WebSocket Mock ---
 type WSHandler = (event?: any) => void;
 
 class MockWebSocket {
@@ -70,10 +106,13 @@ beforeEach(() => {
   (globalThis as any).WebSocket = MockWebSocket;
   vi.useFakeTimers();
 
-  // Reset the realtime store between tests
-  useRealtimeStore.setState({
-    status: "disconnected",
-    lastMessage: null,
+  // Reset store state
+  storeState = { status: "disconnected", lastMessage: null };
+  mockSetStatus.mockImplementation((status: string) => {
+    storeState.status = status;
+  });
+  mockSetLastMessage.mockImplementation((msg: unknown) => {
+    storeState.lastMessage = msg;
   });
 });
 
@@ -85,7 +124,6 @@ afterEach(() => {
 
 // Dynamically import after mocks are set up
 async function importHook() {
-  // Clear module cache to get fresh import with mocks
   vi.resetModules();
   const mod = await import("./use-task-websocket");
   return mod.useTaskWebSocket;
@@ -98,7 +136,7 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     expect(MockWebSocket.instances.length).toBe(1);
-    expect(MockWebSocket.instances[0].url).toContain("taskId=task-abc");
+    expect(MockWebSocket.instances[0]!.url).toContain("taskId=task-abc");
   });
 
   it("sets status to connecting on init", async () => {
@@ -106,7 +144,7 @@ describe("useTaskWebSocket", () => {
 
     renderHook(() => useTaskWebSocket("task-abc"));
 
-    expect(useRealtimeStore.getState().status).toBe("connecting");
+    expect(mockSetStatus).toHaveBeenCalledWith("connecting");
   });
 
   it("sets status to connected on open", async () => {
@@ -115,10 +153,10 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
-    expect(useRealtimeStore.getState().status).toBe("connected");
+    expect(mockSetStatus).toHaveBeenCalledWith("connected");
   });
 
   it("parses and stores incoming messages", async () => {
@@ -127,15 +165,15 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
     const message = { type: "state_change", status: "in_progress", progress: 50 };
     act(() => {
-      MockWebSocket.instances[0].simulateMessage(message);
+      MockWebSocket.instances[0]!.simulateMessage(message);
     });
 
-    expect(useRealtimeStore.getState().lastMessage).toEqual(message);
+    expect(mockSetLastMessage).toHaveBeenCalledWith(message);
   });
 
   it("invalidates queries on state_change message", async () => {
@@ -144,11 +182,11 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
     act(() => {
-      MockWebSocket.instances[0].simulateMessage({
+      MockWebSocket.instances[0]!.simulateMessage({
         type: "state_change",
         status: "in_progress",
       });
@@ -168,11 +206,11 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
     act(() => {
-      MockWebSocket.instances[0].simulateMessage({ type: "completed" });
+      MockWebSocket.instances[0]!.simulateMessage({ type: "completed" });
     });
 
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
@@ -186,11 +224,11 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
     act(() => {
-      MockWebSocket.instances[0].simulateMessage({
+      MockWebSocket.instances[0]!.simulateMessage({
         type: "error",
         errorCode: "TIMEOUT",
       });
@@ -207,13 +245,13 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
     mockInvalidateQueries.mockClear();
 
     act(() => {
-      MockWebSocket.instances[0].simulateMessage({
+      MockWebSocket.instances[0]!.simulateMessage({
         type: "heartbeat",
       });
     });
@@ -227,23 +265,23 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
     // Send malformed message directly through onmessage
     act(() => {
-      if (MockWebSocket.instances[0].onmessage) {
-        MockWebSocket.instances[0].onmessage({
+      if (MockWebSocket.instances[0]!.onmessage) {
+        MockWebSocket.instances[0]!.onmessage({
           data: "not-json{{{",
         });
       }
     });
 
-    // Should not throw, lastMessage should remain null or previous
-    expect(useRealtimeStore.getState().lastMessage).toBeNull();
+    // setLastMessage should not have been called with the malformed data
+    expect(mockSetLastMessage).not.toHaveBeenCalledWith("not-json{{{");
   });
 
-  // ─── Reconnection ───
+  // --- Reconnection ---
 
   it("sets status to disconnected on close", async () => {
     const useTaskWebSocket = await importHook();
@@ -251,14 +289,14 @@ describe("useTaskWebSocket", () => {
     renderHook(() => useTaskWebSocket("task-abc"));
 
     act(() => {
-      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0]!.simulateOpen();
     });
 
     act(() => {
-      MockWebSocket.instances[0].simulateClose();
+      MockWebSocket.instances[0]!.simulateClose();
     });
 
-    expect(useRealtimeStore.getState().status).toBe("disconnected");
+    expect(mockSetStatus).toHaveBeenCalledWith("disconnected");
   });
 
   it("reconnects with exponential backoff after close", async () => {
@@ -271,7 +309,7 @@ describe("useTaskWebSocket", () => {
 
     // Close triggers reconnect timer (1s delay for first retry)
     act(() => {
-      MockWebSocket.instances[0].simulateClose();
+      MockWebSocket.instances[0]!.simulateClose();
     });
 
     expect(MockWebSocket.instances.length).toBe(1); // Not yet reconnected
@@ -291,7 +329,7 @@ describe("useTaskWebSocket", () => {
 
     // First close -> 1s delay
     act(() => {
-      MockWebSocket.instances[0].simulateClose();
+      MockWebSocket.instances[0]!.simulateClose();
     });
 
     act(() => {
@@ -301,7 +339,7 @@ describe("useTaskWebSocket", () => {
 
     // Second close -> 2s delay
     act(() => {
-      MockWebSocket.instances[1].simulateClose();
+      MockWebSocket.instances[1]!.simulateClose();
     });
 
     act(() => {
@@ -322,7 +360,7 @@ describe("useTaskWebSocket", () => {
 
     // Close and reconnect
     act(() => {
-      MockWebSocket.instances[0].simulateClose();
+      MockWebSocket.instances[0]!.simulateClose();
     });
     act(() => {
       vi.advanceTimersByTime(1000);
@@ -330,12 +368,12 @@ describe("useTaskWebSocket", () => {
 
     // Open the new connection (resets counter)
     act(() => {
-      MockWebSocket.instances[1].simulateOpen();
+      MockWebSocket.instances[1]!.simulateOpen();
     });
 
     // Close again -> should be back to 1s delay (counter was reset)
     act(() => {
-      MockWebSocket.instances[1].simulateClose();
+      MockWebSocket.instances[1]!.simulateClose();
     });
 
     act(() => {
@@ -349,23 +387,23 @@ describe("useTaskWebSocket", () => {
 
     renderHook(() => useTaskWebSocket("task-abc"));
 
-    const closeSpy = vi.spyOn(MockWebSocket.instances[0], "close");
+    const closeSpy = vi.spyOn(MockWebSocket.instances[0]!, "close");
 
     act(() => {
-      MockWebSocket.instances[0].simulateError();
+      MockWebSocket.instances[0]!.simulateError();
     });
 
     expect(closeSpy).toHaveBeenCalled();
   });
 
-  // ─── Cleanup ───
+  // --- Cleanup ---
 
   it("cleans up WebSocket on unmount", async () => {
     const useTaskWebSocket = await importHook();
 
     const { unmount } = renderHook(() => useTaskWebSocket("task-abc"));
 
-    const closeSpy = vi.spyOn(MockWebSocket.instances[0], "close");
+    const closeSpy = vi.spyOn(MockWebSocket.instances[0]!, "close");
 
     unmount();
 
@@ -379,7 +417,7 @@ describe("useTaskWebSocket", () => {
 
     // Close to start reconnect timer
     act(() => {
-      MockWebSocket.instances[0].simulateClose();
+      MockWebSocket.instances[0]!.simulateClose();
     });
 
     unmount();

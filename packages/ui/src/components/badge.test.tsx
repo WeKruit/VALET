@@ -28,25 +28,25 @@ describe("Badge", () => {
   it("renders with success variant", () => {
     render(<Badge variant="success">Completed</Badge>);
     const badge = screen.getByText("Completed");
-    expect(badge.className).toContain("var(--wk-status-success)");
+    expect(badge.className).toContain("text-[var(--wk-status-success)]");
   });
 
   it("renders with warning variant", () => {
     render(<Badge variant="warning">Pending</Badge>);
     const badge = screen.getByText("Pending");
-    expect(badge.className).toContain("var(--wk-status-warning)");
+    expect(badge.className).toContain("text-[var(--wk-status-warning)]");
   });
 
   it("renders with error variant", () => {
     render(<Badge variant="error">Failed</Badge>);
     const badge = screen.getByText("Failed");
-    expect(badge.className).toContain("var(--wk-status-error)");
+    expect(badge.className).toContain("text-[var(--wk-status-error)]");
   });
 
   it("renders with info variant", () => {
     render(<Badge variant="info">Info</Badge>);
     const badge = screen.getByText("Info");
-    expect(badge.className).toContain("var(--wk-status-info)");
+    expect(badge.className).toContain("text-[var(--wk-status-info)]");
   });
 
   it("renders with copilot variant", () => {

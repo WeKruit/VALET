@@ -7,6 +7,10 @@ import { qaBankContract } from "./qa-bank.js";
 import { consentContract } from "./consent.js";
 import { userContract } from "./users.js";
 import { healthContract } from "./health.js";
+import { gdprContract } from "./gdpr.js";
+import { billingContract } from "./billing.js";
+import { dashboardContract } from "./dashboard.js";
+import { notificationContract } from "./notifications.js";
 
 const c = initContract();
 
@@ -19,6 +23,10 @@ export const apiContract = c.router({
   consent: consentContract,
   users: userContract,
   health: healthContract,
+  gdpr: gdprContract,
+  billing: billingContract,
+  dashboard: dashboardContract,
+  notifications: notificationContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -32,4 +40,8 @@ export {
   consentContract,
   userContract,
   healthContract,
+  gdprContract,
+  billingContract,
+  dashboardContract,
+  notificationContract,
 };

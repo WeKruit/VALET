@@ -3,6 +3,7 @@ import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AppRouter } from "./router";
 import { ErrorBoundary } from "./components/common/error-boundary";
+import { CookieConsentBanner } from "./features/legal/components/cookie-consent-banner";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +33,7 @@ export function App() {
               },
             }}
           />
+          <CookieConsentBanner />
         </BrowserRouter>
       </QueryClientProvider>
     </ErrorBoundary>

@@ -41,5 +41,6 @@ export default defineConfig({
     "application_results",
     "browser_profiles",
     "proxy_bindings",
+    "notifications",
   ],
 });

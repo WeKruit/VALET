@@ -25,6 +25,8 @@ COPY apps/web/ ./apps/web/
 ARG VITE_API_URL
 ARG VITE_WS_URL
 ARG VITE_GOOGLE_CLIENT_ID
+ARG VITE_SENTRY_DSN
+ARG VITE_PAYPAL_CLIENT_ID
 
 # Build only the web app and its dependencies
 RUN pnpm turbo build --filter=@valet/web

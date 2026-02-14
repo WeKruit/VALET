@@ -40,6 +40,7 @@ jobs:
       worker-app: valet-worker
       web-app: valet-web
       api-url: https://valet-api.fly.dev
+      google-client-id: "108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com"
       deploy-api: true
       deploy-worker: true
       deploy-web: true

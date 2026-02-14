@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 const envPath = resolve(import.meta.dirname, "../../../.env");
 if (existsSync(envPath)) process.loadEnvFile(envPath);
 
+import * as Sentry from "@sentry/node";
 import { Hatchet } from "@hatchet-dev/typescript-sdk";
 import Redis from "ioredis";
 import pino from "pino";
@@ -23,6 +24,16 @@ const logger = pino({
 });
 
 async function main() {
+  // Initialize Sentry for error tracking
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV ?? "development",
+      tracesSampleRate: process.env.NODE_ENV === "production" ? 0.2 : 1.0,
+    });
+    logger.info("Sentry error tracking initialized");
+  }
+
   logger.info("Starting Valet worker...");
 
   // Validate required Hatchet token
@@ -81,6 +92,7 @@ async function main() {
 }
 
 main().catch((err) => {
+  Sentry.captureException(err);
   logger.fatal(err, "Worker failed to start");
   process.exit(1);
 });

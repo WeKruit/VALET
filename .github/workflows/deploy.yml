@@ -46,6 +46,11 @@ on:
       hatchet-app:
         required: false
         type: string
+      google-client-id:
+        description: "Google OAuth Client ID (public, used at build time)"
+        required: false
+        type: string
+        default: ""
     secrets:
       FLY_API_TOKEN:
         required: true
@@ -141,6 +146,24 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      - name: Health check
+        if: success()
+        run: |
+          sleep 10
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ inputs.api-app }}.fly.dev/api/v1/health" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i: got status $STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
   # ── Deploy Worker ──
   deploy-worker:
     if: inputs.deploy-worker
@@ -163,7 +186,7 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-  # ── Deploy Web (no migration dependency — static SPA) ──
+  # ── Deploy Web (static SPA — no backend dependency) ──
   deploy-web:
     if: inputs.deploy-web
     runs-on: ubuntu-latest
@@ -183,7 +206,7 @@ jobs:
             --app ${{ inputs.web-app }} \
             --build-arg VITE_API_URL=${{ inputs.api-url }} \
             --build-arg VITE_WS_URL=${WS_URL} \
-            --build-arg VITE_GOOGLE_CLIENT_ID=${{ vars.VITE_GOOGLE_CLIENT_ID }} \
+            --build-arg VITE_GOOGLE_CLIENT_ID=${{ inputs.google-client-id }} \
             --remote-only \
             --wait-timeout 300
         env:

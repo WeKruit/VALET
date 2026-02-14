@@ -206,7 +206,7 @@ test.describe("Apply Flow", () => {
             status: "in_progress",
             mode: "copilot",
             progress: 35,
-            currentStep: "analyzing_form",
+            currentStep: "analyzing",
             confidenceScore: null,
             errorCode: null,
             errorMessage: null,
@@ -220,12 +220,34 @@ test.describe("Apply Flow", () => {
 
     await page.goto("/tasks/00000000-0000-0000-0000-000000000099");
 
-    // TODO: Assert on progress timeline elements once task detail UI is finalized.
-    // Expected elements:
-    //   - Progress percentage or bar
-    //   - Current step label (e.g., "Analyzing form...")
-    //   - Status badge (e.g., "In Progress")
-    //   - Platform badge (e.g., "LinkedIn")
-    await expect(page.locator("body")).toBeVisible();
+    // Page heading
+    await expect(page.getByText("Application Progress")).toBeVisible();
+
+    // Task Details card
+    await expect(page.getByText("Task Details")).toBeVisible();
+
+    // Status badge shows "in progress"
+    await expect(page.getByText("in progress")).toBeVisible();
+
+    // Platform label shows "LinkedIn"
+    await expect(page.getByText("LinkedIn")).toBeVisible();
+
+    // Mode badge shows "copilot"
+    await expect(page.getByText("copilot")).toBeVisible();
+
+    // Progress percentage displayed
+    await expect(page.getByText("35%")).toBeVisible();
+
+    // Progress timeline card
+    await expect(page.getByText("Progress")).toBeVisible();
+
+    // Timeline steps: completed steps (before "analyzing") should be visible
+    await expect(page.getByText("Queued")).toBeVisible();
+    await expect(page.getByText("Starting")).toBeVisible();
+    await expect(page.getByText("Navigating")).toBeVisible();
+    await expect(page.getByText("Analyzing")).toBeVisible();
+
+    // Current step description
+    await expect(page.getByText("Reading form fields")).toBeVisible();
   });
 });

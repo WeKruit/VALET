@@ -6,3 +6,8 @@ export * from "./consent.schema.js";
 export * from "./auth.schema.js";
 export * from "./common.schema.js";
 export * from "./task-event.schema.js";
+export * from "./gdpr.schema.js";
+export * from "./application.schema.js";
+export * from "./billing.schema.js";
+export * from "./dashboard.schema.js";
+export * from "./notification.schema.js";

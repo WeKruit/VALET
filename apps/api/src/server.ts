@@ -1,3 +1,4 @@
+/* global NodeJS */
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 
@@ -14,10 +15,11 @@ async function main() {
   const app = await buildApp();
 
   // Prevent unhandled socket errors (ECONNRESET, EPIPE, etc.) from crashing the process
-  process.on("uncaughtException", (err) => {
+  process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
     // Socket errors are expected when clients disconnect abruptly
-    const code = (err as { code?: string }).code;
-    if (code === "ECONNRESET" || code === "EPIPE" || code === "ECONNABORTED") {
+    if (err.code === "ECONNRESET" ||
+        err.code === "EPIPE" ||
+        err.code === "ECONNABORTED") {
       app.log.warn({ err: err.message }, "Ignored socket error");
       return;
     }
