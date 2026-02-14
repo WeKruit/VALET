@@ -7,7 +7,7 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
-    "test": "vitest run --workspace vitest.workspace.ts",
+    "test": "vitest run",
     "db:generate": "turbo db:generate --filter=@valet/db",
     "db:migrate": "turbo db:migrate --filter=@valet/db",
     "db:seed": "turbo db:seed --filter=@valet/db",
