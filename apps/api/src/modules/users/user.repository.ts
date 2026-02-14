@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { users, type Database } from "@valet/db";
 
 export class UserRepository {
@@ -81,6 +81,21 @@ export class UserRepository {
     const rows = await this.db
       .update(users)
       .set({ preferences, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return rows[0] ?? null;
+  }
+
+  async mergePreferences(
+    id: string,
+    partialPreferences: Record<string, unknown>,
+  ) {
+    const rows = await this.db
+      .update(users)
+      .set({
+        preferences: sql`COALESCE(${users.preferences}, '{}'::jsonb) || ${JSON.stringify(partialPreferences)}::jsonb`,
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, id))
       .returning();
     return rows[0] ?? null;

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Button } from "@valet/ui/components/button";
+import { Checkbox } from "@valet/ui/components/checkbox";
 import { ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -83,26 +84,32 @@ export function DisclaimerStep({ onAccepted }: DisclaimerStepProps) {
           </div>
 
           <div className="space-y-3 pt-2 border-t border-[var(--wk-border-subtle)]">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="disclaimer-check"
                 checked={disclaimerChecked}
-                onChange={(e) => setDisclaimerChecked(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-[var(--wk-border-default)] accent-[var(--wk-text-primary)]"
+                onCheckedChange={(checked) => setDisclaimerChecked(checked === true)}
+                className="mt-1"
               />
-              <span className="text-sm leading-relaxed text-[var(--wk-text-primary)]">
+              <label
+                htmlFor="disclaimer-check"
+                className="text-sm leading-relaxed text-[var(--wk-text-primary)] cursor-pointer"
+              >
                 I understand that Valet will automate job applications on my
                 behalf
-              </span>
-            </label>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
+              </label>
+            </div>
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="tos-check"
                 checked={tosChecked}
-                onChange={(e) => setTosChecked(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-[var(--wk-border-default)] accent-[var(--wk-text-primary)]"
+                onCheckedChange={(checked) => setTosChecked(checked === true)}
+                className="mt-1"
               />
-              <span className="text-sm leading-relaxed text-[var(--wk-text-primary)]">
+              <label
+                htmlFor="tos-check"
+                className="text-sm leading-relaxed text-[var(--wk-text-primary)] cursor-pointer"
+              >
                 I accept the{" "}
                 <a
                   href="/legal/terms"
@@ -119,8 +126,8 @@ export function DisclaimerStep({ onAccepted }: DisclaimerStepProps) {
                 >
                   Privacy Policy
                 </a>
-              </span>
-            </label>
+              </label>
+            </div>
           </div>
         </CardContent>
       </Card>

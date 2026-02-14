@@ -15,7 +15,7 @@ import type {
   UserData,
   FieldMapping,
 } from "@valet/shared/types";
-import { delay, randomDelay, fakeId } from "./base.js";
+import { randomDelay, fakeId } from "./base.js";
 
 export class LinkedInMockAdapter implements IPlatformAdapter {
   readonly platform = "linkedin" as const;

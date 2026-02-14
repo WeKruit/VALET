@@ -2,8 +2,27 @@ import fp from "fastify-plugin";
 import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
 
+function parseAllowedOrigins(): string[] {
+  const envOrigins = process.env.CORS_ORIGIN;
+  if (envOrigins) {
+    return envOrigins
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+  }
+  return ["http://localhost:5173"];
+}
+
 export default fp(
   async (fastify) => {
+    const allowedOrigins = parseAllowedOrigins();
+
+    if (process.env.NODE_ENV !== "production") {
+      if (!allowedOrigins.includes("http://localhost:5173")) {
+        allowedOrigins.push("http://localhost:5173");
+      }
+    }
+
     await fastify.register(helmet, {
       contentSecurityPolicy: {
         directives: {
@@ -40,7 +59,14 @@ export default fp(
     });
 
     await fastify.register(cors, {
-      origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+        fastify.log.warn(`CORS rejected origin: ${origin}`);
+        callback(new Error("Not allowed by CORS"), false);
+      },
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],

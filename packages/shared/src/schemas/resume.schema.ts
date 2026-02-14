@@ -2,6 +2,28 @@ import { z } from "zod";
 
 export const resumeStatus = z.enum(["uploading", "parsing", "parsed", "parse_failed"]);
 
+export const educationEntry = z.object({
+  school: z.string(),
+  degree: z.string(),
+  fieldOfStudy: z.string().optional(),
+  gpa: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  expectedGraduation: z.string().nullable().optional(),
+  honors: z.string().nullable().optional(),
+});
+
+export const workHistoryEntry = z.object({
+  title: z.string(),
+  company: z.string(),
+  location: z.string().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  description: z.string().optional(),
+  bullets: z.array(z.string()).optional(),
+  achievements: z.array(z.string()).optional(),
+});
+
 export const parsedResumeData = z
   .object({
     fullName: z.string().optional(),
@@ -10,34 +32,8 @@ export const parsedResumeData = z
     location: z.string().optional(),
     summary: z.string().optional(),
     skills: z.array(z.string()).optional(),
-    education: z
-      .array(
-        z.object({
-          school: z.string(),
-          degree: z.string(),
-          fieldOfStudy: z.string().optional(),
-          gpa: z.string().nullable().optional(),
-          startDate: z.string().nullable().optional(),
-          endDate: z.string().nullable().optional(),
-          expectedGraduation: z.string().nullable().optional(),
-          honors: z.string().nullable().optional(),
-        }),
-      )
-      .optional(),
-    workHistory: z
-      .array(
-        z.object({
-          title: z.string(),
-          company: z.string(),
-          location: z.string().optional(),
-          startDate: z.string().nullable().optional(),
-          endDate: z.string().nullable().optional(),
-          description: z.string().optional(),
-          bullets: z.array(z.string()).optional(),
-          achievements: z.array(z.string()).optional(),
-        }),
-      )
-      .optional(),
+    education: z.array(educationEntry).optional(),
+    workHistory: z.array(workHistoryEntry).optional(),
     projects: z
       .array(
         z.object({
@@ -105,6 +101,8 @@ export const resumeListResponse = z.object({
 });
 
 // ─── Inferred Types ───
+export type EducationEntry = z.infer<typeof educationEntry>;
+export type WorkHistoryEntry = z.infer<typeof workHistoryEntry>;
 export type ResumeStatus = z.infer<typeof resumeStatus>;
 export type Resume = z.infer<typeof resumeSchema>;
 export type ResumeUploadResponse = z.infer<typeof resumeUploadResponse>;

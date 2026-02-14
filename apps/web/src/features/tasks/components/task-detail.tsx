@@ -7,6 +7,13 @@ import {
 } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@valet/ui/components/select";
 import { TaskProgress } from "./task-progress";
 import { FieldReview } from "./field-review";
 import { useTask } from "../hooks/use-tasks";
@@ -23,6 +30,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface TaskDetailProps {
   taskId: string;
@@ -49,10 +57,21 @@ const platformLabels: Record<string, string> = {
   unknown: "Unknown",
 };
 
+const EXTERNAL_STATUS_OPTIONS = [
+  { value: "none", label: "Not set" },
+  { value: "applied", label: "Applied" },
+  { value: "viewed", label: "Viewed" },
+  { value: "interview", label: "Interview" },
+  { value: "rejected", label: "Rejected" },
+  { value: "offer", label: "Offer" },
+  { value: "ghosted", label: "Ghosted" },
+];
+
 export function TaskDetail({ taskId }: TaskDetailProps) {
   const { data, isLoading, isError } = useTask(taskId);
   const { status: wsStatus } = useTaskWebSocket(taskId);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const queryClient = useQueryClient();
 
   const cancelTask = api.tasks.cancel.useMutation({
     onSuccess: () => {
@@ -60,6 +79,16 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     },
     onError: () => {
       toast.error("Failed to cancel task. Please try again.");
+    },
+  });
+
+  const updateExternalStatus = api.tasks.updateExternalStatus.useMutation({
+    onSuccess: () => {
+      toast.success("External status updated.");
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+    onError: () => {
+      toast.error("Failed to update external status.");
     },
   });
 
@@ -111,9 +140,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
       {/* Task Info Card */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-xl">Task Details</CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* WebSocket connection indicator */}
               <div className="flex items-center gap-1.5">
                 <div
@@ -153,7 +182,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 {platformLabels[task.platform] ?? task.platform}
               </p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
                 Job URL
               </p>
@@ -191,12 +220,50 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 })}
               </p>
             </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+                External Status
+              </p>
+              <Select
+                value={task.externalStatus ?? "none"}
+                onValueChange={(v) =>
+                  updateExternalStatus.mutate({
+                    params: { id: taskId },
+                    body: { externalStatus: v === "none" ? null : (v as any) },
+                  })
+                }
+              >
+                <SelectTrigger className="mt-1 w-full">
+                  <SelectValue placeholder="Set status..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXTERNAL_STATUS_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Field Review Panel - only for waiting_human */}
-      {isWaitingReview && <FieldReview taskId={taskId} />}
+      {isWaitingReview && (
+        <FieldReview
+          taskId={taskId}
+          task={{
+            jobTitle: task.jobTitle,
+            companyName: task.companyName,
+            jobLocation: task.jobLocation,
+            jobUrl: task.jobUrl,
+            platform: task.platform,
+            fieldsFilled: task.fieldsFilled,
+            confidenceScore: task.confidenceScore,
+          }}
+        />
+      )}
 
       {/* Error Details - for failed tasks */}
       {isFailed && (

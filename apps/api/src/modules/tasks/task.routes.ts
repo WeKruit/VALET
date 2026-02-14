@@ -10,6 +10,14 @@ export const taskRouter = s.router(taskContract, {
     return { status: 200 as const, body: stats };
   },
 
+  export: async ({ request, reply }) => {
+    const { taskService } = request.diScope.cradle;
+    const csv = await taskService.exportCsv(request.userId);
+    reply.header("Content-Type", "text/csv");
+    reply.header("Content-Disposition", "attachment; filename=tasks-export.csv");
+    return { status: 200 as const, body: csv };
+  },
+
   list: async ({ query, request }) => {
     const { taskService } = request.diScope.cradle;
     const result = await taskService.list(request.userId, query);
@@ -40,6 +48,16 @@ export const taskRouter = s.router(taskContract, {
       params.id,
       request.userId,
       body.fieldOverrides,
+    );
+    return { status: 200, body: task };
+  },
+
+  updateExternalStatus: async ({ params, body, request }) => {
+    const { taskService } = request.diScope.cradle;
+    const task = await taskService.updateExternalStatus(
+      params.id,
+      request.userId,
+      body.externalStatus,
     );
     return { status: 200, body: task };
   },

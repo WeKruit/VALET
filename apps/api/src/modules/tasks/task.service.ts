@@ -1,5 +1,5 @@
 import type { Hatchet } from "@hatchet-dev/typescript-sdk";
-import type { ApplicationMode } from "@valet/shared/schemas";
+import type { ApplicationMode, ExternalStatus } from "@valet/shared/schemas";
 import type { TaskRepository } from "./task.repository.js";
 import { TaskNotFoundError, TaskNotCancellableError } from "./task.errors.js";
 
@@ -9,6 +9,13 @@ const CANCELLABLE_STATUSES = new Set([
   "in_progress",
   "waiting_human",
 ]);
+
+function csvEscape(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
 
 export class TaskService {
   private taskRepo: TaskRepository;
@@ -38,6 +45,7 @@ export class TaskService {
       pageSize: number;
       status?: string;
       platform?: string;
+      search?: string;
       sortBy: string;
       sortOrder: string;
     },
@@ -52,6 +60,33 @@ export class TaskService {
         totalPages: Math.ceil(total / query.pageSize),
       },
     };
+  }
+
+  async exportCsv(userId: string): Promise<string> {
+    const allTasks = await this.taskRepo.findAllForExport(userId);
+
+    const headers = ["Date", "Job Title", "Company", "Platform", "Status", "External Status", "URL"];
+    const rows = allTasks.map((t) => [
+      t.createdAt.toISOString().split("T")[0] ?? "",
+      csvEscape(t.jobTitle ?? ""),
+      csvEscape(t.companyName ?? ""),
+      t.platform,
+      t.status,
+      t.externalStatus ?? "",
+      csvEscape(t.jobUrl),
+    ]);
+
+    return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  }
+
+  async updateExternalStatus(
+    id: string,
+    userId: string,
+    externalStatus: ExternalStatus | null,
+  ) {
+    const task = await this.taskRepo.updateExternalStatus(id, userId, externalStatus);
+    if (!task) throw new TaskNotFoundError(id);
+    return task;
   }
 
   async create(

@@ -21,7 +21,7 @@ const platformColors: Record<string, string> = {
 };
 
 export function ActiveTasks() {
-  const { data, isLoading, isError } = useTasks({ status: "in_progress" });
+  const { data, isLoading, isError, refetch } = useTasks({ status: "in_progress" });
   const activeTasks = data?.status === 200 ? data.body.data : [];
 
   return (
@@ -46,8 +46,27 @@ export function ActiveTasks() {
             <LoadingSpinner />
           </div>
         ) : isError ? (
-          <div className="py-8 text-center text-sm text-[var(--wk-status-error)]">
-            Failed to load active tasks. Please try refreshing.
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-surface-sunken)]">
+              <FileSearch className="h-6 w-6 text-[var(--wk-text-tertiary)]" />
+            </div>
+            <h3 className="mt-4 font-display text-lg font-semibold">
+              No active tasks
+            </h3>
+            <p className="mt-1 max-w-xs text-sm text-[var(--wk-text-secondary)]">
+              Start an application to see live progress here.
+            </p>
+            <div className="flex items-center gap-2 mt-4">
+              <Button asChild variant="primary" size="sm">
+                <Link to="/apply">Start an application</Link>
+              </Button>
+              <button
+                onClick={() => refetch()}
+                className="text-xs font-medium text-[var(--wk-accent-amber)] hover:underline cursor-pointer"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
         ) : activeTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
@@ -74,7 +93,9 @@ export function ActiveTasks() {
               >
                 <div className="flex flex-col gap-1.5 min-w-0">
                   <span className="text-sm font-medium truncate">
-                    {task.jobUrl}
+                    {task.jobTitle && task.companyName
+                      ? `${task.jobTitle} at ${task.companyName}`
+                      : task.jobTitle ?? task.companyName ?? task.jobUrl}
                   </span>
                   <div className="flex items-center gap-2">
                     <Badge

@@ -70,7 +70,6 @@ pnpm db:migrate       # Run migrations
 
 ```bash
 ./scripts/setup.sh           # First-time local dev setup
-./scripts/setup-fly.sh dev   # Create Fly.io apps for dev environment
 ./scripts/setup-fly.sh stg   # Create Fly.io apps for staging
 ./scripts/setup-fly.sh prod  # Create Fly.io apps for production
 ./scripts/health-check.sh    # Check service connectivity
@@ -80,34 +79,30 @@ pnpm db:migrate       # Run migrations
 
 ```
 main        ← production (auto-deploys to Fly.io prod)
-staging     ← staging environment (auto-deploys to Fly.io stg)
-develop     ← integration branch (auto-deploys to Fly.io dev)
-feature/*   ← feature branches (branch from develop)
-fix/*       ← bug fixes (branch from develop)
+staging     ← staging / integration branch (auto-deploys to Fly.io stg)
+feature/*   ← feature branches (branch from staging)
+fix/*       ← bug fixes (branch from staging)
 hotfix/*    ← urgent prod fixes (branch from main)
 ```
 
 ### Workflow
 
-1. **New feature**: `git checkout -b feature/my-feature develop`
-2. **Open PR**: feature/* → develop (CI runs lint + typecheck + test + build)
-3. **After merge to develop**: auto-deploys to dev environment
-4. **Promote to staging**: PR develop → staging
-5. **Promote to production**: PR staging → main (requires approval)
-6. **Hotfix**: `git checkout -b hotfix/fix-name main`, PR → main, then backport to develop
+1. **New feature**: `git checkout -b feature/my-feature staging`
+2. **Open PR**: feature/* → staging (CI runs lint + typecheck + test + build)
+3. **After merge to staging**: auto-deploys to staging environment
+4. **Promote to production**: PR staging → main (requires approval)
+5. **Hotfix**: `git checkout -b hotfix/fix-name main`, PR → main, then backport to staging
 
 ### Branch Protection Rules (set in GitHub Settings → Branches)
 
 - `main`: Require PR review, require CI pass, no force push
 - `staging`: Require CI pass, no force push
-- `develop`: Require CI pass
 
 ## Environments
 
 | Env        | Branch    | API URL                           | Web URL                          | Hatchet URL                          |
 |------------|-----------|-----------------------------------|----------------------------------|--------------------------------------|
 | Local      | any       | http://localhost:8000             | http://localhost:5173            | https://valet-hatchet-dev.fly.dev    |
-| Dev        | develop   | https://valet-api-dev.fly.dev     | https://valet-web-dev.fly.dev    | https://valet-hatchet-dev.fly.dev    |
 | Staging    | staging   | https://valet-api-stg.fly.dev     | https://valet-web-stg.fly.dev    | https://valet-hatchet-stg.fly.dev    |
 | Production | main      | https://valet-api.fly.dev         | https://valet-web.fly.dev        | https://valet-hatchet-prod.fly.dev   |
 
@@ -117,7 +112,6 @@ Add ALL of these to Google Cloud Console → Credentials → OAuth 2.0 Client:
 
 ```
 http://localhost:8000/api/v1/auth/google/callback
-https://valet-api-dev.fly.dev/api/v1/auth/google/callback
 https://valet-api-stg.fly.dev/api/v1/auth/google/callback
 https://valet-api.fly.dev/api/v1/auth/google/callback
 ```
@@ -133,25 +127,34 @@ https://valet-api.fly.dev/api/v1/auth/google/callback
 ### Setting Fly.io Secrets
 
 ```bash
-# Example: set secrets for dev API
-fly secrets set -a valet-api-dev \
+# Example: set secrets for staging API
+fly secrets set -a valet-api-stg \
   DATABASE_URL="postgresql://..." \
   REDIS_URL="rediss://..." \
   JWT_SECRET="$(openssl rand -base64 48)"
 
 # List current secrets
-fly secrets list -a valet-api-dev
+fly secrets list -a valet-api-stg
 ```
 
 ### Manual Deploy (without CI)
 
 ```bash
-fly deploy --config fly/hatchet.toml --app valet-hatchet-dev --remote-only
-fly deploy --config fly/api.toml --app valet-api-dev --remote-only
-fly deploy --config fly/worker.toml --app valet-worker-dev --remote-only
-fly deploy --config fly/web.toml --app valet-web-dev --remote-only \
-  --build-arg VITE_API_URL=https://valet-api-dev.fly.dev \
-  --build-arg VITE_WS_URL=wss://valet-api-dev.fly.dev
+# Staging
+fly deploy --config fly/hatchet.toml --app valet-hatchet-stg --remote-only
+fly deploy --config fly/api.toml --app valet-api-stg --remote-only
+fly deploy --config fly/worker.toml --app valet-worker-stg --remote-only
+fly deploy --config fly/web.toml --app valet-web-stg --remote-only \
+  --build-arg VITE_API_URL=https://valet-api-stg.fly.dev \
+  --build-arg VITE_WS_URL=wss://valet-api-stg.fly.dev
+
+# Production
+fly deploy --config fly/hatchet.toml --app valet-hatchet-prod --remote-only
+fly deploy --config fly/api.toml --app valet-api --remote-only
+fly deploy --config fly/worker.toml --app valet-worker --remote-only
+fly deploy --config fly/web.toml --app valet-web --remote-only \
+  --build-arg VITE_API_URL=https://valet-api.fly.dev \
+  --build-arg VITE_WS_URL=wss://valet-api.fly.dev
 ```
 
 ## Key Technical Decisions

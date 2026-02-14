@@ -7,8 +7,8 @@ import { qaBank } from "./qa-bank.js";
 import { consentRecords } from "./consent-records.js";
 import { browserProfiles } from "./browser-profiles.js";
 import { applicationResults } from "./application-results.js";
-import { auditTrail } from "./audit-trail.js";
 import { applicationFields } from "./application-fields.js";
+import { notifications } from "./notifications.js";
 
 export const usersRelations = relations(users, ({ many }) => ({
   tasks: many(tasks),
@@ -16,6 +16,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   qaBank: many(qaBank),
   consentRecords: many(consentRecords),
   browserProfiles: many(browserProfiles),
+  notifications: many(notifications),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
@@ -74,5 +75,12 @@ export const applicationFieldsRelations = relations(applicationFields, ({ one })
   task: one(tasks, {
     fields: [applicationFields.applicationId],
     references: [tasks.id],
+  }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
   }),
 }));

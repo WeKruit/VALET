@@ -7,11 +7,14 @@ import { formatRelativeTime } from "@/lib/utils";
 interface TaskItem {
   id: string;
   jobUrl: string;
+  jobTitle?: string | null;
+  companyName?: string | null;
   platform: string;
   status: string;
+  externalStatus?: string | null;
   mode: "copilot" | "autopilot";
   progress: number;
-  currentStep: string | null;
+  currentStep?: string | null;
   createdAt: Date;
 }
 
@@ -27,6 +30,15 @@ const statusBadgeVariant: Record<string, "default" | "success" | "warning" | "er
   completed: "success",
   failed: "error",
   cancelled: "default",
+};
+
+const externalStatusBadgeVariant: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
+  applied: "info",
+  viewed: "default",
+  interview: "warning",
+  rejected: "error",
+  offer: "success",
+  ghosted: "default",
 };
 
 export function TaskList({ tasks }: TaskListProps) {
@@ -46,16 +58,21 @@ export function TaskList({ tasks }: TaskListProps) {
       {tasks.map((task) => (
         <Link key={task.id} to={`/tasks/${task.id}`}>
           <Card className="hover:shadow-[var(--wk-shadow-md)] transition-shadow cursor-pointer">
-            <CardContent className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-4">
-                <div className="flex flex-col gap-1">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="flex flex-col gap-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate max-w-xs">
-                      {task.jobUrl}
+                    <span className="text-sm font-medium truncate">
+                      {task.jobTitle ?? task.jobUrl}
                     </span>
-                    <ExternalLink className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
+                    {task.companyName && (
+                      <span className="text-sm text-[var(--wk-text-secondary)] truncate">
+                        at {task.companyName}
+                      </span>
+                    )}
+                    <ExternalLink className="h-3 w-3 shrink-0 text-[var(--wk-text-tertiary)]" />
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="default">{task.platform}</Badge>
                     <Badge
                       variant={
@@ -64,6 +81,13 @@ export function TaskList({ tasks }: TaskListProps) {
                     >
                       {task.mode}
                     </Badge>
+                    {task.externalStatus && (
+                      <Badge
+                        variant={externalStatusBadgeVariant[task.externalStatus] ?? "default"}
+                      >
+                        {task.externalStatus}
+                      </Badge>
+                    )}
                     <span className="text-xs text-[var(--wk-text-tertiary)]">
                       {formatRelativeTime(task.createdAt)}
                     </span>
@@ -71,7 +95,7 @@ export function TaskList({ tasks }: TaskListProps) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0">
                 {task.status === "in_progress" && (
                   <div className="flex items-center gap-2">
                     <div className="h-2 w-24 rounded-full bg-[var(--wk-surface-sunken)]">

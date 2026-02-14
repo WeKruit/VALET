@@ -67,11 +67,11 @@ export function OnboardingPage() {
       </div>
 
       {/* Progress indicator */}
-      <div className="flex items-center justify-center gap-2 py-6">
+      <div className="flex items-center justify-center gap-1.5 sm:gap-2 py-4 sm:py-6 px-4">
         {STEPS.map((s, i) => (
-          <div key={s.key} className="flex items-center gap-2">
+          <div key={s.key} className="flex items-center gap-1.5 sm:gap-2">
             <div
-              className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+              className={`flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full transition-colors ${
                 i < currentStepIndex
                   ? "bg-[var(--wk-status-success)] text-white"
                   : i === currentStepIndex
@@ -80,14 +80,14 @@ export function OnboardingPage() {
               }`}
             >
               {i < currentStepIndex ? (
-                <CheckCircle className="h-4 w-4" />
+                <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               ) : (
-                <span className="text-xs font-medium">{i + 1}</span>
+                <span className="text-[10px] sm:text-xs font-medium">{i + 1}</span>
               )}
             </div>
             {i < STEPS.length - 1 && (
               <div
-                className={`h-px w-8 transition-colors ${
+                className={`h-px w-6 sm:w-8 transition-colors ${
                   i < currentStepIndex
                     ? "bg-[var(--wk-status-success)]"
                     : "bg-[var(--wk-border-default)]"
@@ -97,7 +97,7 @@ export function OnboardingPage() {
           </div>
         ))}
       </div>
-      <div className="flex justify-center gap-8 text-xs text-[var(--wk-text-secondary)] mb-8">
+      <div className="flex justify-center gap-3 sm:gap-8 text-[10px] sm:text-xs text-[var(--wk-text-secondary)] mb-6 sm:mb-8 px-4">
         {STEPS.map((s, i) => (
           <span
             key={s.key}
@@ -136,14 +136,33 @@ export function OnboardingPage() {
             profile={profile}
             isSaving={updateProfile.isPending}
             onConfirm={(updates) => {
-              if (updates.phone || updates.location) {
-                updateProfile.mutate(
+              const body: Record<string, unknown> = {};
+              if (updates.phone) body.phone = updates.phone;
+              if (updates.location) body.location = updates.location;
+              if (updates.experience?.length) {
+                body.workHistory = updates.experience.map((exp) => ({
+                  company: "",
+                  title: exp,
+                  startDate: "",
+                  endDate: "",
+                  description: "",
+                }));
+              }
+              if (updates.education) {
+                body.education = [
                   {
-                    body: {
-                      ...(updates.phone && { phone: updates.phone }),
-                      ...(updates.location && { location: updates.location }),
-                    },
+                    school: updates.education,
+                    degree: "",
+                    field: "",
+                    startDate: "",
+                    endDate: "",
+                    gpa: "",
                   },
+                ];
+              }
+              if (Object.keys(body).length > 0) {
+                updateProfile.mutate(
+                  { body: body as any },
                   { onSuccess: () => setStep("disclaimer") }
                 );
               } else {

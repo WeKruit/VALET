@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Button } from "@valet/ui/components/button";
@@ -24,7 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { api, API_BASE_URL, getAccessToken } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -58,32 +59,16 @@ export function ResumeSettings() {
     },
   });
 
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  async function handleDelete(id: string) {
-    setIsDeleting(true);
-    try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE_URL}/api/v1/resumes/${id}`, {
-        method: "DELETE",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.status === 204 || res.status === 200) {
-        toast.success("Resume deleted.");
-        queryClient.invalidateQueries({ queryKey: ["resumes"] });
-        setDeleteId(null);
-      } else {
-        const body = await res.json().catch(() => null);
-        console.error("Delete failed:", res.status, body);
-        toast.error(body?.message ?? "Failed to delete resume.");
-      }
-    } catch (err) {
-      console.error("Delete error:", err);
+  const deleteResume = api.resumes.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Resume deleted.");
+      queryClient.invalidateQueries({ queryKey: ["resumes"] });
+      setDeleteId(null);
+    },
+    onError: () => {
       toast.error("Failed to delete resume. Please try again.");
-    } finally {
-      setIsDeleting(false);
-    }
-  }
+    },
+  });
 
   const setDefault = api.resumes.setDefault.useMutation({
     onSuccess: () => {
@@ -117,7 +102,6 @@ export function ResumeSettings() {
         processFile(file);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -522,14 +506,16 @@ export function ResumeSettings() {
             </Button>
             <Button
               variant="destructive"
-              disabled={isDeleting}
+              disabled={deleteResume.isPending}
               onClick={() => {
                 if (deleteId) {
-                  handleDelete(deleteId);
+                  deleteResume.mutate({
+                    params: { id: deleteId },
+                  });
                 }
               }}
             >
-              {isDeleting ? "Deleting..." : "Delete"}
+              {deleteResume.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -540,7 +526,7 @@ export function ResumeSettings() {
 
 function StatusBadge({
   status,
-  confidence,
+  confidence: _confidence,
 }: {
   status: string;
   confidence: number | null;

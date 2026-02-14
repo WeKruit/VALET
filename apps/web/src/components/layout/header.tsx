@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, User, LogOut, Settings, ChevronDown } from "lucide-react";
+import { User, LogOut, Settings, ChevronDown, Menu } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useUIStore } from "@/stores/ui.store";
 import { cn } from "@/lib/utils";
+import { NotificationPanel } from "@/features/notifications/components/notification-panel";
 
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -30,6 +33,7 @@ export function Header() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { setMobileSidebarOpen } = useUIStore();
 
   const pageTitle = getPageTitle(location.pathname);
 
@@ -54,21 +58,26 @@ export function Header() {
   }, [menuOpen]);
 
   return (
-    <header className="flex items-center justify-between h-14 px-6 border-b border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)]">
-      {/* Page title */}
-      <h2 className="text-sm font-medium text-[var(--wk-text-secondary)]">
-        {pageTitle}
-      </h2>
+    <header className="flex items-center justify-between h-14 px-4 md:px-6 border-b border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)]">
+      <div className="flex items-center gap-3">
+        {/* Mobile hamburger menu */}
+        <button
+          onClick={() => setMobileSidebarOpen(true)}
+          aria-label="Open navigation menu"
+          className="flex md:hidden items-center justify-center h-9 w-9 rounded-[var(--wk-radius-lg)] cursor-pointer text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)] transition-colors duration-150"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
+        {/* Page title */}
+        <h2 className="text-lg font-medium text-[var(--wk-text-secondary)]">
+          {pageTitle}
+        </h2>
+      </div>
 
       <div className="flex items-center gap-2">
-        {/* Notifications */}
-        <button
-          title="Notifications"
-          aria-label="Notifications"
-          className="relative flex items-center justify-center h-9 w-9 rounded-[var(--wk-radius-lg)] text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] transition-colors duration-150 cursor-pointer"
-        >
-          <Bell className="h-5 w-5" />
-        </button>
+        {/* Notification bell */}
+        <NotificationPanel />
 
         {/* User menu */}
         <div ref={menuRef} className="relative">
@@ -83,17 +92,12 @@ export function Header() {
               menuOpen && "bg-[var(--wk-surface-raised)]"
             )}
           >
-            {user?.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt={user.name}
-                className="h-7 w-7 rounded-[var(--wk-radius-full)] object-cover"
-              />
-            ) : (
-              <div className="flex items-center justify-center h-7 w-7 rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-secondary)]">
+            <Avatar className="h-7 w-7">
+              <AvatarImage src={user?.avatarUrl ?? undefined} alt={user?.name} />
+              <AvatarFallback>
                 <User className="h-4 w-4" />
-              </div>
-            )}
+              </AvatarFallback>
+            </Avatar>
             <ChevronDown
               className={cn(
                 "h-3.5 w-3.5 text-[var(--wk-text-tertiary)] transition-transform duration-150",
@@ -128,7 +132,7 @@ export function Header() {
                 role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
-                  navigate("/settings");
+                  navigate("/settings?tab=profile");
                 }}
                 className="flex items-center gap-2 w-full px-3 py-2 text-sm cursor-pointer text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)] transition-colors duration-100"
               >

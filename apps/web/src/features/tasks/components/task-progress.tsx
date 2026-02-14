@@ -42,14 +42,6 @@ export function TaskProgress({
     ? steps.findIndex((s) => s.id === currentStep)
     : steps.findIndex((s) => s.id === currentStep);
 
-  // Generate mock timestamps relative to createdAt
-  const baseTime = createdAt ? new Date(createdAt).getTime() : Date.now();
-  const stepTimestamps = steps.map((_, i) => {
-    if (i > currentIndex) return null;
-    // Each step takes ~10-30 seconds
-    return new Date(baseTime + i * 15000 + Math.random() * 10000);
-  });
-
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -73,7 +65,6 @@ export function TaskProgress({
             const isCurrent = index === currentIndex;
             const isPending = index > currentIndex;
             const isErrorStep = isCurrent && (isFailed || isCancelled);
-            const timestamp = stepTimestamps[index];
 
             return (
               <div key={step.id} className="flex gap-4">
@@ -117,7 +108,7 @@ export function TaskProgress({
                 </div>
 
                 {/* Content */}
-                <div className="flex items-start justify-between pb-4 pt-1 flex-1 min-w-0">
+                <div className="flex items-start pb-4 pt-1 flex-1 min-w-0">
                   <div>
                     <p
                       className={cn(
@@ -132,15 +123,6 @@ export function TaskProgress({
                       {step.description}
                     </p>
                   </div>
-                  {timestamp && (
-                    <span className="text-[10px] text-[var(--wk-text-tertiary)] shrink-0 ml-2 tabular-nums">
-                      {timestamp.toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
-                    </span>
-                  )}
                 </div>
               </div>
             );

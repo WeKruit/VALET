@@ -1,30 +1,92 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type * as ReactRouterDom from "react-router-dom";
 import { MemoryRouter } from "react-router-dom";
 import { OnboardingPage } from "./onboarding-page";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>(
-    "react-router-dom"
-  );
+  const actual =
+    await vi.importActual<typeof ReactRouterDom>("react-router-dom");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
   };
 });
 
-// Mock api client for resume upload
+// Mock api client for resume upload + user profile
+const mockUploadMutate = vi.fn();
+const mockUpdateProfileMutate = vi.fn();
+
+// Store the latest useMutation opts so onSuccess uses the latest closure
+let latestUploadOpts: any = null;
+
 vi.mock("@/lib/api-client", () => ({
   api: {
     resumes: {
       upload: {
-        useMutation: (opts?: any) => ({
-          mutate: (_payload: any) => {
-            // Simulate successful upload
-            if (opts?.onSuccess) {
-              opts.onSuccess({ status: 202, body: { id: "resume-1", status: "parsing" } });
+        useMutation: (opts?: any) => {
+          // Update the ref on each render so onSuccess has fresh closure
+          latestUploadOpts = opts;
+          return {
+            mutate: (payload: any) => {
+              mockUploadMutate(payload);
+              // Fire onSuccess asynchronously using latest opts
+              // so React can flush state and re-render with fresh closure
+              setTimeout(() => {
+                if (latestUploadOpts?.onSuccess) {
+                  latestUploadOpts.onSuccess({ status: 202, body: { id: "resume-1", status: "parsing" } });
+                }
+              }, 0);
+            },
+            isPending: false,
+          };
+        },
+      },
+    },
+    users: {
+      getProfile: {
+        useQuery: () => ({
+          data: {
+            status: 200,
+            body: {
+              name: "Test User",
+              email: "test@example.com",
+              phone: "",
+              location: "",
+              workHistory: [],
+              education: [],
+              skills: [],
+            },
+          },
+          isLoading: false,
+        }),
+      },
+      updateProfile: {
+        useMutation: (_opts?: any) => ({
+          mutate: (payload: any, callOpts?: any) => {
+            mockUpdateProfileMutate(payload);
+            if (callOpts?.onSuccess) {
+              callOpts.onSuccess({ status: 200, body: {} });
+            }
+          },
+          isPending: false,
+        }),
+      },
+    },
+    consent: {
+      check: {
+        useQuery: () => ({
+          data: { status: 200, body: { accepted: false } },
+          isLoading: false,
+        }),
+      },
+      create: {
+        useMutation: (_opts?: any) => ({
+          mutate: (_payload: any, callOpts?: any) => {
+            if (callOpts?.onSuccess) {
+              callOpts.onSuccess({ status: 201, body: {} });
             }
           },
           isPending: false,
@@ -37,6 +99,40 @@ vi.mock("@/lib/api-client", () => ({
 // Mock cn utility
 vi.mock("@/lib/utils", () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(" "),
+}));
+
+// Mock sonner
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+// Mock useConsent hook
+vi.mock("@/features/consent/hooks/use-consent", () => ({
+  useConsent: () => ({
+    tosAccepted: false,
+    copilotAccepted: false,
+    isLoading: false,
+    needsConsent: true,
+    needsTos: true,
+    needsCopilot: false,
+    markTosAccepted: vi.fn(),
+    markCopilotAccepted: vi.fn(),
+  }),
+}));
+
+// Mock consent text
+vi.mock("@/content/legal/consent-text", () => ({
+  LAYER_1_REGISTRATION: { type: "tos", version: "1.0", title: "Terms of Service", preamble: "", risks: [] },
+  LAYER_2_COPILOT_DISCLAIMER: {
+    type: "copilot_disclaimer",
+    version: "1.0",
+    title: "Copilot Disclaimer",
+    preamble: "Please review",
+    risks: [],
+  },
 }));
 
 function renderOnboardingPage() {
@@ -52,7 +148,7 @@ describe("OnboardingPage", () => {
     vi.clearAllMocks();
   });
 
-  // ─── Header ───
+  // --- Header ---
 
   it("renders the WeKruit logo and name", () => {
     renderOnboardingPage();
@@ -60,16 +156,16 @@ describe("OnboardingPage", () => {
     expect(screen.getByText("WeKruit")).toBeInTheDocument();
   });
 
-  // ─── Progress Dots ───
+  // --- Progress Dots ---
 
   it("renders 3 progress step labels", () => {
     renderOnboardingPage();
-    expect(screen.getByText("Sign Up")).toBeInTheDocument();
-    expect(screen.getByText("Resume")).toBeInTheDocument();
-    expect(screen.getByText("Quick Review")).toBeInTheDocument();
+    expect(screen.getByText("Upload Resume")).toBeInTheDocument();
+    expect(screen.getByText("Review Details")).toBeInTheDocument();
+    expect(screen.getByText("Get Started")).toBeInTheDocument();
   });
 
-  // ─── Step 1: Upload ───
+  // --- Step 1: Upload ---
 
   it("starts on the upload step", () => {
     renderOnboardingPage();
@@ -105,13 +201,12 @@ describe("OnboardingPage", () => {
     expect(fileInput.className).toContain("hidden");
   });
 
-  // ─── Step Transition ───
+  // --- Step Transition ---
 
   it("transitions to review step after file upload", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
 
-    // Simulate file selection
     const fileInput = document.querySelector(
       'input[type="file"]'
     ) as HTMLInputElement;
@@ -122,13 +217,13 @@ describe("OnboardingPage", () => {
 
     await user.upload(fileInput, file);
 
-    // After upload completes, should show review step
-    // The upload mutation mock immediately succeeds, which triggers onUploadComplete
-    // and transitions to review step
-    expect(screen.getByText("Quick Review")).toBeInTheDocument();
+    // After upload completes (async mock), should show review step content
+    await waitFor(() => {
+      expect(screen.getByText("Does this look right?")).toBeInTheDocument();
+    });
   });
 
-  // ─── Step 2: Review ───
+  // --- Step 2: Review ---
 
   it("shows review content after transitioning", async () => {
     const user = userEvent.setup();
@@ -144,12 +239,12 @@ describe("OnboardingPage", () => {
 
     await user.upload(fileInput, file);
 
-    // Should show the QuickReview component
-    // which has "Looks Good" confirmation button
-    expect(screen.getByText(/Looks Good/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Looks Good/)).toBeInTheDocument();
+    });
   });
 
-  it("navigates to dashboard on confirm from review step", async () => {
+  it("transitions to disclaimer step on confirm from review step", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
 
@@ -162,16 +257,22 @@ describe("OnboardingPage", () => {
     });
     await user.upload(fileInput, file);
 
-    // Click confirm
+    // Wait for review step to appear
+    await waitFor(() => {
+      expect(screen.getByText(/Looks Good/)).toBeInTheDocument();
+    });
+
+    // Click confirm on review step
     const confirmButton = screen.getByRole("button", {
       name: /Looks Good/,
     });
     await user.click(confirmButton);
 
-    expect(mockNavigate).toHaveBeenCalledWith("/dashboard");
+    // Should show the disclaimer step
+    expect(screen.getByText("Before We Begin")).toBeInTheDocument();
   });
 
-  // ─── File Validation ───
+  // --- File Validation ---
 
   it("does not transition for invalid file types", async () => {
     const user = userEvent.setup();

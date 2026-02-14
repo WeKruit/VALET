@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@valet/ui/components/dialog";
 import { Button } from "@valet/ui/components/button";
+import { Checkbox } from "@valet/ui/components/checkbox";
 import { ShieldCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -97,20 +98,21 @@ export function DisclaimerModal({
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="tos-modal-check"
                 checked={tosChecked}
-                onChange={(e) => setTosChecked(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-[var(--wk-border-default)] accent-[var(--wk-text-primary)]"
+                onCheckedChange={(checked) => setTosChecked(checked === true)}
+                className="mt-1"
               />
-              <span
-                className="text-sm leading-relaxed text-[var(--wk-text-primary)]"
+              <label
+                htmlFor="tos-modal-check"
+                className="text-sm leading-relaxed text-[var(--wk-text-primary)] cursor-pointer"
                 dangerouslySetInnerHTML={{
                   __html: LAYER_1_REGISTRATION.checkboxLabel,
                 }}
               />
-            </label>
+            </div>
           </div>
 
           <DialogFooter>
@@ -165,17 +167,20 @@ export function DisclaimerModal({
         </div>
 
         <div className="space-y-4 pt-2 border-t border-[var(--wk-border-subtle)]">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="copilot-modal-check"
               checked={copilotChecked}
-              onChange={(e) => setCopilotChecked(e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-[var(--wk-border-default)] accent-[var(--wk-text-primary)]"
+              onCheckedChange={(checked) => setCopilotChecked(checked === true)}
+              className="mt-1"
             />
-            <span className="text-sm leading-relaxed text-[var(--wk-text-primary)]">
+            <label
+              htmlFor="copilot-modal-check"
+              className="text-sm leading-relaxed text-[var(--wk-text-primary)] cursor-pointer"
+            >
               {LAYER_2_COPILOT_DISCLAIMER.checkboxLabel}
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
 
         <DialogFooter>

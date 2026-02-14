@@ -11,6 +11,8 @@ export function LoadingSpinner({
 }: LoadingSpinnerProps) {
   return (
     <div
+      role="status"
+      aria-label="Loading"
       className={cn(
         "animate-spin rounded-full border-2 border-[var(--wk-border-default)] border-t-[var(--wk-text-primary)]",
         size === "sm" && "h-4 w-4",
@@ -18,6 +20,8 @@ export function LoadingSpinner({
         size === "lg" && "h-10 w-10",
         className
       )}
-    />
+    >
+      <span className="sr-only">Loading</span>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
+import { Textarea } from "@valet/ui/components/textarea";
 import { Button } from "@valet/ui/components/button";
 import { Badge } from "@valet/ui/components/badge";
 import {
@@ -160,7 +161,7 @@ export function ApplyForm() {
     <div className="max-w-2xl mx-auto space-y-5">
       {/* Hero card */}
       <Card>
-        <CardContent className="p-8">
+        <CardContent className="p-5 sm:p-8">
           <div className="text-center space-y-2 mb-8">
             <div className="flex justify-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-surface-sunken)]">
@@ -343,25 +344,13 @@ export function ApplyForm() {
               </span>
             </label>
           </div>
-          <textarea
+          <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add notes about this application (optional)..."
             maxLength={1000}
             rows={3}
-            className={cn(
-              "flex w-full",
-              "bg-[var(--wk-surface-white)] text-[var(--wk-text-primary)]",
-              "rounded-[var(--wk-radius-md)]",
-              "border border-[var(--wk-border-default)]",
-              "hover:border-[var(--wk-border-strong)]",
-              "px-3 py-2 text-sm",
-              "placeholder:text-[var(--wk-text-tertiary)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-border-strong)] focus-visible:ring-offset-2",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              "transition-colors duration-[var(--wk-duration-fast)] ease-[var(--wk-ease-default)]",
-              "resize-none"
-            )}
+            className="resize-none"
           />
           {notes.length > 0 && (
             <p className="text-xs text-[var(--wk-text-tertiary)] mt-1 text-right">
@@ -413,10 +402,13 @@ export function ApplyForm() {
       {/* Sample jobs */}
       <Card>
         <CardContent className="p-6">
-          <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-3">
-            Try a sample job URL
+          <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">
+            Demo URLs
           </p>
-          <div className="grid grid-cols-2 gap-2">
+          <p className="text-xs text-[var(--wk-text-tertiary)] mb-3">
+            These are placeholder URLs to test platform detection. Replace with a real job listing to apply.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
               onClick={() =>
                 setUrl("https://www.linkedin.com/jobs/view/12345")
