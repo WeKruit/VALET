@@ -10,6 +10,12 @@ kill_timeout = 30
   dockerfile = "../apps/api/Dockerfile"
   context = ".."
 
+# Run DB migrations before each deploy (in a temporary VM).
+# If the migration fails, the deploy is aborted and the old version keeps running.
+# Requires DATABASE_DIRECT_URL (session pooler) set as a Fly secret.
+[deploy]
+  release_command = "node packages/db/dist/migrate.js"
+
 [env]
   NODE_ENV = "production"
   PORT = "3000"

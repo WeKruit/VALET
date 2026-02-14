@@ -166,6 +166,31 @@ fly deploy --config fly/web.toml --app valet-web --remote-only \
   --build-arg VITE_WS_URL=wss://valet-api.fly.dev
 ```
 
+## Database Migrations
+
+Migrations run automatically during every API deploy via Fly.io's `release_command`. The flow:
+
+1. `fly deploy` builds and pushes the new Docker image
+2. Fly spins up a **temporary VM** with the new image and runs `node packages/db/dist/migrate.js`
+3. If the migration succeeds, Fly swaps traffic to the new version
+4. If the migration fails, the deploy is **aborted** and the old version keeps running
+
+### Adding a new migration
+
+```bash
+# 1. Update the schema in packages/db/src/schema/*.ts
+# 2. Write the migration SQL:
+#    packages/db/drizzle/NNNN_description.sql
+# 3. Add entry to packages/db/drizzle/meta/_journal.json
+# 4. Commit and push — CD handles the rest
+```
+
+### Important notes
+
+- `migrate.ts` prefers `DATABASE_DIRECT_URL` (session pooler, port 5432) over `DATABASE_URL` (transaction pooler, port 6543). Both must be set as Fly secrets on the API app.
+- The `_journal.json` file MUST be tracked in git (not gitignored) — the Docker image needs it.
+- Staging and production currently share the same Supabase database. A migration applied to one environment affects both.
+
 ## Key Technical Decisions
 
 - **ts-rest React Query v5**: Use `initTsrReactQuery` from `@ts-rest/react-query/v5` with single options object `{ queryKey, queryData, ...options }`

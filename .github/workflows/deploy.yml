@@ -138,31 +138,6 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-  # ── Run DB migrations after API deploy ──
-  migrate:
-    runs-on: ubuntu-latest
-    needs: deploy-api
-    environment: ${{ inputs.environment }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Run database migrations
-        run: |
-          flyctl ssh console \
-            --app ${{ inputs.api-app }} \
-            --command "node packages/db/dist/migrate.js"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-      - name: Verify migration success
-        if: failure()
-        run: |
-          echo "::error::Database migration failed! Check the logs above."
-          echo "You may need to run migrations manually:"
-          echo "  flyctl ssh console --app ${{ inputs.api-app }} --command 'node packages/db/dist/migrate.js'"
-          exit 1
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  # DB migrations run automatically via Fly.io release_command (see fly/api.toml).
+  # The release_command runs `node packages/db/dist/migrate.js` in a temporary VM
+  # BEFORE the new code starts serving traffic. If it fails, the deploy is aborted.
