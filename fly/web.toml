@@ -11,7 +11,8 @@ kill_signal = "SIGTERM"
 kill_timeout = 10
 
 [build]
-  dockerfile = "apps/web/Dockerfile"
+  dockerfile = "../apps/web/Dockerfile"
+  context = ".."
 
 [http_service]
   internal_port = 8080
