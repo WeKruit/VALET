@@ -34,7 +34,6 @@ import {
   Cpu,
   HardDrive,
   MemoryStick,
-  Monitor,
   Wifi,
   Play,
   Square,
