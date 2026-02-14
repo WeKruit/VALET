@@ -37,7 +37,7 @@ All services are cloud-hosted. No Docker needed for local development.
 | Redis        | Upstash           | https://console.upstash.com                                  |
 | Object Store | Supabase Storage  | Supabase Dashboard → Storage                                 |
 | Auth         | Google OAuth 2.0  | https://console.cloud.google.com → Credentials               |
-| Workflows    | Hatchet (Fly.io)  | https://valet-hatchet-dev.fly.dev                            |
+| Workflows    | Hatchet (Fly.io)  | https://valet-hatchet-stg.fly.dev                            |
 | Message Queue| CloudAMQP         | https://customer.cloudamqp.com                               |
 | Hosting      | Fly.io            | https://fly.io/dashboard                                     |
 
@@ -125,13 +125,16 @@ https://valet-web-stg.fly.dev
 https://valet-web.fly.dev
 ```
 
+Note: The OAuth flow redirects back to the **frontend** `/login` page (not an API callback).
+The frontend then exchanges the code with the API via `POST /api/v1/auth/google`.
+
 ## Secrets Management
 
 | Where          | What                                                | How                                              |
 |----------------|-----------------------------------------------------|--------------------------------------------------|
 | Local          | All env vars                                        | `.env` file (gitignored)                         |
 | Fly.io apps    | DATABASE_URL, REDIS_URL, JWT_SECRET, API keys, etc. | `fly secrets set -a <app-name> KEY=value`        |
-| GitHub Actions | FLY_API_TOKEN (one per environment)                 | Settings → Environments → [env] → Secrets        |
+| GitHub Actions | FLY_API_TOKEN, DATABASE_DIRECT_URL                  | Settings → Secrets and variables → Actions        |
 
 ### Setting Fly.io Secrets
 
@@ -148,22 +151,27 @@ fly secrets list -a valet-api-stg
 
 ### Manual Deploy (without CI)
 
+Note: flyctl resolves Dockerfile paths relative to the toml file directory.
+Copy the toml to the repo root before deploying.
+
 ```bash
 # Staging
 fly deploy --config fly/hatchet.toml --app valet-hatchet-stg --remote-only
-fly deploy --config fly/api.toml --app valet-api-stg --remote-only
-fly deploy --config fly/worker.toml --app valet-worker-stg --remote-only
-fly deploy --config fly/web.toml --app valet-web-stg --remote-only \
+cp fly/api.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-api-stg --remote-only
+cp fly/worker.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-worker-stg --remote-only
+cp fly/web.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-web-stg --remote-only \
   --build-arg VITE_API_URL=https://valet-api-stg.fly.dev \
-  --build-arg VITE_WS_URL=wss://valet-api-stg.fly.dev
+  --build-arg VITE_WS_URL=wss://valet-api-stg.fly.dev \
+  --build-arg VITE_GOOGLE_CLIENT_ID=108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com
 
 # Production
 fly deploy --config fly/hatchet.toml --app valet-hatchet-prod --remote-only
-fly deploy --config fly/api.toml --app valet-api --remote-only
-fly deploy --config fly/worker.toml --app valet-worker --remote-only
-fly deploy --config fly/web.toml --app valet-web --remote-only \
+cp fly/api.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-api --remote-only
+cp fly/worker.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-worker --remote-only
+cp fly/web.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-web --remote-only \
   --build-arg VITE_API_URL=https://valet-api.fly.dev \
-  --build-arg VITE_WS_URL=wss://valet-api.fly.dev
+  --build-arg VITE_WS_URL=wss://valet-api.fly.dev \
+  --build-arg VITE_GOOGLE_CLIENT_ID=108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com
 ```
 
 ## Database Migrations

@@ -47,7 +47,7 @@ const EMAIL_VERIFICATION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PASSWORD_RESET_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 // Google's JWKS endpoint for verifying ID tokens
-const _googleJWKS = jose.createRemoteJWKSet(
+const googleJWKS = jose.createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs"),
 );
 
@@ -359,9 +359,20 @@ export class AuthService {
     }
 
     const tokenData = (await tokenResponse.json()) as { id_token: string };
-    const claims = jose.decodeJwt(tokenData.id_token) as unknown as GoogleTokenPayload;
 
-    return claims;
+    // Cryptographically verify the ID token using Google's public JWKS keys
+    const { payload } = await jose.jwtVerify(tokenData.id_token, googleJWKS, {
+      issuer: ["https://accounts.google.com", "accounts.google.com"],
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    return {
+      sub: payload.sub!,
+      email: payload.email as string,
+      name: payload.name as string,
+      picture: payload.picture as string,
+      email_verified: payload.email_verified as boolean,
+    };
   }
 
   private async findOrCreateGoogleUser(

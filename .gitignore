@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 .turbo/
+*.tsbuildinfo
 
 # Environment (never commit secrets)
 .env
@@ -36,9 +37,8 @@ coverage/
 # Docker volumes
 docker/data/
 
-# Drizzle (keep meta/_journal.json tracked — needed for migrations in Docker)
-packages/db/drizzle/meta/*.json
-!packages/db/drizzle/meta/_journal.json
+# Drizzle (keep migrations + journal tracked, ignore snapshots)
+packages/db/drizzle/meta/0*_snapshot.json
 
 # MinIO data
 minio-data/
