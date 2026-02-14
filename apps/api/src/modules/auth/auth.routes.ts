@@ -8,10 +8,12 @@ const REFRESH_COOKIE_NAME = "valet_refresh";
 const REFRESH_COOKIE_PATH = "/api/v1/auth";
 const REFRESH_TOKEN_MAX_AGE_S = 7 * 24 * 60 * 60; // 7 days
 
+const isProduction = process.env.NODE_ENV === "production";
+
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  secure: isProduction,
+  sameSite: isProduction ? ("none" as const) : ("lax" as const),
   path: REFRESH_COOKIE_PATH,
   maxAge: REFRESH_TOKEN_MAX_AGE_S,
 };
