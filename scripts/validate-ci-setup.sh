@@ -8,7 +8,7 @@ echo "🔍 Validating CI setup..."
 # ---------------------------------------------------------------------------
 
 REQUIRED_FILES=(
-  "vitest.workspace.ts"
+  "vitest.config.ts"
   ".github/workflows/ci.yml"
   ".github/workflows/deploy.yml"
   "turbo.json"
@@ -53,9 +53,9 @@ fi
 
 echo "Checking package.json test configuration..."
 
-if grep -q "vitest.workspace.ts" package.json; then
-  if [ ! -f "vitest.workspace.ts" ]; then
-    echo "❌ Error: package.json references vitest.workspace.ts but file doesn't exist"
+if grep -q "vitest.config.ts" package.json || grep -q '"test".*vitest' package.json; then
+  if [ ! -f "vitest.config.ts" ]; then
+    echo "❌ Error: package.json references vitest but vitest.config.ts doesn't exist"
     exit 1
   fi
 fi
