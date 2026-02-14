@@ -26,35 +26,35 @@ export const sandboxRouter = s.router(sandboxContract, {
     return { status: 201, body: sandbox };
   },
 
-  update: async ({ params, body, request, reply }) => {
+  update: async ({ params, body, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const sandbox = await sandboxService.update(params.id, body);
     return { status: 200, body: sandbox };
   },
 
-  delete: async ({ params, request, reply }) => {
+  delete: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     await sandboxService.terminate(params.id);
     return { status: 204, body: undefined };
   },
 
-  healthCheck: async ({ params, request, reply }) => {
+  healthCheck: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const result = await sandboxService.healthCheck(params.id);
     return { status: 200, body: result };
   },
 
-  metrics: async ({ params, request, reply }) => {
+  metrics: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const result = await sandboxService.getMetrics(params.id);
     return { status: 200, body: result };
   },
 
-  restart: async ({ params, request, reply }) => {
+  restart: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const result = await sandboxService.restartAdspower(params.id);
@@ -63,21 +63,21 @@ export const sandboxRouter = s.router(sandboxContract, {
 
   // ─── EC2 Controls ───
 
-  startSandbox: async ({ params, request, reply }) => {
+  startSandbox: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const result = await sandboxService.startSandbox(params.id);
     return { status: 200, body: result };
   },
 
-  stopSandbox: async ({ params, request, reply }) => {
+  stopSandbox: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const result = await sandboxService.stopSandbox(params.id);
     return { status: 200, body: result };
   },
 
-  getEc2Status: async ({ params, request, reply }) => {
+  getEc2Status: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
     const result = await sandboxService.getEc2Status(params.id);
