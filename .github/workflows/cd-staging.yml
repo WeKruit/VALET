@@ -17,5 +17,6 @@ jobs:
       worker-app: valet-worker-stg
       web-app: valet-web-stg
       api-url: https://valet-api-stg.fly.dev
+      google-client-id: "108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com"
     secrets:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

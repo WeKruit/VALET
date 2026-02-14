@@ -23,6 +23,11 @@ on:
         description: "Public API URL (e.g. https://valet-api-stg.fly.dev)"
         required: true
         type: string
+      google-client-id:
+        description: "Google OAuth Client ID (public, used at build time)"
+        required: false
+        type: string
+        default: ""
     secrets:
       FLY_API_TOKEN:
         required: true
@@ -127,6 +132,7 @@ jobs:
             --app ${{ inputs.web-app }} \
             --build-arg VITE_API_URL=${{ inputs.api-url }} \
             --build-arg VITE_WS_URL=${WS_URL} \
+            --build-arg VITE_GOOGLE_CLIENT_ID=${{ inputs.google-client-id }} \
             --remote-only \
             --wait-timeout 300
         env:
