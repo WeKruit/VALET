@@ -10,9 +10,12 @@ import { Hatchet } from "@hatchet-dev/typescript-sdk";
 import Redis from "ioredis";
 import pino from "pino";
 import { createDatabase } from "@valet/db";
+import type { ISandboxProvider, SandboxProviderType } from "@valet/shared/types";
 import { EventLogger } from "./services/event-logger.js";
 import { registerJobApplicationWorkflow } from "./workflows/job-application.js";
+import { registerJobApplicationWorkflowV2 } from "./workflows/job-application-v2.js";
 import { registerResumeParseWorkflow } from "./workflows/resume-parse.js";
+import { AdsPowerEC2Provider } from "./providers/adspower-ec2.js";
 
 const logger = pino({
   name: "valet-worker",
@@ -67,10 +70,49 @@ async function main() {
   const jobApplicationWorkflow = registerJobApplicationWorkflow(hatchet, redis, eventLogger, db);
   const resumeParseWorkflow = registerResumeParseWorkflow(hatchet, redis, eventLogger, db);
 
+  // Build sandbox providers for v2 workflow
+  const providers = new Map<SandboxProviderType, ISandboxProvider>();
+
+  if (process.env.ADSPOWER_API_URL) {
+    try {
+      const adsPowerProvider = new AdsPowerEC2Provider();
+      providers.set("adspower-ec2", adsPowerProvider);
+
+      const health = await adsPowerProvider.healthCheck();
+      logger.info(
+        { healthy: health.healthy, message: health.message },
+        "AdsPower provider initialized",
+      );
+    } catch (err) {
+      logger.warn(
+        { error: String(err) },
+        "AdsPower provider failed to initialize (v2 workflows will not work)",
+      );
+    }
+  } else {
+    logger.info("ADSPOWER_API_URL not set, v2 workflows disabled");
+  }
+
+  // Register v2 workflow only if we have at least one provider
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const workflows: any[] = [jobApplicationWorkflow, resumeParseWorkflow];
+
+  if (providers.size > 0) {
+    const v2Workflow = registerJobApplicationWorkflowV2(
+      hatchet,
+      redis,
+      eventLogger,
+      db,
+      providers,
+    );
+    workflows.push(v2Workflow);
+    logger.info("job-application-v2 workflow registered");
+  }
+
   // Start the worker
   const worker = await hatchet.worker("valet-worker", {
     slots: 5,
-    workflows: [jobApplicationWorkflow, resumeParseWorkflow],
+    workflows,
   });
 
   await worker.start();
