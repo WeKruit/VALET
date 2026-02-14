@@ -19,7 +19,7 @@
  * Reference: core-docs/architecture/04-browser-engines-reference.md
  */
 
-import { BrowserAgent, startBrowserAgent } from "magnitude-core";
+import type { BrowserAgent, startBrowserAgent } from "magnitude-core";
 
 import type {
   IBrowserEngine,
