@@ -3,6 +3,8 @@ import { AppError } from "../../common/errors.js";
 import type {
   GHSubmitApplicationParams,
   GHSubmitApplicationResponse,
+  GHSubmitGenericTaskParams,
+  GHSubmitGenericTaskResponse,
   GHJobStatus,
 } from "./ghosthands.types.js";
 
@@ -62,6 +64,14 @@ export class GhostHandsClient {
       "Submitting application to GhostHands",
     );
     return this.request<GHSubmitApplicationResponse>("POST", "/api/v1/gh/valet/apply", params);
+  }
+
+  async submitGenericTask(params: GHSubmitGenericTaskParams): Promise<GHSubmitGenericTaskResponse> {
+    this.logger.info(
+      { valetTaskId: params.valet_task_id, jobType: params.job_type, targetUrl: params.target_url },
+      "Submitting generic task to GhostHands",
+    );
+    return this.request<GHSubmitGenericTaskResponse>("POST", "/api/v1/gh/valet/task", params);
   }
 
   async getJobStatus(jobId: string): Promise<GHJobStatus> {
