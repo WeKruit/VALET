@@ -99,6 +99,15 @@ resource "aws_security_group" "valet_worker" {
     cidr_blocks = var.allowed_cidr
   }
 
+  # GhostHands API (browser automation engine)
+  ingress {
+    description = "GhostHands API"
+    from_port   = 3100
+    to_port     = 3100
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   # All outbound traffic allowed — instance needs to reach Hatchet,
   # Supabase, Upstash, and external job-application sites
   egress {

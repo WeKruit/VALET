@@ -1,4 +1,3 @@
-/* global document, window */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 

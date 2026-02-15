@@ -7,13 +7,13 @@ import { StagehandEngine } from "./stagehand-engine.js";
 import type { StagehandEngineOptions } from "./stagehand-engine.js";
 import { MagnitudeEngine } from "./magnitude-engine.js";
 import type { MagnitudeEngineOptions } from "./magnitude-engine.js";
-import { MockEngine } from "./mock-engine.js";
+import { MockEngine as _MockEngine } from "./mock-engine.js";
 
 export { StagehandEngine, type StagehandEngineOptions } from "./stagehand-engine.js";
 export { MagnitudeEngine, type MagnitudeEngineOptions } from "./magnitude-engine.js";
 export { HumanizedPage, type HumanizedPageOptions } from "./humanized-page.js";
 export { AgentBrowser, type AgentBrowserOptions, type ActionTrace, type ActionStep } from "./agent-browser.js";
-export { MockEngine } from "./mock-engine.js";
+export { MockEngine as _MockEngine } from "./mock-engine.js";
 
 export interface CreateEngineOptions {
   stagehand?: StagehandEngineOptions;

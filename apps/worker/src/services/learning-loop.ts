@@ -1,4 +1,4 @@
-import type { ActionTrace, ActionTraceStep } from "./manual-manager.js";
+import type { ActionTrace, ActionTraceStep as _ActionTraceStep } from "./manual-manager.js";
 
 /** Step format ready for insertion into manual_steps table. */
 export interface NormalizedStep {
@@ -140,5 +140,5 @@ function isValidSelector(selector: string): boolean {
   // Must not be just a number
   if (/^\d+$/.test(selector)) return false;
   // Should contain at least one CSS-like or XPath-like character
-  return /[.#\[\]>:a-zA-Z\/]/.test(selector);
+  return /[.#[\]>:a-zA-Z/]/.test(selector);
 }

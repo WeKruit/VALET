@@ -632,7 +632,7 @@ export function registerJobApplicationWorkflowV2(
         });
 
         // Capture screenshot for the user
-        const screenshot = await engine.screenshot();
+        const _screenshot = await engine.screenshot();
         // TODO: Upload screenshot to S3 and get URL
         const screenshotUrl = null;
 
@@ -1068,7 +1068,7 @@ function createAgentBrowserAdapter(engine: IBrowserEngine): IAgentBrowser {
       await engine.act(`Scroll ${direction} on the page`);
     },
 
-    async waitForSelector(selector: string, timeoutMs?: number) {
+    async waitForSelector(selector: string, _timeoutMs?: number) {
       try {
         const elements = await engine.observe(
           `Find the element matching selector: ${selector}`,

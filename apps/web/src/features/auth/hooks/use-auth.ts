@@ -1,4 +1,3 @@
-/* global window */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api, getAccessToken, clearAccessToken, API_BASE_URL } from "@/lib/api-client";

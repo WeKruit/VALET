@@ -399,7 +399,7 @@ export class AdsPowerClient implements IAdsPowerClient {
           headers["Authorization"] = `Bearer ${this.apiKey}`;
         }
 
-        const init: RequestInit = { method, headers };
+        const init: Parameters<typeof fetch>[1] = { method, headers };
         if (body) {
           headers["Content-Type"] = "application/json";
           init.body = JSON.stringify(body);
@@ -437,7 +437,7 @@ export class AdsPowerClient implements IAdsPowerClient {
 
   private async fetchWithTimeout(
     url: string,
-    init?: RequestInit,
+    init?: Parameters<typeof fetch>[1],
   ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);

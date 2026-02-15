@@ -1,11 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
-import type {
-  Ec2Status,
-  SandboxEnvironment,
-  SandboxStatus,
-  SandboxHealthStatus,
-} from "../types";
+import type { Ec2Status, SandboxEnvironment, SandboxStatus, SandboxHealthStatus } from "../types";
 
 export interface UseSandboxesParams {
   page?: number;
@@ -60,6 +55,7 @@ export function useSandboxMetrics(id: string) {
     enabled: Boolean(id),
     staleTime: 1000 * 5,
     refetchInterval: 1000 * 15,
+    retry: false,
   });
 }
 
@@ -143,10 +139,7 @@ export function useStartSandbox() {
     },
     onError: (_err, variables, context) => {
       if (context?.previous) {
-        qc.setQueryData(
-          ["admin", "sandboxes", variables.params.id],
-          context.previous,
-        );
+        qc.setQueryData(["admin", "sandboxes", variables.params.id], context.previous);
       }
     },
     onSettled: (_data, _err, variables) => {
@@ -172,10 +165,7 @@ export function useStopSandbox() {
     },
     onError: (_err, variables, context) => {
       if (context?.previous) {
-        qc.setQueryData(
-          ["admin", "sandboxes", variables.params.id],
-          context.previous,
-        );
+        qc.setQueryData(["admin", "sandboxes", variables.params.id], context.previous);
       }
     },
     onSettled: (_data, _err, variables) => {

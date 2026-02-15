@@ -13,6 +13,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { FastifyBaseLogger, FastifyRequest } from "fastify";
+import type { SandboxRepository } from "../sandbox.repository.js";
+import type { EC2Service } from "../ec2.service.js";
 import type { SandboxRecord } from "../sandbox.repository.js";
 import { SandboxService } from "../sandbox.service.js";
 import {
@@ -103,9 +106,9 @@ describe("SandboxService", () => {
     logger = makeMockLogger();
     ec2Service = makeMockEc2Service();
     service = new SandboxService({
-      sandboxRepo: repo as unknown as import("../sandbox.repository.js").SandboxRepository,
-      logger: logger as unknown as import("fastify").FastifyBaseLogger,
-      ec2Service: ec2Service as unknown as import("../ec2.service.js").EC2Service,
+      sandboxRepo: repo as unknown as SandboxRepository,
+      logger: logger as unknown as FastifyBaseLogger,
+      ec2Service: ec2Service as unknown as EC2Service,
     });
   });
 
@@ -423,7 +426,7 @@ describe("adminOnly middleware", () => {
       "../../../common/middleware/admin.js"
     );
 
-    const request = { userRole: "admin" } as import("fastify").FastifyRequest;
+    const request = { userRole: "admin" } as FastifyRequest;
 
     await expect(adminOnly(request)).resolves.toBeUndefined();
   });
@@ -433,7 +436,7 @@ describe("adminOnly middleware", () => {
       "../../../common/middleware/admin.js"
     );
 
-    const request = { userRole: "superadmin" } as import("fastify").FastifyRequest;
+    const request = { userRole: "superadmin" } as FastifyRequest;
 
     await expect(adminOnly(request)).resolves.toBeUndefined();
   });
@@ -443,7 +446,7 @@ describe("adminOnly middleware", () => {
       "../../../common/middleware/admin.js"
     );
 
-    const request = { userRole: "user" } as import("fastify").FastifyRequest;
+    const request = { userRole: "user" } as FastifyRequest;
 
     await expect(adminOnly(request)).rejects.toThrow(/Admin access required/);
   });
@@ -453,7 +456,7 @@ describe("adminOnly middleware", () => {
       "../../../common/middleware/admin.js"
     );
 
-    const request = { userRole: undefined } as unknown as import("fastify").FastifyRequest;
+    const request = { userRole: undefined } as unknown as FastifyRequest;
 
     await expect(adminOnly(request)).rejects.toThrow(/Admin access required/);
   });
