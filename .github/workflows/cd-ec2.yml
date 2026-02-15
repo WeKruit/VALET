@@ -65,7 +65,8 @@ jobs:
     outputs:
       environment: ${{ steps.env.outputs.environment }}
       sandbox_matrix: ${{ steps.fleet.outputs.sandbox_matrix }}
-    environment: ${{ steps.env.outputs.environment }}
+      has_targets: ${{ steps.fleet.outputs.has_targets }}
+    environment: ${{ github.event.inputs.environment || (github.ref_name == 'main' && 'production' || 'staging') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +99,7 @@ jobs:
             IPS=$(echo '${{ github.event.inputs.target_ips }}' | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | jq -R . | jq -s .)
             MATRIX=$(echo "$IPS" | jq '[.[] | {ip: ., sandbox_id: "manual"}]')
             echo "sandbox_matrix=$MATRIX" >> $GITHUB_OUTPUT
+            echo "has_targets=true" >> $GITHUB_OUTPUT
             echo "Using manual target IPs: $IPS"
             exit 0
           fi
@@ -114,6 +116,7 @@ jobs:
           if [[ -n "$FLEET_RESPONSE" ]] && echo "$FLEET_RESPONSE" | jq -e '.[] | .public_ip' &>/dev/null; then
             MATRIX=$(echo "$FLEET_RESPONSE" | jq '[.[] | {ip: .public_ip, sandbox_id: (.id // .sandbox_id // "unknown")}]')
             echo "sandbox_matrix=$MATRIX" >> $GITHUB_OUTPUT
+            echo "has_targets=true" >> $GITHUB_OUTPUT
             echo "Discovered $(echo "$MATRIX" | jq length) sandboxes from API"
             exit 0
           fi
@@ -125,12 +128,15 @@ jobs:
           if [[ -n "$SANDBOX_IPS_JSON" && "$SANDBOX_IPS_JSON" != "null" ]]; then
             MATRIX=$(echo "$SANDBOX_IPS_JSON" | jq '[.[] | {ip: ., sandbox_id: "legacy"}]')
             echo "sandbox_matrix=$MATRIX" >> $GITHUB_OUTPUT
+            echo "has_targets=true" >> $GITHUB_OUTPUT
             echo "Using SANDBOX_IPS secret"
             exit 0
           fi
 
-          echo "::error::No sandbox IPs configured. Set up sandboxes via API or add SANDBOX_IPS to GitHub secrets."
-          exit 1
+          echo "::warning::No sandbox IPs configured. Skipping EC2 deployment."
+          echo "sandbox_matrix=[]" >> $GITHUB_OUTPUT
+          echo "has_targets=false" >> $GITHUB_OUTPUT
+          exit 0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -174,6 +180,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy:
     needs: build
+    if: needs.build.outputs.has_targets == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: ${{ needs.build.outputs.environment }}
