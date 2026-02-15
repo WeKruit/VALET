@@ -6,10 +6,7 @@ import { diContainer } from "@fastify/awilix";
 import { errorHandler } from "./common/middleware/error-handler.js";
 import { authMiddleware } from "./common/middleware/auth.js";
 import { requestLogger } from "./common/middleware/request-logger.js";
-import {
-  registerRateLimit,
-  registerRouteRateLimits,
-} from "./common/middleware/rate-limit.js";
+import { registerRateLimit, registerRouteRateLimits } from "./common/middleware/rate-limit.js";
 import sentryPlugin from "./plugins/sentry.js";
 import databasePlugin from "./plugins/database.js";
 import redisPlugin from "./plugins/redis.js";
@@ -26,6 +23,7 @@ import { qaBankRouter } from "./modules/qa-bank/qa-bank.routes.js";
 import { consentRouter } from "./modules/consent/consent.routes.js";
 import { gdprRouter } from "./modules/gdpr/gdpr.routes.js";
 import { billingRouter, billingWebhookRoute } from "./modules/billing/billing.routes.js";
+import { ghosthandsWebhookRoute } from "./modules/ghosthands/ghosthands.webhook.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
 import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
@@ -34,10 +32,7 @@ export async function buildApp() {
   const fastify = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
-      transport:
-        process.env.NODE_ENV === "development"
-          ? { target: "pino-pretty" }
-          : undefined,
+      transport: process.env.NODE_ENV === "development" ? { target: "pino-pretty" } : undefined,
     },
   });
 
@@ -99,8 +94,9 @@ export async function buildApp() {
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
 
-  // Standalone webhook route (outside ts-rest — needs raw body + no auth)
+  // Standalone webhook routes (outside ts-rest — needs raw body + no auth)
   await fastify.register(billingWebhookRoute);
+  await fastify.register(ghosthandsWebhookRoute);
 
   // WebSocket
   await registerWebSocket(fastify);

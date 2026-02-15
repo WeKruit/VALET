@@ -31,6 +31,7 @@ import { SandboxService } from "../modules/sandboxes/sandbox.service.js";
 import { SandboxHealthMonitor } from "../modules/sandboxes/sandbox-health-monitor.js";
 import { EC2Service } from "../modules/sandboxes/ec2.service.js";
 import { AutoStopMonitor } from "../modules/sandboxes/auto-stop-monitor.js";
+import { GhostHandsClient } from "../modules/ghosthands/ghosthands.client.js";
 
 export interface AppCradle {
   db: Database;
@@ -62,6 +63,7 @@ export interface AppCradle {
   sandboxHealthMonitor: SandboxHealthMonitor;
   ec2Service: EC2Service;
   autoStopMonitor: AutoStopMonitor;
+  ghosthandsClient: GhostHandsClient;
 }
 
 declare module "@fastify/awilix" {
@@ -85,10 +87,7 @@ export default fp(async (fastify: FastifyInstance) => {
           token: process.env.HATCHET_CLIENT_TOKEN,
           tls_config: {
             tls_strategy:
-              (process.env.HATCHET_CLIENT_TLS_STRATEGY as
-                | "none"
-                | "tls"
-                | "mtls") ?? "none",
+              (process.env.HATCHET_CLIENT_TLS_STRATEGY as "none" | "tls" | "mtls") ?? "none",
           },
         }),
       { lifetime: Lifetime.SINGLETON },
@@ -130,5 +129,14 @@ export default fp(async (fastify: FastifyInstance) => {
     sandboxHealthMonitor: asClass(SandboxHealthMonitor, { lifetime: Lifetime.SINGLETON }),
     ec2Service: asClass(EC2Service, { lifetime: Lifetime.SINGLETON }),
     autoStopMonitor: asClass(AutoStopMonitor, { lifetime: Lifetime.SINGLETON }),
+    ghosthandsClient: asFunction(
+      ({ logger }) =>
+        new GhostHandsClient({
+          ghosthandsApiUrl: process.env.GHOSTHANDS_API_URL ?? "http://localhost:3100",
+          ghosthandsServiceKey: process.env.GH_SERVICE_SECRET ?? "",
+          logger,
+        }),
+      { lifetime: Lifetime.SINGLETON },
+    ),
   });
 });

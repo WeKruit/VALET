@@ -111,10 +111,7 @@ export class TaskRepository {
         .orderBy(orderFn(sortColumn))
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
-      this.db
-        .select({ count: count() })
-        .from(tasks)
-        .where(whereClause),
+      this.db.select({ count: count() }).from(tasks).where(whereClause),
     ]);
 
     return {
@@ -197,19 +194,42 @@ export class TaskRepository {
       .where(eq(tasks.id, id));
   }
 
+  async updateGhosthandsResult(
+    id: string,
+    data: {
+      ghJobId: string;
+      result: Record<string, unknown> | null;
+      error: Record<string, unknown> | null;
+      completedAt: string | null;
+    },
+  ) {
+    const updates: Record<string, unknown> = {
+      updatedAt: new Date(),
+      screenshots: {
+        ghJobId: data.ghJobId,
+        ...(data.result ?? {}),
+      },
+    };
+    if (data.error) {
+      updates.errorCode = (data.error as Record<string, unknown>).code ?? "GH_ERROR";
+      updates.errorMessage = (data.error as Record<string, unknown>).message ?? "GhostHands error";
+    }
+    if (data.completedAt) {
+      updates.completedAt = new Date(data.completedAt);
+    }
+
+    await this.db.update(tasks).set(updates).where(eq(tasks.id, id));
+  }
+
   async getStats(userId: string) {
     const rows = await this.db
       .select({
         total: count(),
-        completed: count(
-          sql`CASE WHEN ${tasks.status} = 'completed' THEN 1 END`,
-        ),
+        completed: count(sql`CASE WHEN ${tasks.status} = 'completed' THEN 1 END`),
         inProgress: count(
           sql`CASE WHEN ${tasks.status} IN ('created', 'queued', 'in_progress') THEN 1 END`,
         ),
-        needsReview: count(
-          sql`CASE WHEN ${tasks.status} = 'waiting_human' THEN 1 END`,
-        ),
+        needsReview: count(sql`CASE WHEN ${tasks.status} = 'waiting_human' THEN 1 END`),
       })
       .from(tasks)
       .where(eq(tasks.userId, userId));
