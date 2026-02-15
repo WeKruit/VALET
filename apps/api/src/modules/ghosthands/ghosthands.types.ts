@@ -95,6 +95,28 @@ export interface GHJobStatus {
   target_worker_id?: string | null;
 }
 
+export interface GHSubmitGenericTaskParams {
+  valet_task_id: string;
+  valet_user_id: string;
+  job_type: string;
+  target_url: string;
+  task_description: string;
+  input_data?: Record<string, unknown>;
+  callback_url?: string;
+  priority?: number;
+  timeout_seconds?: number;
+  idempotency_key?: string;
+  target_worker_id?: string | null;
+}
+
+export interface GHSubmitGenericTaskResponse {
+  job_id: string;
+  valet_task_id: string;
+  status: string;
+  created_at: string;
+  target_worker_id?: string | null;
+}
+
 export interface GHDeployWebhookPayload {
   event: "ghosthands.deploy_ready";
   image: string;
