@@ -151,6 +151,43 @@ export function useStartSandbox() {
   });
 }
 
+export function useTriggerTask() {
+  const qc = useQueryClient();
+  return api.sandboxes.triggerTask.useMutation({
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["admin", "sandboxes"] });
+      qc.invalidateQueries({
+        queryKey: ["admin", "sandboxes", variables.params.id, "worker-status"],
+      });
+    },
+  });
+}
+
+export function useTriggerTest() {
+  const qc = useQueryClient();
+  return api.sandboxes.triggerTest.useMutation({
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["admin", "sandboxes"] });
+      qc.invalidateQueries({
+        queryKey: ["admin", "sandboxes", variables.params.id, "worker-status"],
+      });
+    },
+  });
+}
+
+export function useWorkerStatus(id: string, enabled = true) {
+  return api.sandboxes.workerStatus.useQuery({
+    queryKey: ["admin", "sandboxes", id, "worker-status"],
+    queryData: {
+      params: { id },
+    },
+    enabled: Boolean(id) && enabled,
+    staleTime: 1000 * 5,
+    refetchInterval: 1000 * 10,
+    retry: false,
+  });
+}
+
 export function useStopSandbox() {
   const qc = useQueryClient();
   return api.sandboxes.stopSandbox.useMutation({

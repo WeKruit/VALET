@@ -10,27 +10,13 @@ export const sandboxStatus = z.enum([
   "unhealthy",
 ]);
 
-export const sandboxHealthStatus = z.enum([
-  "healthy",
-  "degraded",
-  "unhealthy",
-]);
+export const sandboxHealthStatus = z.enum(["healthy", "degraded", "unhealthy"]);
 
-export const sandboxEnvironment = z.enum([
-  "dev",
-  "staging",
-  "prod",
-]);
+export const sandboxEnvironment = z.enum(["dev", "staging", "prod"]);
 
 export const browserEngine = z.enum(["chromium", "adspower"]);
 
-export const ec2Status = z.enum([
-  "pending",
-  "running",
-  "stopping",
-  "stopped",
-  "terminated",
-]);
+export const ec2Status = z.enum(["pending", "running", "stopping", "stopped", "terminated"]);
 
 export const chromiumConfigSchema = z.object({
   headless: z.boolean().default(true),
@@ -77,7 +63,11 @@ export const sandboxSchema = z.object({
 
 // ─── Request DTOs ───
 export const sandboxCreateSchema = z.object({
-  name: z.string().min(1).max(255).transform((s) => s.trim()),
+  name: z
+    .string()
+    .min(1)
+    .max(255)
+    .transform((s) => s.trim()),
   environment: sandboxEnvironment,
   instanceId: z.string().min(1).max(50),
   instanceType: z.string().min(1).max(50),
@@ -93,7 +83,12 @@ export const sandboxCreateSchema = z.object({
 });
 
 export const sandboxUpdateSchema = z.object({
-  name: z.string().min(1).max(255).transform((s) => s.trim()).optional(),
+  name: z
+    .string()
+    .min(1)
+    .max(255)
+    .transform((s) => s.trim())
+    .optional(),
   status: sandboxStatus.optional(),
   publicIp: z.string().max(45).nullable().optional(),
   privateIp: z.string().max(45).nullable().optional(),
@@ -162,6 +157,62 @@ export const sandboxHealthCheckResponse = z.object({
   details: z.record(z.unknown()).optional(),
 });
 
+// ─── Admin Trigger Task (Job Application) ───
+export const adminTriggerTaskRequest = z.object({
+  jobUrl: z.string().url(),
+  resumeId: z.string().uuid(),
+  mode: z.enum(["copilot", "autopilot"]).optional().default("autopilot"),
+  notes: z.string().max(2000).optional(),
+});
+
+export const adminTriggerTaskResponse = z.object({
+  taskId: z.string().uuid(),
+  sandboxId: z.string().uuid(),
+  targetWorkerId: z.string(),
+  status: z.string(),
+});
+
+// ─── Admin Trigger Test (Quick Integration Test) ───
+export const adminTriggerTestRequest = z.object({
+  searchQuery: z.string().max(500).optional().default("valet integration test"),
+});
+
+export const adminTriggerTestResponse = z.object({
+  taskId: z.string().uuid(),
+  sandboxId: z.string().uuid(),
+  status: z.string(),
+});
+
+// ─── Worker Status ───
+export const workerStatusResponse = z.object({
+  sandboxId: z.string().uuid(),
+  ghosthandsApi: z.object({
+    status: z.enum(["healthy", "unhealthy", "unreachable"]),
+  }),
+  worker: z.object({
+    hatchetConnected: z.boolean().nullable(),
+    adspowerStatus: z.string().nullable(),
+  }),
+  activeTasks: z.array(
+    z.object({
+      taskId: z.string().uuid(),
+      jobUrl: z.string(),
+      status: z.string(),
+      progress: z.number(),
+      currentStep: z.string().nullable().optional(),
+      createdAt: z.coerce.date(),
+    }),
+  ),
+  recentTasks: z.array(
+    z.object({
+      taskId: z.string().uuid(),
+      jobUrl: z.string(),
+      status: z.string(),
+      completedAt: z.coerce.date().nullable().optional(),
+    }),
+  ),
+});
+
 // ─── Inferred Types (NEVER hand-write these) ───
 export type Ec2Status = z.infer<typeof ec2Status>;
 export type BrowserEngine = z.infer<typeof browserEngine>;
@@ -179,3 +230,8 @@ export type SandboxListResponse = z.infer<typeof sandboxListResponse>;
 export type SandboxMetricsResponse = z.infer<typeof sandboxMetricsResponse>;
 export type SandboxHealthCheckResponse = z.infer<typeof sandboxHealthCheckResponse>;
 export type Ec2StatusResponse = z.infer<typeof ec2StatusResponse>;
+export type AdminTriggerTaskRequest = z.infer<typeof adminTriggerTaskRequest>;
+export type AdminTriggerTaskResponse = z.infer<typeof adminTriggerTaskResponse>;
+export type AdminTriggerTestRequest = z.infer<typeof adminTriggerTestRequest>;
+export type AdminTriggerTestResponse = z.infer<typeof adminTriggerTestResponse>;
+export type WorkerStatusResponse = z.infer<typeof workerStatusResponse>;

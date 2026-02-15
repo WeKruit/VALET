@@ -13,4 +13,9 @@ export type {
   SandboxMetricsResponse,
   SandboxHealthCheckResponse,
   Ec2StatusResponse,
+  AdminTriggerTaskRequest,
+  AdminTriggerTaskResponse,
+  AdminTriggerTestRequest,
+  AdminTriggerTestResponse,
+  WorkerStatusResponse,
 } from "@valet/shared/schemas";
