@@ -60,8 +60,14 @@ function getAdspowerStatus() {
 }
 
 function getHatchetConnected() {
-  const active = exec("systemctl is-active valet-worker 2>/dev/null");
-  return active === "active";
+  // Check systemd first (legacy), then Docker container
+  const systemd = exec("systemctl is-active valet-worker 2>/dev/null");
+  if (systemd === "active") return true;
+  // Check if ghosthands worker container is running via Docker
+  const docker = exec(
+    "docker ps --filter name=ghosthands-worker --filter status=running --format '{{.Names}}' 2>/dev/null",
+  );
+  return docker != null && docker.length > 0;
 }
 
 function getActiveProfiles() {
@@ -78,8 +84,10 @@ function getActiveProfiles() {
 }
 
 function getActiveWorkers() {
-  // Count running GhostHands worker containers
-  const result = exec("docker ps --filter name=ghosthands --format '{{.Names}}' 2>/dev/null");
+  // Count running GhostHands containers (worker + api)
+  const result = exec(
+    "docker ps --filter name=ghosthands --filter status=running --format '{{.Names}}' 2>/dev/null",
+  );
   if (!result) return 0;
   return result.split("\n").filter(Boolean).length;
 }
