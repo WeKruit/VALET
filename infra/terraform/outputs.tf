@@ -26,10 +26,10 @@ output "ssh_commands" {
 }
 
 output "novnc_urls" {
-  description = "noVNC web viewer URLs for visual debugging of browser sessions"
+  description = "noVNC web viewer URLs (HTTPS via Caddy + sslip.io)"
   value = [
     for eip in aws_eip.valet_worker :
-    "http://${eip.public_ip}:6080"
+    "https://${replace(eip.public_ip, ".", "-")}.sslip.io"
   ]
 }
 

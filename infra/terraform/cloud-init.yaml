@@ -5,9 +5,11 @@
 # Runs on first boot to set up the full headless browser automation stack:
 #   Xvfb (virtual display) -> Fluxbox (window manager) -> x11vnc (VNC server)
 #   -> noVNC/websockify (web-based VNC viewer on port 6080)
+#   -> Caddy (HTTPS reverse proxy for noVNC via sslip.io + ZeroSSL)
+#   -> health-server.js (metrics endpoint on port 8000)
 #
 # After cloud-init completes:
-#   1. Connect via noVNC at http://<public-ip>:6080
+#   1. Connect via noVNC at https://<ip-dashed>.sslip.io
 #   2. Install AdsPower manually through VNC
 #   3. Deploy the Valet worker application to /opt/valet/app
 # =============================================================================
@@ -115,6 +117,34 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  # --- Caddy: HTTPS reverse proxy for noVNC (auto-certs via ZeroSSL) ---
+  - path: /etc/caddy/Caddyfile.template
+    content: |
+      {
+        email admin@wekruit.com
+        acme_ca https://acme.zerossl.com/v2/DV90
+      }
+
+      PUBLIC_IP_DASHED.sslip.io {
+        reverse_proxy localhost:6080
+      }
+
+  # --- Health server: metrics endpoint on port 8000 ---
+  - path: /etc/systemd/system/valet-health.service
+    content: |
+      [Unit]
+      Description=Valet Health Server
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/node /opt/valet/health-server.js
+      Restart=always
+      RestartSec=5
+      User=root
+
+      [Install]
+      WantedBy=multi-user.target
+
   # --- Environment template for the Valet worker process ---
   - path: /opt/valet/.env.template
     content: |
@@ -142,7 +172,7 @@ write_files:
 
   # --- First-boot setup script ---
   - path: /opt/valet/setup.sh
-    permissions: '0755'
+    permissions: "0755"
     content: |
       #!/bin/bash
       set -euo pipefail
@@ -167,19 +197,37 @@ write_files:
       # Set DISPLAY globally so all sessions inherit it
       echo 'export DISPLAY=:99' >> /etc/environment
 
+      # Install Caddy (HTTPS reverse proxy)
+      apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+      apt-get update -qq
+      apt-get install -y caddy
+
+      # Configure Caddy with the instance's public IP
+      PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+      IP_DASHED=$(echo "$PUBLIC_IP" | tr '.' '-')
+      sed "s/PUBLIC_IP_DASHED/$IP_DASHED/g" /etc/caddy/Caddyfile.template > /etc/caddy/Caddyfile
+
+      # Copy health server
+      cp /opt/valet/health-server.js /opt/valet/health-server.js 2>/dev/null || true
+
       # Enable and start display services
       systemctl daemon-reload
       systemctl enable --now xvfb
       systemctl enable --now fluxbox
       systemctl enable --now x11vnc
       systemctl enable --now novnc
+      systemctl enable --now caddy
+      systemctl enable --now valet-health 2>/dev/null || true
 
       # Set permissions
       chown -R valet:valet /opt/valet
       chown -R valet:valet /opt/adspower
 
       echo "=== Setup complete ==="
-      echo "noVNC available at http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):6080"
+      echo "noVNC available at https://${IP_DASHED}.sslip.io"
+      echo "Health server at http://${PUBLIC_IP}:8000"
       echo "AdsPower must be installed manually via VNC"
 
 runcmd:
