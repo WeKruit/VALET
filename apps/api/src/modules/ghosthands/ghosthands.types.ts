@@ -52,6 +52,7 @@ export interface GHSubmitApplicationParams {
   quality?: "fast" | "balanced" | "thorough";
   priority?: number;
   timeout_seconds?: number;
+  max_retries?: number;
   idempotency_key?: string;
   target_worker_id?: string | null;
 }
@@ -105,6 +106,7 @@ export interface GHSubmitGenericTaskParams {
   callback_url?: string;
   priority?: number;
   timeout_seconds?: number;
+  max_retries?: number;
   idempotency_key?: string;
   target_worker_id?: string | null;
 }

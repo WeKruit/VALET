@@ -175,6 +175,7 @@ export class TaskService {
         qa_answers: Object.keys(qaAnswers).length > 0 ? qaAnswers : undefined,
         callback_url: callbackUrl,
         quality: body.mode === "autopilot" ? "fast" : "thorough",
+        max_retries: 1,
         ...(body.targetWorkerId ? { target_worker_id: body.targetWorkerId } : {}),
       });
 
@@ -289,6 +290,7 @@ export class TaskService {
         target_url: "https://www.google.com",
         task_description: `Google search integration test: ${body.searchQuery}`,
         callback_url: callbackUrl,
+        max_retries: 1,
         target_worker_id: body.targetWorkerId,
       });
 
