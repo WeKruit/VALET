@@ -19,6 +19,17 @@ function csvEscape(value: string): string {
   return value;
 }
 
+function buildCallbackUrl(): string {
+  const base =
+    process.env.GHOSTHANDS_CALLBACK_URL ??
+    `${process.env.API_URL ?? "http://localhost:8000"}/api/v1/webhooks/ghosthands`;
+  // Append service token so GH's callbackNotifier passes auth
+  const token = process.env.GH_SERVICE_SECRET;
+  if (!token) return base;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}token=${token}`;
+}
+
 export class TaskService {
   private taskRepo: TaskRepository;
   private resumeRepo: ResumeRepository;
@@ -158,9 +169,7 @@ export class TaskService {
       }
     }
 
-    const callbackUrl =
-      process.env.GHOSTHANDS_CALLBACK_URL ??
-      `${process.env.API_URL ?? "http://localhost:8000"}/api/v1/webhooks/ghosthands`;
+    const callbackUrl = buildCallbackUrl();
 
     try {
       const ghResponse = await this.ghosthandsClient.submitApplication({
@@ -278,9 +287,7 @@ export class TaskService {
       notes: `Integration test: "${body.searchQuery}" [sandbox:${body.targetWorkerId}]`,
     });
 
-    const callbackUrl =
-      process.env.GHOSTHANDS_CALLBACK_URL ??
-      `${process.env.API_URL ?? "http://localhost:8000"}/api/v1/webhooks/ghosthands`;
+    const callbackUrl = buildCallbackUrl();
 
     try {
       const ghResponse = await this.ghosthandsClient.submitGenericTask({

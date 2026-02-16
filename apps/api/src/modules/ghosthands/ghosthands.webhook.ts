@@ -5,13 +5,36 @@ import type { TaskStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
 
 /**
- * Verify shared service key from GhostHands (X-GH-Service-Key header).
+ * Verify shared service key from GhostHands.
+ * Checks: X-GH-Service-Key header OR ?token= query param.
+ * The query param approach handles GH's callbackNotifier which doesn't send headers.
  */
 function verifyServiceKey(request: FastifyRequest): boolean {
-  const serviceKey = request.headers["x-gh-service-key"] as string | undefined;
   const expectedKey = process.env.GH_SERVICE_SECRET;
-  if (!expectedKey || !serviceKey) return false;
-  return crypto.timingSafeEqual(Buffer.from(serviceKey), Buffer.from(expectedKey));
+  if (!expectedKey) return false;
+
+  // 1. Check header (preferred)
+  const headerKey = request.headers["x-gh-service-key"] as string | undefined;
+  if (headerKey) {
+    try {
+      return crypto.timingSafeEqual(Buffer.from(headerKey), Buffer.from(expectedKey));
+    } catch {
+      return false;
+    }
+  }
+
+  // 2. Check query param (for GH callbackNotifier which doesn't send auth headers)
+  const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
+  const tokenParam = url.searchParams.get("token");
+  if (tokenParam) {
+    try {
+      return crypto.timingSafeEqual(Buffer.from(tokenParam), Buffer.from(expectedKey));
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -51,10 +74,10 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
       const { taskRepo, redis } = request.diScope.cradle;
       const payload = request.body as GHCallbackPayload;
 
-      if (!payload?.valet_task_id || !payload?.status) {
+      if (!payload?.job_id || !payload?.status) {
         return reply.status(400).send({
           error: "Bad Request",
-          message: "Missing required fields: valet_task_id, status",
+          message: "Missing required fields: job_id, status",
         });
       }
 
@@ -63,6 +86,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           jobId: payload.job_id,
           valetTaskId: payload.valet_task_id,
           status: payload.status,
+          errorCode: payload.error_code,
+          resultSummary: payload.result_summary,
         },
         "GhostHands callback received",
       );
@@ -83,29 +108,67 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(200).send({ received: true });
       }
 
+      // Find the task — try valet_task_id first, fall back to job_id lookup
+      const valetTaskId = payload.valet_task_id;
+      if (!valetTaskId) {
+        request.log.warn(
+          { jobId: payload.job_id },
+          "No valet_task_id in callback, cannot update task",
+        );
+        return reply.status(200).send({ received: true, warning: "no valet_task_id" });
+      }
+
       // Update the task record
-      const task = await taskRepo.updateStatus(payload.valet_task_id, taskStatus);
+      const task = await taskRepo.updateStatus(valetTaskId, taskStatus);
 
       if (!task) {
-        request.log.warn(
-          { valetTaskId: payload.valet_task_id },
-          "Task not found for GhostHands callback",
-        );
+        request.log.warn({ valetTaskId }, "Task not found for GhostHands callback");
         return reply.status(404).send({
           error: "Not Found",
-          message: `Task ${payload.valet_task_id} not found`,
+          message: `Task ${valetTaskId} not found`,
         });
       }
 
-      // Store result/error data in the task's screenshots jsonb field
-      if (payload.result || payload.error) {
-        await taskRepo.updateGhosthandsResult(payload.valet_task_id, {
+      // Normalize result/error from GH's flat format into our storage format
+      const resultObj: Record<string, unknown> | null = payload.result_data
+        ? {
+            ...payload.result_data,
+            summary: payload.result_summary,
+            screenshot_url: payload.screenshot_url,
+          }
+        : payload.result
+          ? { ...payload.result }
+          : null;
+
+      const errorObj: Record<string, unknown> | null = payload.error_code
+        ? { code: payload.error_code, message: payload.error_message ?? "Unknown error" }
+        : payload.error
+          ? { ...payload.error }
+          : null;
+
+      const completedAt = payload.completed_at ?? payload.timestamps?.completed_at ?? null;
+
+      // Store result/error + cost data
+      if (resultObj || errorObj) {
+        await taskRepo.updateGhosthandsResult(valetTaskId, {
           ghJobId: payload.job_id,
-          result: payload.result ? { ...payload.result } : null,
-          error: payload.error ? { ...payload.error } : null,
-          completedAt: payload.timestamps.completed_at ?? null,
+          result: resultObj,
+          error: errorObj,
+          completedAt,
         });
       }
+
+      // Store LLM cost if provided
+      if (payload.cost) {
+        await taskRepo.updateLlmUsage(valetTaskId, {
+          totalCostUsd: payload.cost.total_cost_usd,
+          actionCount: payload.cost.action_count,
+          totalTokens: payload.cost.total_tokens,
+        });
+      }
+
+      // Build error message for WebSocket
+      const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
 
       // Publish progress update to WebSocket clients via Redis
       await publishToUser(redis, task.userId, {
@@ -115,12 +178,12 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         progress: taskStatus === "completed" ? 100 : task.progress,
         currentStep:
           taskStatus === "completed"
-            ? "Application submitted"
+            ? (payload.result_summary ?? "Application submitted")
             : taskStatus === "failed"
-              ? `Failed: ${payload.error?.message ?? "Unknown error"}`
+              ? `Failed: ${errorMessage}`
               : "Cancelled",
-        result: payload.result ?? null,
-        error: payload.error ?? null,
+        result: resultObj,
+        error: errorObj,
       });
 
       return reply.status(200).send({ received: true });

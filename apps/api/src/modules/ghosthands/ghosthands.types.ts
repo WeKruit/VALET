@@ -134,11 +134,32 @@ export interface GHDeployWebhookPayload {
   timestamp: string;
 }
 
+export interface GHCallbackCost {
+  total_cost_usd: number;
+  action_count: number;
+  total_tokens: number;
+}
+
+/**
+ * Actual payload sent by GhostHands callbackNotifier.
+ * Differs from original spec — uses flat fields instead of nested objects.
+ */
 export interface GHCallbackPayload {
   job_id: string;
-  valet_task_id: string;
+  valet_task_id: string | null;
   status: "completed" | "failed" | "cancelled";
+  completed_at?: string;
+  // Success fields (flat, not nested)
+  result_data?: Record<string, unknown>;
+  result_summary?: string;
+  screenshot_url?: string;
+  // Error fields (flat, not nested)
+  error_code?: string;
+  error_message?: string;
+  // Cost tracking
+  cost?: GHCallbackCost;
+  // Legacy format support (if GH is updated to match original spec)
   result?: GHJobResult;
   error?: GHJobError;
-  timestamps: GHJobTimestamps;
+  timestamps?: GHJobTimestamps;
 }
