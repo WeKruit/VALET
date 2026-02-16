@@ -139,7 +139,7 @@ jobs:
 
       - name: Deploy Web to Fly.io
         run: |
-          WS_URL=$(echo "${{ inputs.api-url }}" | sed 's|^https://|wss://|')
+          WS_URL=$(echo "${{ inputs.api-url }}" | sed 's|^https://|wss://|')/api/v1/ws
           flyctl deploy \
             --config fly/web.toml \
             --app ${{ inputs.web-app }} \

@@ -119,6 +119,16 @@ export interface GHSubmitGenericTaskResponse {
   target_worker_id?: string | null;
 }
 
+export interface GHResumeJobParams {
+  resolved_by?: string;
+  notes?: string;
+}
+
+export interface GHResumeJobResponse {
+  job_id: string;
+  status: string;
+}
+
 export interface GHDeployWebhookPayload {
   event: "ghosthands.deploy_ready";
   image: string;
