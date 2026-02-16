@@ -285,9 +285,9 @@ export class TaskService {
       const ghResponse = await this.ghosthandsClient.submitGenericTask({
         valet_task_id: task.id,
         valet_user_id: userId,
-        job_type: "google_search",
+        job_type: "custom",
         target_url: "https://www.google.com",
-        task_description: `Search Google for: ${body.searchQuery}`,
+        task_description: `Google search integration test: ${body.searchQuery}`,
         callback_url: callbackUrl,
         target_worker_id: body.targetWorkerId,
       });
