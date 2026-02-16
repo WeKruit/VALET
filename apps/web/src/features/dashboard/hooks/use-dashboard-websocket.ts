@@ -41,6 +41,8 @@ export function useDashboardWebSocket() {
         setLastMessage(message);
 
         if (
+          message.type === "task_update" ||
+          message.type === "task_resumed" ||
           message.type === "state_change" ||
           message.type === "completed" ||
           message.type === "error"

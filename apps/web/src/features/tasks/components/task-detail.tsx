@@ -12,6 +12,7 @@ import {
 import { TaskProgress } from "./task-progress";
 import { FieldReview } from "./field-review";
 import { HitlBlockerCard } from "./hitl-blocker-card";
+import { GhJobCard } from "./gh-job-card";
 import { useTask } from "../hooks/use-tasks";
 import { useTaskWebSocket } from "../hooks/use-task-websocket";
 import { api } from "@/lib/api-client";
@@ -265,6 +266,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
           }
         />
       )}
+
+      {/* GhostHands Job Status */}
+      {task.ghJob && <GhJobCard ghJob={task.ghJob} />}
 
       {/* Field Review Panel - copilot field review */}
       {needsFieldReview && (

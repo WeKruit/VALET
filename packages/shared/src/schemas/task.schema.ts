@@ -111,9 +111,41 @@ export const resolveBlockerResponse = z.object({
   message: z.string(),
 });
 
+// ─── GhostHands Job Data (enriched from GH API) ───
+export const ghJobSchema = z.object({
+  jobId: z.string(),
+  ghStatus: z.string(),
+  executionMode: z.string().nullable().optional(),
+  progress: z.number().min(0).max(100).nullable().optional(),
+  statusMessage: z.string().nullable().optional(),
+  result: z.record(z.unknown()).nullable().optional(),
+  error: z
+    .object({
+      code: z.string(),
+      message: z.string(),
+    })
+    .nullable()
+    .optional(),
+  cost: z
+    .object({
+      totalCostUsd: z.number(),
+      actionCount: z.number(),
+      totalTokens: z.number(),
+    })
+    .nullable()
+    .optional(),
+  timestamps: z.object({
+    createdAt: z.string(),
+    startedAt: z.string().nullable().optional(),
+    completedAt: z.string().nullable().optional(),
+  }),
+  targetWorkerId: z.string().nullable().optional(),
+});
+
 // ─── Response DTOs ───
 export const taskResponse = taskSchema.extend({
   interaction: taskInteractionSchema.nullable().optional(),
+  ghJob: ghJobSchema.nullable().optional(),
 });
 
 export const paginationSchema = z.object({
@@ -153,3 +185,4 @@ export type InteractionType = z.infer<typeof interactionType>;
 export type TaskInteraction = z.infer<typeof taskInteractionSchema>;
 export type ResolveBlockerRequest = z.infer<typeof resolveBlockerRequest>;
 export type ResolveBlockerResponse = z.infer<typeof resolveBlockerResponse>;
+export type GhJob = z.infer<typeof ghJobSchema>;

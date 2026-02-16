@@ -28,6 +28,8 @@ export interface TaskRecord {
   screenshots: Record<string, unknown> | null;
   llmUsage: Record<string, unknown> | null;
   notes: string | null;
+  interactionType: string | null;
+  interactionData: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -39,6 +41,8 @@ function toTaskRecord(row: Record<string, unknown>): TaskRecord {
     ...row,
     screenshots: (row.screenshots as Record<string, unknown>) ?? null,
     llmUsage: (row.llmUsage as Record<string, unknown>) ?? null,
+    interactionType: (row.interactionType as string) ?? null,
+    interactionData: (row.interactionData as Record<string, unknown>) ?? null,
   } as TaskRecord;
 }
 
@@ -301,6 +305,19 @@ export class TaskRepository {
         updatedAt: new Date(),
       })
       .where(eq(tasks.id, id));
+  }
+
+  async findStuckJobs(stuckMinutes = 30): Promise<TaskRecord[]> {
+    const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000);
+    const rows = await this.db
+      .select()
+      .from(tasks)
+      .where(
+        and(inArray(tasks.status, ["queued", "in_progress"]), sql`${tasks.updatedAt} < ${cutoff}`),
+      )
+      .orderBy(asc(tasks.updatedAt))
+      .limit(100);
+    return rows.map((r) => toTaskRecord(r as Record<string, unknown>));
   }
 
   async clearInteractionData(id: string) {

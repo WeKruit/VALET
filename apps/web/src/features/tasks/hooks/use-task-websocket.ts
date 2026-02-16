@@ -36,10 +36,12 @@ export function useTaskWebSocket(taskId: string) {
 
         // Invalidate relevant queries based on message type
         if (
+          message.type === "task_update" ||
+          message.type === "task_needs_human" ||
+          message.type === "task_resumed" ||
           message.type === "state_change" ||
           message.type === "completed" ||
-          message.type === "error" ||
-          message.type === "task_needs_human"
+          message.type === "error"
         ) {
           queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
           queryClient.invalidateQueries({ queryKey: ["tasks"] });

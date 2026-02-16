@@ -1,5 +1,6 @@
 import { initServer } from "@ts-rest/fastify";
 import { taskContract } from "@valet/contracts";
+import type { TaskResponse } from "@valet/shared/schemas";
 
 const s = initServer();
 
@@ -27,7 +28,7 @@ export const taskRouter = s.router(taskContract, {
   getById: async ({ params, request }) => {
     const { taskService } = request.diScope.cradle;
     const task = await taskService.getById(params.id, request.userId);
-    return { status: 200, body: task };
+    return { status: 200, body: task as TaskResponse };
   },
 
   create: async ({ body, request }) => {

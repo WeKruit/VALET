@@ -94,6 +94,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
 
       // Map GhostHands status to VALET task status
       const statusMap: Record<string, TaskStatus> = {
+        running: "in_progress",
         completed: "completed",
         failed: "failed",
         cancelled: "cancelled",
@@ -211,6 +212,15 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           type: "task_resumed",
           taskId: task.id,
           status: taskStatus,
+        });
+      } else if (taskStatus === "in_progress" && payload.status === "running") {
+        // Worker picked up the job: publish task_update with in_progress
+        await publishToUser(redis, task.userId, {
+          type: "task_update",
+          taskId: task.id,
+          status: taskStatus,
+          progress: payload.progress ?? 5,
+          currentStep: payload.result_summary ?? "Processing application",
         });
       } else {
         // Standard task_update for completed/failed/cancelled
