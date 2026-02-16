@@ -11,13 +11,7 @@ export const taskStatus = z.enum([
   "cancelled",
 ]);
 
-export const platform = z.enum([
-  "linkedin",
-  "greenhouse",
-  "lever",
-  "workday",
-  "unknown",
-]);
+export const platform = z.enum(["linkedin", "greenhouse", "lever", "workday", "unknown"]);
 
 export const applicationMode = z.enum(["copilot", "autopilot"]);
 
@@ -65,7 +59,10 @@ export const taskSchema = z.object({
 
 // ─── Request DTOs ───
 export const createTaskRequest = z.object({
-  jobUrl: z.string().url().transform((s) => s.trim()),
+  jobUrl: z
+    .string()
+    .url()
+    .transform((s) => s.trim()),
   mode: applicationMode.default("copilot"),
   resumeId: z.string().uuid(),
   notes: z.string().max(1000).optional(),
@@ -77,7 +74,9 @@ export const taskListQuery = z.object({
   status: taskStatus.optional(),
   platform: platform.optional(),
   search: z.string().max(200).optional(),
-  sortBy: z.enum(["createdAt", "updatedAt", "status", "jobTitle", "companyName"]).default("createdAt"),
+  sortBy: z
+    .enum(["createdAt", "updatedAt", "status", "jobTitle", "companyName"])
+    .default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
 });
 
@@ -89,8 +88,33 @@ export const taskExportQuery = z.object({
   format: z.enum(["csv"]).default("csv"),
 });
 
+// ─── Interaction Schemas ───
+export const interactionType = z.enum(["captcha", "two_factor", "login_required", "bot_check"]);
+
+export const taskInteractionSchema = z.object({
+  type: interactionType,
+  screenshotUrl: z.string().url().nullable().optional(),
+  pageUrl: z.string().url().nullable().optional(),
+  timeoutSeconds: z.number().int().positive().nullable().optional(),
+  message: z.string().nullable().optional(),
+  pausedAt: z.coerce.date(),
+});
+
+export const resolveBlockerRequest = z.object({
+  resolvedBy: z.enum(["human", "system"]).optional().default("human"),
+  notes: z.string().max(1000).optional(),
+});
+
+export const resolveBlockerResponse = z.object({
+  taskId: z.string().uuid(),
+  status: taskStatus,
+  message: z.string(),
+});
+
 // ─── Response DTOs ───
-export const taskResponse = taskSchema;
+export const taskResponse = taskSchema.extend({
+  interaction: taskInteractionSchema.nullable().optional(),
+});
 
 export const paginationSchema = z.object({
   page: z.number(),
@@ -125,3 +149,7 @@ export type Pagination = z.infer<typeof paginationSchema>;
 export type TaskStatsResponse = z.infer<typeof taskStatsResponse>;
 export type UpdateExternalStatusRequest = z.infer<typeof updateExternalStatusRequest>;
 export type TaskExportQuery = z.infer<typeof taskExportQuery>;
+export type InteractionType = z.infer<typeof interactionType>;
+export type TaskInteraction = z.infer<typeof taskInteractionSchema>;
+export type ResolveBlockerRequest = z.infer<typeof resolveBlockerRequest>;
+export type ResolveBlockerResponse = z.infer<typeof resolveBlockerResponse>;

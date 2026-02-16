@@ -1,4 +1,5 @@
 import { StatsCards } from "../components/stats-cards";
+import { AttentionNeeded } from "../components/attention-needed";
 import { ActiveTasks } from "../components/active-tasks";
 import { RecentApplications } from "../components/recent-applications";
 import { ApplicationTrendsChart } from "../components/application-trends-chart";
@@ -43,6 +44,8 @@ export function DashboardPage() {
       </div>
 
       <StatsCards />
+
+      <AttentionNeeded />
 
       <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
         <ApplicationTrendsChart />

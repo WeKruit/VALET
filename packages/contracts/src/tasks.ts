@@ -8,6 +8,8 @@ import {
   taskStatsResponse,
   taskExportQuery,
   updateExternalStatusRequest,
+  resolveBlockerRequest,
+  resolveBlockerResponse,
   errorResponse,
 } from "@valet/shared/schemas";
 
@@ -76,9 +78,7 @@ export const taskContract = c.router({
     path: "/api/v1/tasks/:id/approve",
     pathParams: z.object({ id: z.string().uuid() }),
     body: z.object({
-      fieldOverrides: z
-        .record(z.string())
-        .optional(),
+      fieldOverrides: z.record(z.string()).optional(),
     }),
     responses: {
       200: taskResponse,
@@ -96,5 +96,17 @@ export const taskContract = c.router({
       404: errorResponse,
     },
     summary: "Update the external tracking status of a task",
+  },
+  resolveBlocker: {
+    method: "POST",
+    path: "/api/v1/tasks/:id/resolve-blocker",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: resolveBlockerRequest,
+    responses: {
+      200: resolveBlockerResponse,
+      404: errorResponse,
+      409: errorResponse,
+    },
+    summary: "Resolve a HITL blocker on a paused task",
   },
 });

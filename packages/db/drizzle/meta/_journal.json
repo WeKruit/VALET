@@ -71,6 +71,13 @@
       "when": 1742169600000,
       "tag": "0009_add_ec2_controls",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1742342400000,
+      "tag": "0010_add_hitl_interaction",
+      "breakpoints": true
     }
   ]
 }

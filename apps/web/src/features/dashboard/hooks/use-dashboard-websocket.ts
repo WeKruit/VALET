@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useRealtimeStore } from "@/stores/realtime.store";
 
-const WS_BASE_URL =
-  import.meta.env.VITE_WS_URL ?? "ws://localhost:8000/api/v1/ws";
+const WS_BASE_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000/api/v1/ws";
 
 const MAX_RECONNECT_DELAY = 30_000;
 
@@ -47,6 +47,14 @@ export function useDashboardWebSocket() {
         ) {
           queryClient.invalidateQueries({ queryKey: ["tasks"] });
         }
+
+        if (message.type === "task_needs_human") {
+          const blockerType = message.interaction?.type ?? "action";
+          toast.warning("Task needs attention", {
+            description: `A task requires human intervention: ${blockerType.replace("_", " ")}`,
+          });
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        }
       } catch {
         // Ignore malformed messages
       }
@@ -56,10 +64,7 @@ export function useDashboardWebSocket() {
       setStatus("disconnected");
       wsRef.current = null;
 
-      const delay = Math.min(
-        1000 * Math.pow(2, reconnectAttempt.current),
-        MAX_RECONNECT_DELAY
-      );
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempt.current), MAX_RECONNECT_DELAY);
       reconnectAttempt.current++;
       reconnectTimer.current = setTimeout(connect, delay);
     };
