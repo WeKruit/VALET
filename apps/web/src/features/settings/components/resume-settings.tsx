@@ -62,11 +62,14 @@ export function ResumeSettings() {
   const deleteResume = api.resumes.delete.useMutation({
     onSuccess: () => {
       toast.success("Resume deleted.");
-      queryClient.invalidateQueries({ queryKey: ["resumes"] });
-      setDeleteId(null);
     },
     onError: () => {
       toast.error("Failed to delete resume. Please try again.");
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["resumes"] });
+      void queryClient.refetchQueries({ queryKey: ["resumes"] });
+      setDeleteId(null);
     },
   });
 
@@ -93,17 +96,14 @@ export function ResumeSettings() {
   const resumes = data?.status === 200 ? data.body.data : [];
   const canUpload = resumes.length < MAX_RESUMES;
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file && isValidFile(file)) {
-        processFile(file);
-      }
-    },
-    []
-  );
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && isValidFile(file)) {
+      processFile(file);
+    }
+  }, []);
 
   function isValidFile(file: File): boolean {
     const validTypes = [
@@ -186,7 +186,7 @@ export function ResumeSettings() {
                 isDragging
                   ? "border-[var(--wk-copilot)] bg-blue-50"
                   : "border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)]",
-                uploadResume.isPending && "pointer-events-none opacity-50"
+                uploadResume.isPending && "pointer-events-none opacity-50",
               )}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -210,9 +210,7 @@ export function ResumeSettings() {
                 <>
                   <Upload className="h-8 w-8 text-[var(--wk-text-tertiary)]" />
                   <div className="text-center">
-                    <p className="text-sm font-medium">
-                      Drag and drop your resume here
-                    </p>
+                    <p className="text-sm font-medium">Drag and drop your resume here</p>
                     <p className="text-xs text-[var(--wk-text-tertiary)]">
                       or click to browse &middot; PDF or DOCX, max 10MB
                     </p>
@@ -228,12 +226,10 @@ export function ResumeSettings() {
               <div className="flex h-12 w-12 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-surface-sunken)]">
                 <FileText className="h-6 w-6 text-[var(--wk-text-tertiary)]" />
               </div>
-              <h3 className="mt-4 font-display text-lg font-semibold">
-                No resumes yet
-              </h3>
+              <h3 className="mt-4 font-display text-lg font-semibold">No resumes yet</h3>
               <p className="mt-1 max-w-sm text-sm text-[var(--wk-text-secondary)]">
-                Upload your first resume to get started. VALET uses it to
-                auto-fill job applications.
+                Upload your first resume to get started. VALET uses it to auto-fill job
+                applications.
               </p>
             </div>
           ) : (
@@ -248,7 +244,7 @@ export function ResumeSettings() {
                       "rounded-[var(--wk-radius-lg)] border overflow-hidden",
                       resume.isDefault
                         ? "border-[var(--wk-accent-amber)] bg-amber-50/50"
-                        : "border-[var(--wk-border-subtle)]"
+                        : "border-[var(--wk-border-subtle)]",
                     )}
                   >
                     <div className="flex items-start justify-between gap-4 p-4">
@@ -258,9 +254,7 @@ export function ResumeSettings() {
                         </div>
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-medium">
-                              {resume.filename}
-                            </p>
+                            <p className="truncate text-sm font-medium">{resume.filename}</p>
                             {resume.isDefault && (
                               <Badge variant="warning">
                                 <Star className="mr-1 h-3 w-3" />
@@ -273,7 +267,10 @@ export function ResumeSettings() {
                             <span>&middot;</span>
                             <span>{formatSize(resume.fileSizeBytes)}</span>
                             <span>&middot;</span>
-                            <StatusBadge status={resume.status} confidence={resume.parsingConfidence} />
+                            <StatusBadge
+                              status={resume.status}
+                              confidence={resume.parsingConfidence}
+                            />
                           </div>
                         </div>
                       </div>
@@ -305,7 +302,12 @@ export function ResumeSettings() {
                             }
                             title="Retry parsing"
                           >
-                            <RotateCcw className={cn("h-4 w-4 text-[var(--wk-text-tertiary)]", retryParse.isPending && "animate-spin")} />
+                            <RotateCcw
+                              className={cn(
+                                "h-4 w-4 text-[var(--wk-text-tertiary)]",
+                                retryParse.isPending && "animate-spin",
+                              )}
+                            />
                           </Button>
                         )}
                         {!resume.isDefault && resume.status === "parsed" && (
@@ -339,48 +341,65 @@ export function ResumeSettings() {
                       <div className="border-t border-[var(--wk-border-subtle)] px-4 py-3 space-y-3 bg-[var(--wk-surface-sunken)]/30">
                         {pd.fullName && (
                           <div>
-                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">Name</p>
+                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">
+                              Name
+                            </p>
                             <p className="text-sm">{pd.fullName}</p>
                           </div>
                         )}
                         <div className="grid grid-cols-2 gap-3">
                           {pd.email && (
                             <div>
-                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">Email</p>
+                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">
+                                Email
+                              </p>
                               <p className="text-sm">{pd.email}</p>
                             </div>
                           )}
                           {pd.phone && (
                             <div>
-                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">Phone</p>
+                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">
+                                Phone
+                              </p>
                               <p className="text-sm">{pd.phone}</p>
                             </div>
                           )}
                           {pd.location && (
                             <div>
-                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">Location</p>
+                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">
+                                Location
+                              </p>
                               <p className="text-sm">{pd.location}</p>
                             </div>
                           )}
                           {pd.totalYearsExperience != null && (
                             <div>
-                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">Experience</p>
+                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">
+                                Experience
+                              </p>
                               <p className="text-sm">{pd.totalYearsExperience} years</p>
                             </div>
                           )}
                           {pd.workAuthorization && (
                             <div>
-                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">Work Auth</p>
+                              <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider">
+                                Work Auth
+                              </p>
                               <p className="text-sm">{pd.workAuthorization}</p>
                             </div>
                           )}
                         </div>
                         {pd.skills && pd.skills.length > 0 && (
                           <div>
-                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">Skills</p>
+                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">
+                              Skills
+                            </p>
                             <div className="flex flex-wrap gap-1">
                               {pd.skills.map((skill) => (
-                                <span key={skill} className="inline-flex items-center rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] px-2 py-0.5 text-xs text-[var(--wk-text-secondary)]">
+                                <span
+                                  key={skill}
+                                  className="inline-flex items-center rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] px-2 py-0.5 text-xs text-[var(--wk-text-secondary)]"
+                                >
                                   {skill}
                                 </span>
                               ))}
@@ -389,7 +408,9 @@ export function ResumeSettings() {
                         )}
                         {pd.education && pd.education.length > 0 && (
                           <div>
-                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">Education</p>
+                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">
+                              Education
+                            </p>
                             <div className="space-y-1.5">
                               {pd.education.map((edu, i) => (
                                 <div key={i} className="text-sm">
@@ -443,16 +464,25 @@ export function ResumeSettings() {
                         )}
                         {pd.projects && pd.projects.length > 0 && (
                           <div>
-                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">Projects</p>
+                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">
+                              Projects
+                            </p>
                             <div className="space-y-1.5">
                               {pd.projects.map((proj, i) => (
                                 <div key={i} className="text-sm">
                                   <p className="font-medium">{proj.name}</p>
-                                  {proj.description && <p className="text-[var(--wk-text-secondary)]">{proj.description}</p>}
+                                  {proj.description && (
+                                    <p className="text-[var(--wk-text-secondary)]">
+                                      {proj.description}
+                                    </p>
+                                  )}
                                   {proj.technologies && proj.technologies.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-0.5">
                                       {proj.technologies.map((tech) => (
-                                        <span key={tech} className="inline-flex items-center rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] px-1.5 py-0.5 text-[10px] text-[var(--wk-text-tertiary)]">
+                                        <span
+                                          key={tech}
+                                          className="inline-flex items-center rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] px-1.5 py-0.5 text-[10px] text-[var(--wk-text-tertiary)]"
+                                        >
                                           {tech}
                                         </span>
                                       ))}
@@ -465,10 +495,15 @@ export function ResumeSettings() {
                         )}
                         {pd.interests && pd.interests.length > 0 && (
                           <div>
-                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">Interests</p>
+                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">
+                              Interests
+                            </p>
                             <div className="flex flex-wrap gap-1">
                               {pd.interests.map((interest) => (
-                                <span key={interest} className="inline-flex items-center rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] px-2 py-0.5 text-xs text-[var(--wk-text-secondary)]">
+                                <span
+                                  key={interest}
+                                  className="inline-flex items-center rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] px-2 py-0.5 text-xs text-[var(--wk-text-secondary)]"
+                                >
                                   {interest}
                                 </span>
                               ))}
@@ -477,8 +512,12 @@ export function ResumeSettings() {
                         )}
                         {pd.languages && pd.languages.length > 0 && (
                           <div>
-                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">Languages</p>
-                            <p className="text-sm text-[var(--wk-text-secondary)]">{pd.languages.join(", ")}</p>
+                            <p className="text-xs font-medium text-[var(--wk-text-tertiary)] uppercase tracking-wider mb-1">
+                              Languages
+                            </p>
+                            <p className="text-sm text-[var(--wk-text-secondary)]">
+                              {pd.languages.join(", ")}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -492,7 +531,12 @@ export function ResumeSettings() {
       </Card>
 
       {/* Delete confirmation dialog */}
-      <Dialog open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+      <Dialog
+        open={deleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Resume</DialogTitle>

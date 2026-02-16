@@ -1,4 +1,3 @@
-import type { Hatchet } from "@hatchet-dev/typescript-sdk";
 import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type { ApplicationMode, ExternalStatus } from "@valet/shared/schemas";
@@ -34,7 +33,6 @@ export class TaskService {
   private taskRepo: TaskRepository;
   private resumeRepo: ResumeRepository;
   private qaBankRepo: QaBankRepository;
-  private hatchet: Hatchet;
   private ghosthandsClient: GhostHandsClient;
   private redis: Redis;
   private logger: FastifyBaseLogger;
@@ -43,7 +41,6 @@ export class TaskService {
     taskRepo,
     resumeRepo,
     qaBankRepo,
-    hatchet,
     ghosthandsClient,
     redis,
     logger,
@@ -51,7 +48,6 @@ export class TaskService {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
     qaBankRepo: QaBankRepository;
-    hatchet: Hatchet;
     ghosthandsClient: GhostHandsClient;
     redis: Redis;
     logger: FastifyBaseLogger;
@@ -59,7 +55,6 @@ export class TaskService {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
     this.qaBankRepo = qaBankRepo;
-    this.hatchet = hatchet;
     this.ghosthandsClient = ghosthandsClient;
     this.redis = redis;
     this.logger = logger;
@@ -355,10 +350,10 @@ export class TaskService {
     const task = await this.taskRepo.findById(id, userId);
     if (!task) throw new TaskNotFoundError(id);
 
-    await this.hatchet.event.push("review_approved", {
-      taskId: id,
-      fieldOverrides: fieldOverrides ?? {},
-    });
+    this.logger.info(
+      { taskId: id, fieldOverrides },
+      "Task approved (GhostHands handles continuation)",
+    );
 
     await this.taskRepo.updateStatus(id, "in_progress");
     const updated = await this.taskRepo.findById(id, userId);
@@ -374,7 +369,7 @@ export class TaskService {
     const task = await this.taskRepo.findById(id, userId);
     if (!task) throw new TaskNotFoundError(id);
 
-    await this.hatchet.event.push("captcha_solved", { taskId: id });
+    this.logger.info({ taskId: id }, "Captcha solved (GhostHands handles continuation)");
 
     await this.taskRepo.updateStatus(id, "in_progress");
   }
