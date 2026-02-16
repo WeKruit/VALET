@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, count, sql, ilike, or, type SQL } from "drizzle-orm";
+import { eq, and, desc, asc, count, sql, ilike, inArray, or, type SQL } from "drizzle-orm";
 import { tasks, type Database } from "@valet/db";
 import type { TaskStatus, Platform, ApplicationMode, ExternalStatus } from "@valet/shared/schemas";
 
@@ -148,7 +148,7 @@ export class TaskRepository {
     userId: string;
     jobUrl: string;
     mode: ApplicationMode;
-    resumeId: string;
+    resumeId?: string;
     notes?: string;
   }): Promise<TaskRecord> {
     const rows = await this.db
@@ -157,7 +157,7 @@ export class TaskRepository {
         userId: data.userId,
         jobUrl: data.jobUrl,
         mode: data.mode,
-        resumeId: data.resumeId,
+        resumeId: data.resumeId || null,
         notes: data.notes ?? null,
       })
       .returning();
@@ -219,6 +219,40 @@ export class TaskRepository {
     }
 
     await this.db.update(tasks).set(updates).where(eq(tasks.id, id));
+  }
+
+  async findActiveBySandbox(userId: string, sandboxId: string): Promise<TaskRecord[]> {
+    const pattern = `%[sandbox:${sandboxId}]%`;
+    const rows = await this.db
+      .select()
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.userId, userId),
+          inArray(tasks.status, ["created", "queued", "in_progress", "waiting_human"]),
+          ilike(tasks.notes, pattern),
+        ),
+      )
+      .orderBy(desc(tasks.createdAt))
+      .limit(10);
+    return rows.map((r) => toTaskRecord(r as Record<string, unknown>));
+  }
+
+  async findRecentBySandbox(userId: string, sandboxId: string): Promise<TaskRecord[]> {
+    const pattern = `%[sandbox:${sandboxId}]%`;
+    const rows = await this.db
+      .select()
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.userId, userId),
+          inArray(tasks.status, ["completed", "failed", "cancelled"]),
+          ilike(tasks.notes, pattern),
+        ),
+      )
+      .orderBy(desc(tasks.completedAt))
+      .limit(5);
+    return rows.map((r) => toTaskRecord(r as Record<string, unknown>));
   }
 
   async getStats(userId: string) {

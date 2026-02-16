@@ -99,6 +99,24 @@ resource "aws_security_group" "valet_worker" {
     cidr_blocks = var.allowed_cidr
   }
 
+  # HTTPS (Caddy reverse proxy for noVNC — serves TLS via Let's Encrypt)
+  ingress {
+    description = "HTTPS (Caddy/noVNC)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP (Let's Encrypt ACME HTTP-01 challenge + redirect to HTTPS)
+  ingress {
+    description = "HTTP (ACME challenge)"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   # GhostHands API (browser automation engine)
   ingress {
     description = "GhostHands API"

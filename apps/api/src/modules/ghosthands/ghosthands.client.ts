@@ -27,7 +27,12 @@ export class GhostHandsClient {
     this.logger = logger;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs = 15_000,
+  ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     this.logger.debug({ method, url }, "GhostHands request");
 
@@ -38,6 +43,7 @@ export class GhostHandsClient {
         "X-GH-Service-Key": this.serviceKey,
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!res.ok) {
@@ -87,6 +93,6 @@ export class GhostHandsClient {
   }
 
   async healthCheck(): Promise<{ status: string }> {
-    return this.request<{ status: string }>("GET", "/health");
+    return this.request<{ status: string }>("GET", "/health", undefined, 5_000);
   }
 }

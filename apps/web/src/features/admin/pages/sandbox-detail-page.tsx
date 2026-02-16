@@ -38,6 +38,7 @@ import {
   Play,
   Square,
   Power,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatRelativeTime } from "@/lib/utils";
@@ -48,6 +49,9 @@ import { SandboxMetrics } from "../components/sandbox-metrics";
 import { Ec2StatusBadge } from "../components/ec2-status-badge";
 import { SandboxConnectionInfo } from "../components/sandbox-connection-info";
 import { LiveView } from "@/features/tasks/components/live-view";
+import { TriggerTaskDialog } from "../components/trigger-task-dialog";
+import { WorkerStatusCard } from "../components/worker-status-card";
+import { DeployBanner } from "../components/deploy-banner";
 import {
   useSandbox,
   useSandboxMetrics,
@@ -73,6 +77,7 @@ export function SandboxDetailPage() {
   const [showLiveView, setShowLiveView] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [triggerTaskOpen, setTriggerTaskOpen] = useState(false);
 
   const sandboxQuery = useSandbox(id ?? "");
   const metricsQuery = useSandboxMetrics(id ?? "");
@@ -84,14 +89,12 @@ export function SandboxDetailPage() {
   const stopMutation = useStopSandbox();
   const updateMutation = useUpdateSandbox();
 
-  const sandbox =
-    sandboxQuery.data?.status === 200 ? sandboxQuery.data.body : null;
-  const metrics =
-    metricsQuery.data?.status === 200 ? metricsQuery.data.body : null;
+  const sandbox = sandboxQuery.data?.status === 200 ? sandboxQuery.data.body : null;
+  const metrics = metricsQuery.data?.status === 200 ? metricsQuery.data.body : null;
   const ec2Status =
     ec2StatusQuery.data?.status === 200
       ? ec2StatusQuery.data.body.ec2Status
-      : sandbox?.ec2Status ?? null;
+      : (sandbox?.ec2Status ?? null);
 
   if (!id) {
     return (
@@ -102,9 +105,7 @@ export function SandboxDetailPage() {
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Sandbox Not Found
-          </h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Sandbox Not Found</h1>
         </div>
       </div>
     );
@@ -127,9 +128,7 @@ export function SandboxDetailPage() {
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Sandbox Not Found
-          </h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Sandbox Not Found</h1>
         </div>
         <Card>
           <CardContent className="py-8 text-center text-sm text-[var(--wk-status-error)]">
@@ -250,13 +249,9 @@ export function SandboxDetailPage() {
   }
 
   const createdAt =
-    sandbox.createdAt instanceof Date
-      ? sandbox.createdAt.toISOString()
-      : String(sandbox.createdAt);
+    sandbox.createdAt instanceof Date ? sandbox.createdAt.toISOString() : String(sandbox.createdAt);
   const updatedAt =
-    sandbox.updatedAt instanceof Date
-      ? sandbox.updatedAt.toISOString()
-      : String(sandbox.updatedAt);
+    sandbox.updatedAt instanceof Date ? sandbox.updatedAt.toISOString() : String(sandbox.updatedAt);
 
   return (
     <div className="space-y-6">
@@ -272,9 +267,7 @@ export function SandboxDetailPage() {
             <h1 className="font-display text-xl sm:text-2xl font-semibold tracking-tight">
               {sandbox.name}
             </h1>
-            <p className="text-sm text-[var(--wk-text-secondary)]">
-              {sandbox.instanceId}
-            </p>
+            <p className="text-sm text-[var(--wk-text-secondary)]">{sandbox.instanceId}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -297,15 +290,23 @@ export function SandboxDetailPage() {
             {restartMutation.isPending ? "Restarting..." : "Restart Service"}
           </Button>
           <Button
-            variant="destructive"
+            variant="secondary"
             size="sm"
-            onClick={() => setDeleteOpen(true)}
+            onClick={() => setTriggerTaskOpen(true)}
+            disabled={ec2Status !== "running"}
           >
+            <Zap className="h-4 w-4" />
+            Trigger Task
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4" />
             Terminate
           </Button>
         </div>
       </div>
+
+      {/* Deploy Notifications */}
+      <DeployBanner />
 
       {/* Overview */}
       <Card>
@@ -333,10 +334,7 @@ export function SandboxDetailPage() {
               />
             </InfoField>
             <InfoField label="Load">
-              <SandboxMetrics
-                currentLoad={sandbox.currentLoad}
-                capacity={sandbox.capacity}
-              />
+              <SandboxMetrics currentLoad={sandbox.currentLoad} capacity={sandbox.capacity} />
             </InfoField>
             <InfoField label="Public IP">
               {sandbox.publicIp ? (
@@ -353,21 +351,13 @@ export function SandboxDetailPage() {
               )}
             </InfoField>
             <InfoField label="SSH Key">
-              {sandbox.sshKeyName ?? (
-                <span className="text-[var(--wk-text-tertiary)]">-</span>
-              )}
+              {sandbox.sshKeyName ?? <span className="text-[var(--wk-text-tertiary)]">-</span>}
             </InfoField>
             <InfoField label="AdsPower Version">
-              {sandbox.adspowerVersion ?? (
-                <span className="text-[var(--wk-text-tertiary)]">-</span>
-              )}
+              {sandbox.adspowerVersion ?? <span className="text-[var(--wk-text-tertiary)]">-</span>}
             </InfoField>
-            <InfoField label="Created">
-              {formatRelativeTime(createdAt)}
-            </InfoField>
-            <InfoField label="Updated">
-              {formatRelativeTime(updatedAt)}
-            </InfoField>
+            <InfoField label="Created">{formatRelativeTime(createdAt)}</InfoField>
+            <InfoField label="Updated">{formatRelativeTime(updatedAt)}</InfoField>
             {sandbox.novncUrl && (
               <InfoField label="noVNC">
                 <a
@@ -401,9 +391,7 @@ export function SandboxDetailPage() {
                 size="sm"
                 onClick={handleStart}
                 disabled={
-                  ec2Status === "running" ||
-                  ec2Status === "pending" ||
-                  startMutation.isPending
+                  ec2Status === "running" || ec2Status === "pending" || startMutation.isPending
                 }
               >
                 {startMutation.isPending ? (
@@ -455,8 +443,8 @@ export function SandboxDetailPage() {
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>
-                          Automatically stops the instance when no tasks are
-                          running for the configured idle period.
+                          Automatically stops the instance when no tasks are running for the
+                          configured idle period.
                         </p>
                       </TooltipContent>
                     </Tooltip>
@@ -485,11 +473,11 @@ export function SandboxDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Worker Status */}
+      <WorkerStatusCard sandboxId={id!} ec2Running={ec2Status === "running"} />
+
       {/* Connection Info */}
-      <SandboxConnectionInfo
-        publicIp={sandbox.publicIp}
-        sshKeyName={sandbox.sshKeyName}
-      />
+      <SandboxConnectionInfo publicIp={sandbox.publicIp} sshKeyName={sandbox.sshKeyName} />
 
       {/* System Metrics */}
       {metrics && (
@@ -505,9 +493,7 @@ export function SandboxDetailPage() {
               <MetricCard
                 icon={<Cpu className="h-4 w-4" />}
                 label="CPU"
-                value={
-                  metrics.cpu != null ? `${metrics.cpu.toFixed(1)}%` : "-"
-                }
+                value={metrics.cpu != null ? `${metrics.cpu.toFixed(1)}%` : "-"}
                 barValue={metrics.cpu ?? 0}
               />
               <MetricCard
@@ -541,9 +527,7 @@ export function SandboxDetailPage() {
               <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-4 space-y-2">
                 <div className="flex items-center gap-2 text-[var(--wk-text-secondary)]">
                   <Wifi className="h-4 w-4" />
-                  <span className="text-xs font-medium uppercase tracking-wider">
-                    Services
-                  </span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Services</span>
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-sm">
@@ -603,13 +587,9 @@ export function SandboxDetailPage() {
                   key={key}
                   className="inline-flex items-center rounded-[var(--wk-radius-md)] bg-[var(--wk-surface-sunken)] px-2.5 py-1 text-xs"
                 >
-                  <span className="font-medium text-[var(--wk-text-primary)]">
-                    {key}
-                  </span>
+                  <span className="font-medium text-[var(--wk-text-primary)]">{key}</span>
                   <span className="mx-1 text-[var(--wk-text-tertiary)]">=</span>
-                  <span className="text-[var(--wk-text-secondary)]">
-                    {String(val)}
-                  </span>
+                  <span className="text-[var(--wk-text-secondary)]">{String(val)}</span>
                 </div>
               ))}
             </div>
@@ -623,20 +603,15 @@ export function SandboxDetailPage() {
           <DialogHeader>
             <DialogTitle>Stop EC2 Instance?</DialogTitle>
             <DialogDescription>
-              The instance will stop and you will save ~$0.042/hour on compute
-              costs. EBS storage ($3.44/month) will continue. You can start it
-              again anytime.
+              The instance will stop and you will save ~$0.042/hour on compute costs. EBS storage
+              ($3.44/month) will continue. You can start it again anytime.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setStopOpen(false)}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleStop}
-              disabled={stopMutation.isPending}
-            >
+            <Button variant="destructive" onClick={handleStop} disabled={stopMutation.isPending}>
               {stopMutation.isPending ? (
                 <>
                   <LoadingSpinner size="sm" />
@@ -650,6 +625,17 @@ export function SandboxDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Trigger Task */}
+      {sandbox && (
+        <TriggerTaskDialog
+          sandboxId={id!}
+          sandboxName={sandbox.name}
+          open={triggerTaskOpen}
+          onOpenChange={setTriggerTaskOpen}
+          onTestTriggered={() => setShowLiveView(true)}
+        />
+      )}
+
       {/* Delete confirmation */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-sm">
@@ -657,10 +643,8 @@ export function SandboxDetailPage() {
             <DialogTitle>Terminate Sandbox</DialogTitle>
             <DialogDescription>
               Are you sure you want to terminate{" "}
-              <span className="font-medium text-[var(--wk-text-primary)]">
-                {sandbox.name}
-              </span>
-              ? This action cannot be undone.
+              <span className="font-medium text-[var(--wk-text-primary)]">{sandbox.name}</span>?
+              This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -681,13 +665,7 @@ export function SandboxDetailPage() {
   );
 }
 
-function InfoField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function InfoField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
@@ -720,9 +698,7 @@ function MetricCard({
     <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-4 space-y-2">
       <div className="flex items-center gap-2 text-[var(--wk-text-secondary)]">
         {icon}
-        <span className="text-xs font-medium uppercase tracking-wider">
-          {label}
-        </span>
+        <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
       </div>
       <p className="text-lg font-semibold tabular-nums">{value}</p>
       <div className="h-1.5 w-full rounded-full bg-[var(--wk-surface-sunken)] overflow-hidden">

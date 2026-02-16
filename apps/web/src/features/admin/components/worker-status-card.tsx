@@ -1,0 +1,222 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
+import { Badge } from "@valet/ui/components/badge";
+import { Activity, Server, Cpu, CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react";
+import { LoadingSpinner } from "@/components/common/loading-spinner";
+import { useWorkerStatus } from "../hooks/use-sandboxes";
+
+interface WorkerStatusCardProps {
+  sandboxId: string;
+  ec2Running: boolean;
+}
+
+function StatusDot({ status }: { status: "healthy" | "unhealthy" | "unreachable" }) {
+  const colors = {
+    healthy: "bg-[var(--wk-status-success)]",
+    unhealthy: "bg-[var(--wk-status-warning)]",
+    unreachable: "bg-[var(--wk-status-error)]",
+  };
+  return <span className={`inline-block h-2 w-2 rounded-full ${colors[status]}`} />;
+}
+
+function TaskStatusBadge({ status }: { status: string }) {
+  const variant =
+    status === "completed"
+      ? ("success" as const)
+      : status === "failed" || status === "cancelled"
+        ? ("error" as const)
+        : ("secondary" as const);
+
+  return (
+    <Badge variant={variant} className="text-xs">
+      {status}
+    </Badge>
+  );
+}
+
+export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProps) {
+  const { data, isLoading, isError } = useWorkerStatus(sandboxId, ec2Running);
+  const ws = data?.status === 200 ? data.body : null;
+
+  if (!ec2Running) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Worker Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-[var(--wk-text-tertiary)]">
+            EC2 instance is not running. Start the instance to see worker status.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading && !data) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Worker Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center py-6">
+          <LoadingSpinner size="lg" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError && !ws) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Worker Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-[var(--wk-text-tertiary)]">
+            Unable to fetch worker status. The API may be unreachable.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Activity className="h-5 w-5" />
+          Worker Status
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Service Status Row */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+              <Server className="h-3.5 w-3.5" />
+              GhostHands API
+            </div>
+            <div className="flex items-center gap-2">
+              <StatusDot status={ws?.ghosthandsApi.status ?? "unreachable"} />
+              <span className="text-sm font-medium capitalize">
+                {ws?.ghosthandsApi.status ?? "unknown"}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+              <Cpu className="h-3.5 w-3.5" />
+              Hatchet Worker
+            </div>
+            <div className="flex items-center gap-2">
+              {ws?.worker.hatchetConnected === true ? (
+                <CheckCircle2 className="h-4 w-4 text-[var(--wk-status-success)]" />
+              ) : ws?.worker.hatchetConnected === false ? (
+                <XCircle className="h-4 w-4 text-[var(--wk-status-error)]" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
+              )}
+              <span className="text-sm font-medium">
+                {ws?.worker.hatchetConnected === true
+                  ? "Connected"
+                  : ws?.worker.hatchetConnected === false
+                    ? "Disconnected"
+                    : "Unknown"}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+              <Activity className="h-3.5 w-3.5" />
+              AdsPower
+            </div>
+            <div className="flex items-center gap-2">
+              {ws?.worker.adspowerStatus === "running" ? (
+                <CheckCircle2 className="h-4 w-4 text-[var(--wk-status-success)]" />
+              ) : (
+                <XCircle className="h-4 w-4 text-[var(--wk-status-error)]" />
+              )}
+              <span className="text-sm font-medium">{ws?.worker.adspowerStatus ?? "Unknown"}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Active Tasks */}
+        {ws && ws.activeTasks.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+              Active Tasks
+            </h4>
+            <div className="space-y-2">
+              {ws.activeTasks.map((t) => (
+                <div
+                  key={t.taskId}
+                  className="flex items-center justify-between rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{t.jobUrl}</p>
+                    {t.currentStep && (
+                      <p className="text-xs text-[var(--wk-text-tertiary)]">{t.currentStep}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 ml-3">
+                    <div className="w-20">
+                      <div className="h-1.5 w-full rounded-full bg-[var(--wk-surface-sunken)] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[var(--wk-copilot)] transition-all duration-500"
+                          style={{ width: `${Math.min(t.progress, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-[var(--wk-text-tertiary)] text-right mt-0.5">
+                        {t.progress}%
+                      </p>
+                    </div>
+                    <TaskStatusBadge status={t.status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent Tasks */}
+        {ws && ws.recentTasks.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+              Recent Tasks
+            </h4>
+            <div className="space-y-1">
+              {ws.recentTasks.map((t) => (
+                <div key={t.taskId} className="flex items-center justify-between py-1.5 text-sm">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <Clock className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)] shrink-0" />
+                    <span className="truncate text-[var(--wk-text-secondary)]">{t.jobUrl}</span>
+                  </div>
+                  <TaskStatusBadge status={t.status} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {ws && ws.activeTasks.length === 0 && ws.recentTasks.length === 0 && (
+          <p className="text-sm text-[var(--wk-text-tertiary)] text-center py-2">
+            No tasks have been triggered on this sandbox yet.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

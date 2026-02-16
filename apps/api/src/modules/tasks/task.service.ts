@@ -121,12 +121,21 @@ export class TaskService {
       mode: ApplicationMode;
       resumeId: string;
       notes?: string;
+      targetWorkerId?: string;
     },
     userId: string,
   ) {
+    // Tag notes with sandbox ID for tracking
+    const notes = body.targetWorkerId
+      ? `${body.notes ?? ""} [sandbox:${body.targetWorkerId}]`.trim()
+      : body.notes;
+
     const task = await this.taskRepo.create({
       userId,
-      ...body,
+      jobUrl: body.jobUrl,
+      mode: body.mode,
+      resumeId: body.resumeId,
+      notes,
     });
 
     // Fetch resume data for the GhostHands profile
@@ -166,6 +175,8 @@ export class TaskService {
         qa_answers: Object.keys(qaAnswers).length > 0 ? qaAnswers : undefined,
         callback_url: callbackUrl,
         quality: body.mode === "autopilot" ? "fast" : "thorough",
+        max_retries: 1,
+        ...(body.targetWorkerId ? { target_worker_id: body.targetWorkerId } : {}),
       });
 
       // Store the GhostHands job ID in workflowRunId field
@@ -255,6 +266,59 @@ export class TaskService {
       work_history: workHistory.length > 0 ? workHistory : undefined,
       skills: Array.isArray(parsedData.skills) ? (parsedData.skills as string[]) : undefined,
     };
+  }
+
+  async createTestTask(body: { searchQuery: string; targetWorkerId: string }, userId: string) {
+    // Create a task record for tracking the test
+    const task = await this.taskRepo.create({
+      userId,
+      jobUrl: "https://www.google.com",
+      mode: "autopilot",
+      resumeId: "", // no resume needed for test
+      notes: `Integration test: "${body.searchQuery}" [sandbox:${body.targetWorkerId}]`,
+    });
+
+    const callbackUrl =
+      process.env.GHOSTHANDS_CALLBACK_URL ??
+      `${process.env.API_URL ?? "http://localhost:8000"}/api/v1/webhooks/ghosthands`;
+
+    try {
+      const ghResponse = await this.ghosthandsClient.submitGenericTask({
+        valet_task_id: task.id,
+        valet_user_id: userId,
+        job_type: "custom",
+        target_url: "https://www.google.com",
+        task_description: `Google search integration test: ${body.searchQuery}`,
+        callback_url: callbackUrl,
+        max_retries: 1,
+        target_worker_id: body.targetWorkerId,
+      });
+
+      await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
+      await this.taskRepo.updateStatus(task.id, "queued");
+
+      await publishToUser(this.redis, userId, {
+        type: "task_update",
+        taskId: task.id,
+        status: "queued",
+        progress: 0,
+        currentStep: "Integration test submitted to GhostHands",
+      });
+    } catch (err) {
+      this.logger.error({ err, taskId: task.id }, "Failed to submit test task to GhostHands");
+      await this.taskRepo.updateStatus(task.id, "failed");
+      await this.taskRepo.updateGhosthandsResult(task.id, {
+        ghJobId: "",
+        result: null,
+        error: {
+          code: "GH_SUBMIT_FAILED",
+          message: err instanceof Error ? err.message : "Failed to submit test to GhostHands",
+        },
+        completedAt: null,
+      });
+    }
+
+    return task;
   }
 
   async cancel(id: string, userId: string) {

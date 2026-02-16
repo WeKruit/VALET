@@ -9,6 +9,14 @@ import {
   sandboxMetricsResponse,
   sandboxHealthCheckResponse,
   ec2StatusResponse,
+  adminTriggerTaskRequest,
+  adminTriggerTaskResponse,
+  adminTriggerTestRequest,
+  adminTriggerTestResponse,
+  workerStatusResponse,
+  deployListResponse,
+  triggerDeployResponse,
+  deployStatusResponse,
   errorResponse,
 } from "@valet/shared/schemas";
 
@@ -135,5 +143,87 @@ export const sandboxContract = c.router({
       404: errorResponse,
     },
     summary: "Get real-time EC2 instance status from AWS",
+  },
+
+  // ─── Task Trigger ───
+
+  triggerTask: {
+    method: "POST",
+    path: "/api/v1/admin/sandboxes/:id/trigger-task",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: adminTriggerTaskRequest,
+    responses: {
+      201: adminTriggerTaskResponse,
+      400: errorResponse,
+      404: errorResponse,
+      409: errorResponse,
+    },
+    summary: "Trigger a GhostHands job application targeting this sandbox",
+  },
+  triggerTest: {
+    method: "POST",
+    path: "/api/v1/admin/sandboxes/:id/trigger-test",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: adminTriggerTestRequest,
+    responses: {
+      201: adminTriggerTestResponse,
+      404: errorResponse,
+      409: errorResponse,
+    },
+    summary: "Trigger a quick integration test (Google search) on this sandbox",
+  },
+  workerStatus: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/worker-status",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: workerStatusResponse,
+      404: errorResponse,
+    },
+    summary: "Get GhostHands worker, task, and API status for this sandbox",
+  },
+
+  // ─── Deploy Management ───
+
+  listDeploys: {
+    method: "GET",
+    path: "/api/v1/admin/deploys",
+    responses: {
+      200: deployListResponse,
+    },
+    summary: "List pending and recent GhostHands deploy notifications",
+  },
+  triggerDeploy: {
+    method: "POST",
+    path: "/api/v1/admin/deploys/:id/trigger",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      200: triggerDeployResponse,
+      404: errorResponse,
+      409: errorResponse,
+    },
+    summary: "Trigger rolling GhostHands deploy across all running sandboxes",
+  },
+  getDeployStatus: {
+    method: "GET",
+    path: "/api/v1/admin/deploys/:id",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: deployStatusResponse,
+      404: errorResponse,
+    },
+    summary: "Get deploy status with per-sandbox progress",
+  },
+  cancelDeploy: {
+    method: "POST",
+    path: "/api/v1/admin/deploys/:id/cancel",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      200: z.object({ message: z.string() }),
+      404: errorResponse,
+    },
+    summary: "Cancel an in-progress deploy",
   },
 });
