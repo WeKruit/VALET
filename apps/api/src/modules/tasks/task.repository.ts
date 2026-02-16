@@ -221,6 +221,23 @@ export class TaskRepository {
     await this.db.update(tasks).set(updates).where(eq(tasks.id, id));
   }
 
+  async updateLlmUsage(
+    id: string,
+    data: { totalCostUsd: number; actionCount: number; totalTokens: number },
+  ) {
+    await this.db
+      .update(tasks)
+      .set({
+        llmUsage: {
+          totalCostUsd: data.totalCostUsd,
+          actionCount: data.actionCount,
+          totalTokens: data.totalTokens,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, id));
+  }
+
   async findActiveBySandbox(userId: string, sandboxId: string): Promise<TaskRecord[]> {
     const pattern = `%[sandbox:${sandboxId}]%`;
     const rows = await this.db
