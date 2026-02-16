@@ -32,6 +32,7 @@ import { SandboxHealthMonitor } from "../modules/sandboxes/sandbox-health-monito
 import { EC2Service } from "../modules/sandboxes/ec2.service.js";
 import { AutoStopMonitor } from "../modules/sandboxes/auto-stop-monitor.js";
 import { GhostHandsClient } from "../modules/ghosthands/ghosthands.client.js";
+import { DeployService } from "../modules/sandboxes/deploy.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -64,6 +65,7 @@ export interface AppCradle {
   ec2Service: EC2Service;
   autoStopMonitor: AutoStopMonitor;
   ghosthandsClient: GhostHandsClient;
+  deployService: DeployService;
 }
 
 declare module "@fastify/awilix" {
@@ -129,6 +131,7 @@ export default fp(async (fastify: FastifyInstance) => {
     sandboxHealthMonitor: asClass(SandboxHealthMonitor, { lifetime: Lifetime.SINGLETON }),
     ec2Service: asClass(EC2Service, { lifetime: Lifetime.SINGLETON }),
     autoStopMonitor: asClass(AutoStopMonitor, { lifetime: Lifetime.SINGLETON }),
+    deployService: asClass(DeployService, { lifetime: Lifetime.SINGLETON }),
     ghosthandsClient: asFunction(
       ({ logger }) =>
         new GhostHandsClient({

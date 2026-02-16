@@ -51,6 +51,7 @@ import { SandboxConnectionInfo } from "../components/sandbox-connection-info";
 import { LiveView } from "@/features/tasks/components/live-view";
 import { TriggerTaskDialog } from "../components/trigger-task-dialog";
 import { WorkerStatusCard } from "../components/worker-status-card";
+import { DeployBanner } from "../components/deploy-banner";
 import {
   useSandbox,
   useSandboxMetrics,
@@ -303,6 +304,9 @@ export function SandboxDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Deploy Notifications */}
+      <DeployBanner />
 
       {/* Overview */}
       <Card>

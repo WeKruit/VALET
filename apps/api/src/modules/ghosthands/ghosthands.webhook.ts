@@ -162,12 +162,29 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         "GhostHands deploy webhook received",
       );
 
-      // Acknowledge the webhook. Future: trigger EC2 rolling deployment.
+      // Create deploy record and notify admins
+      const { deployService } = request.diScope.cradle;
+      const envMap: Record<string, "dev" | "staging" | "prod"> = {
+        development: "dev",
+        staging: "staging",
+        production: "prod",
+      };
+      const deploy = await deployService.createFromWebhook({
+        imageTag: payload.image_tag,
+        commitSha: payload.commit_sha,
+        commitMessage: payload.commit_message,
+        branch: payload.branch,
+        environment: envMap[environment] ?? "staging",
+        repository: payload.repository,
+        runUrl: payload.run_url,
+      });
+
       return reply.status(200).send({
         received: true,
+        deploy_id: deploy.id,
         environment,
         image_tag: payload.image_tag,
-        message: "Deploy notification acknowledged",
+        message: "Deploy notification created and admins notified",
       });
     },
   );

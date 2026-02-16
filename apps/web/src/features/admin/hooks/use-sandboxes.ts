@@ -188,6 +188,47 @@ export function useWorkerStatus(id: string, enabled = true) {
   });
 }
 
+// ─── Deploy Management ───
+
+export function useDeploys() {
+  return api.sandboxes.listDeploys.useQuery({
+    queryKey: ["admin", "deploys"],
+    queryData: {},
+    staleTime: 1000 * 5,
+    refetchInterval: 1000 * 10,
+  });
+}
+
+export function useDeployStatus(id: string, enabled = true) {
+  return api.sandboxes.getDeployStatus.useQuery({
+    queryKey: ["admin", "deploys", id],
+    queryData: {
+      params: { id },
+    },
+    enabled: Boolean(id) && enabled,
+    staleTime: 1000 * 2,
+    refetchInterval: 1000 * 3,
+  });
+}
+
+export function useTriggerDeploy() {
+  const qc = useQueryClient();
+  return api.sandboxes.triggerDeploy.useMutation({
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "deploys"] });
+    },
+  });
+}
+
+export function useCancelDeploy() {
+  const qc = useQueryClient();
+  return api.sandboxes.cancelDeploy.useMutation({
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "deploys"] });
+    },
+  });
+}
+
 export function useStopSandbox() {
   const qc = useQueryClient();
   return api.sandboxes.stopSandbox.useMutation({

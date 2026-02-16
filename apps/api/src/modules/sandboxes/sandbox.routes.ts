@@ -2,6 +2,7 @@ import { initServer } from "@ts-rest/fastify";
 import { sandboxContract } from "@valet/contracts";
 import { adminOnly } from "../../common/middleware/admin.js";
 import { AppError } from "../../common/errors.js";
+import type { DeployRecord } from "./deploy.service.js";
 
 const s = initServer();
 
@@ -147,6 +148,93 @@ export const sandboxRouter = s.router(sandboxContract, {
     };
   },
 
+  // ─── Deploy Management ───
+
+  listDeploys: async ({ request }) => {
+    await adminOnly(request);
+    const { deployService } = request.diScope.cradle;
+    const deploys = await deployService.list();
+    return {
+      status: 200 as const,
+      body: {
+        data: deploys.map(toDeployResponse),
+      },
+    };
+  },
+
+  triggerDeploy: async ({ params, request }) => {
+    await adminOnly(request);
+    const { deployService } = request.diScope.cradle;
+
+    try {
+      const deploy = await deployService.triggerDeploy(params.id);
+      return {
+        status: 200 as const,
+        body: {
+          deployId: deploy.id,
+          status: deploy.status,
+          sandboxes: deploy.sandboxes.map((s) => ({
+            sandboxId: s.sandboxId,
+            sandboxName: s.sandboxName,
+            status: s.status,
+            activeTaskCount: s.activeTaskCount,
+            message: s.message ?? null,
+          })),
+        },
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      if (message.includes("not found")) {
+        throw AppError.notFound(message);
+      }
+      throw AppError.conflict(message);
+    }
+  },
+
+  getDeployStatus: async ({ params, request }) => {
+    await adminOnly(request);
+    const { deployService } = request.diScope.cradle;
+    const deploy = await deployService.getById(params.id);
+    if (!deploy) throw AppError.notFound("Deploy not found");
+
+    return {
+      status: 200 as const,
+      body: {
+        id: deploy.id,
+        imageTag: deploy.imageTag,
+        commitSha: deploy.commitSha,
+        commitMessage: deploy.commitMessage,
+        branch: deploy.branch,
+        environment: deploy.environment,
+        status: deploy.status,
+        sandboxes: deploy.sandboxes.map((s) => ({
+          sandboxId: s.sandboxId,
+          sandboxName: s.sandboxName,
+          status: s.status,
+          activeTaskCount: s.activeTaskCount,
+          message: s.message ?? null,
+        })),
+        createdAt: new Date(deploy.createdAt),
+        updatedAt: new Date(deploy.updatedAt),
+      },
+    };
+  },
+
+  cancelDeploy: async ({ params, request }) => {
+    await adminOnly(request);
+    const { deployService } = request.diScope.cradle;
+
+    try {
+      await deployService.cancelDeploy(params.id);
+      return {
+        status: 200 as const,
+        body: { message: "Deploy cancelled" },
+      };
+    } catch (err) {
+      throw AppError.notFound(err instanceof Error ? err.message : "Deploy not found");
+    }
+  },
+
   workerStatus: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService, taskRepo, ghosthandsClient, logger } = request.diScope.cradle;
@@ -201,3 +289,19 @@ export const sandboxRouter = s.router(sandboxContract, {
     };
   },
 });
+
+function toDeployResponse(d: DeployRecord) {
+  return {
+    id: d.id,
+    imageTag: d.imageTag,
+    commitSha: d.commitSha,
+    commitMessage: d.commitMessage,
+    branch: d.branch,
+    environment: d.environment,
+    repository: d.repository,
+    runUrl: d.runUrl,
+    status: d.status,
+    createdAt: new Date(d.createdAt),
+    updatedAt: new Date(d.updatedAt),
+  };
+}

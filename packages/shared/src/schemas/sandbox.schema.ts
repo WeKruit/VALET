@@ -213,6 +213,75 @@ export const workerStatusResponse = z.object({
   ),
 });
 
+// ─── Deploy (GhostHands rolling update) ───
+
+export const deployStatus = z.enum([
+  "pending",
+  "deploying",
+  "draining",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const deploySandboxStatus = z.enum([
+  "pending",
+  "draining",
+  "deploying",
+  "completed",
+  "failed",
+  "skipped",
+]);
+
+export const deployNotification = z.object({
+  id: z.string().uuid(),
+  imageTag: z.string(),
+  commitSha: z.string(),
+  commitMessage: z.string(),
+  branch: z.string(),
+  environment: sandboxEnvironment,
+  repository: z.string(),
+  runUrl: z.string(),
+  status: deployStatus,
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+});
+
+export const deploySandboxProgress = z.object({
+  sandboxId: z.string().uuid(),
+  sandboxName: z.string(),
+  status: deploySandboxStatus,
+  activeTaskCount: z.number().int(),
+  message: z.string().nullable().optional(),
+});
+
+export const deployListResponse = z.object({
+  data: z.array(deployNotification),
+});
+
+export const triggerDeployRequest = z.object({
+  deployId: z.string().uuid(),
+});
+
+export const triggerDeployResponse = z.object({
+  deployId: z.string().uuid(),
+  status: deployStatus,
+  sandboxes: z.array(deploySandboxProgress),
+});
+
+export const deployStatusResponse = z.object({
+  id: z.string().uuid(),
+  imageTag: z.string(),
+  commitSha: z.string(),
+  commitMessage: z.string(),
+  branch: z.string(),
+  environment: sandboxEnvironment,
+  status: deployStatus,
+  sandboxes: z.array(deploySandboxProgress),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+});
+
 // ─── Inferred Types (NEVER hand-write these) ───
 export type Ec2Status = z.infer<typeof ec2Status>;
 export type BrowserEngine = z.infer<typeof browserEngine>;
@@ -235,3 +304,11 @@ export type AdminTriggerTaskResponse = z.infer<typeof adminTriggerTaskResponse>;
 export type AdminTriggerTestRequest = z.infer<typeof adminTriggerTestRequest>;
 export type AdminTriggerTestResponse = z.infer<typeof adminTriggerTestResponse>;
 export type WorkerStatusResponse = z.infer<typeof workerStatusResponse>;
+export type DeployStatus = z.infer<typeof deployStatus>;
+export type DeploySandboxStatus = z.infer<typeof deploySandboxStatus>;
+export type DeployNotification = z.infer<typeof deployNotification>;
+export type DeploySandboxProgress = z.infer<typeof deploySandboxProgress>;
+export type DeployListResponse = z.infer<typeof deployListResponse>;
+export type TriggerDeployRequest = z.infer<typeof triggerDeployRequest>;
+export type TriggerDeployResponse = z.infer<typeof triggerDeployResponse>;
+export type DeployStatusResponse = z.infer<typeof deployStatusResponse>;

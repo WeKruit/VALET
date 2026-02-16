@@ -45,6 +45,7 @@ import { SandboxHealthIndicator } from "../components/sandbox-health-indicator";
 import { SandboxMetrics } from "../components/sandbox-metrics";
 import { SandboxForm } from "../components/sandbox-form";
 import { Ec2StatusBadge } from "../components/ec2-status-badge";
+import { DeployBanner } from "../components/deploy-banner";
 import {
   useSandboxes,
   useCreateSandbox,
@@ -84,18 +85,10 @@ export function SandboxesPage() {
     page,
     pageSize: 20,
     ...(search ? { search } : {}),
-    ...(envFilter !== ALL
-      ? { environment: envFilter as SandboxEnvironment }
-      : {}),
-    ...(statusFilter !== ALL
-      ? { status: statusFilter as SandboxStatus }
-      : {}),
-    ...(healthFilter !== ALL
-      ? { healthStatus: healthFilter as SandboxHealthStatus }
-      : {}),
-    ...(ec2StatusFilter !== ALL
-      ? { ec2Status: ec2StatusFilter as Ec2Status }
-      : {}),
+    ...(envFilter !== ALL ? { environment: envFilter as SandboxEnvironment } : {}),
+    ...(statusFilter !== ALL ? { status: statusFilter as SandboxStatus } : {}),
+    ...(healthFilter !== ALL ? { healthStatus: healthFilter as SandboxHealthStatus } : {}),
+    ...(ec2StatusFilter !== ALL ? { ec2Status: ec2StatusFilter as Ec2Status } : {}),
   });
 
   const createMutation = useCreateSandbox();
@@ -175,6 +168,9 @@ export function SandboxesPage() {
           Register Sandbox
         </Button>
       </div>
+
+      {/* Deploy Notifications */}
+      <DeployBanner />
 
       {/* Filters */}
       <Card>
@@ -264,15 +260,8 @@ export function SandboxesPage() {
                 <SelectItem value="stopping">Stopping</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => query.refetch()}
-              title="Refresh"
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`}
-              />
+            <Button variant="ghost" size="icon" onClick={() => query.refetch()} title="Refresh">
+              <RefreshCw className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </div>
         </CardContent>
@@ -285,9 +274,7 @@ export function SandboxesPage() {
             <Server className="h-4 w-4" />
             Instances
             {total > 0 && (
-              <span className="text-sm font-normal text-[var(--wk-text-secondary)]">
-                ({total})
-              </span>
+              <span className="text-sm font-normal text-[var(--wk-text-secondary)]">({total})</span>
             )}
           </CardTitle>
         </CardHeader>
@@ -311,11 +298,7 @@ export function SandboxesPage() {
               <p className="mt-1 text-sm text-[var(--wk-text-secondary)]">
                 Register your first sandbox to get started.
               </p>
-              <Button
-                className="mt-4"
-                variant="secondary"
-                onClick={() => setCreateOpen(true)}
-              >
+              <Button className="mt-4" variant="secondary" onClick={() => setCreateOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Register Sandbox
               </Button>
@@ -388,10 +371,7 @@ export function SandboxesPage() {
                           />
                         </td>
                         <td className="py-3 pr-4">
-                          <SandboxMetrics
-                            currentLoad={sb.currentLoad}
-                            capacity={sb.capacity}
-                          />
+                          <SandboxMetrics currentLoad={sb.currentLoad} capacity={sb.capacity} />
                         </td>
                         <td className="py-3 pr-4">
                           <div className="flex items-center gap-1.5">
@@ -406,12 +386,8 @@ export function SandboxesPage() {
                                   startMutation.mutate(
                                     { params: { id: sb.id }, body: {} },
                                     {
-                                      onSuccess: () =>
-                                        toast.success(
-                                          `Starting "${sb.name}"...`,
-                                        ),
-                                      onError: () =>
-                                        toast.error("Failed to start."),
+                                      onSuccess: () => toast.success(`Starting "${sb.name}"...`),
+                                      onError: () => toast.error("Failed to start."),
                                     },
                                   );
                                 }}
@@ -431,12 +407,8 @@ export function SandboxesPage() {
                                   stopMutation.mutate(
                                     { params: { id: sb.id }, body: {} },
                                     {
-                                      onSuccess: () =>
-                                        toast.success(
-                                          `Stopping "${sb.name}"...`,
-                                        ),
-                                      onError: () =>
-                                        toast.error("Failed to stop."),
+                                      onSuccess: () => toast.success(`Stopping "${sb.name}"...`),
+                                      onError: () => toast.error("Failed to stop."),
                                     },
                                   );
                                 }}
@@ -475,10 +447,8 @@ export function SandboxesPage() {
                                     startMutation.mutate(
                                       { params: { id: sb.id }, body: {} },
                                       {
-                                        onSuccess: () =>
-                                          toast.success(`Starting "${sb.name}"...`),
-                                        onError: () =>
-                                          toast.error("Failed to start."),
+                                        onSuccess: () => toast.success(`Starting "${sb.name}"...`),
+                                        onError: () => toast.error("Failed to start."),
                                       },
                                     )
                                   }
@@ -494,10 +464,8 @@ export function SandboxesPage() {
                                     stopMutation.mutate(
                                       { params: { id: sb.id }, body: {} },
                                       {
-                                        onSuccess: () =>
-                                          toast.success(`Stopping "${sb.name}"...`),
-                                        onError: () =>
-                                          toast.error("Failed to stop."),
+                                        onSuccess: () => toast.success(`Stopping "${sb.name}"...`),
+                                        onError: () => toast.error("Failed to stop."),
                                       },
                                     )
                                   }
@@ -564,10 +532,7 @@ export function SandboxesPage() {
       />
 
       {/* Delete confirmation dialog */}
-      <Dialog
-        open={Boolean(deleteTarget)}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-      >
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Terminate Sandbox</DialogTitle>
@@ -580,10 +545,7 @@ export function SandboxesPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="secondary"
-              onClick={() => setDeleteTarget(null)}
-            >
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
             <Button
