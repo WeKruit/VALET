@@ -6,7 +6,11 @@ import type { ResumeRepository } from "../resumes/resume.repository.js";
 import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
-import { TaskNotFoundError, TaskNotCancellableError } from "./task.errors.js";
+import {
+  TaskNotFoundError,
+  TaskNotCancellableError,
+  TaskNotResolvableError,
+} from "./task.errors.js";
 import { publishToUser } from "../../websocket/handler.js";
 
 const CANCELLABLE_STATUSES = new Set(["created", "queued", "in_progress", "waiting_human"]);
@@ -372,5 +376,42 @@ export class TaskService {
     this.logger.info({ taskId: id }, "Captcha solved (GhostHands handles continuation)");
 
     await this.taskRepo.updateStatus(id, "in_progress");
+  }
+
+  async resolveBlocker(taskId: string, userId: string, resolvedBy?: string, notes?: string) {
+    const task = await this.taskRepo.findById(taskId, userId);
+    if (!task) throw new TaskNotFoundError(taskId);
+
+    if (task.status !== "waiting_human") {
+      throw new TaskNotResolvableError(taskId, task.status);
+    }
+
+    if (!task.workflowRunId) {
+      throw new TaskNotResolvableError(taskId, "no workflowRunId");
+    }
+
+    await this.ghosthandsClient.resumeJob(task.workflowRunId, {
+      resolved_by: resolvedBy,
+      notes,
+    });
+
+    // Do NOT update task status here — wait for GH resumed callback
+    return {
+      taskId,
+      status: "waiting_human" as const,
+      message: "Resume request sent to GhostHands",
+    };
+  }
+
+  async listSessions(userId: string) {
+    return this.ghosthandsClient.listSessions(userId);
+  }
+
+  async clearSession(userId: string, domain: string) {
+    return this.ghosthandsClient.clearSession(userId, domain);
+  }
+
+  async clearAllSessions(userId: string) {
+    return this.ghosthandsClient.clearAllSessions(userId);
   }
 }

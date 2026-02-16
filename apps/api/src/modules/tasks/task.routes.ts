@@ -44,11 +44,7 @@ export const taskRouter = s.router(taskContract, {
 
   approve: async ({ params, body, request }) => {
     const { taskService } = request.diScope.cradle;
-    const task = await taskService.approve(
-      params.id,
-      request.userId,
-      body.fieldOverrides,
-    );
+    const task = await taskService.approve(params.id, request.userId, body.fieldOverrides);
     return { status: 200, body: task };
   },
 
@@ -60,5 +56,16 @@ export const taskRouter = s.router(taskContract, {
       body.externalStatus,
     );
     return { status: 200, body: task };
+  },
+
+  resolveBlocker: async ({ params, body, request }) => {
+    const { taskService } = request.diScope.cradle;
+    const result = await taskService.resolveBlocker(
+      params.id,
+      request.userId,
+      body.resolvedBy,
+      body.notes,
+    );
+    return { status: 200 as const, body: result };
   },
 });

@@ -1,4 +1,5 @@
 import { initContract } from "@ts-rest/core";
+import { z } from "zod";
 import {
   updateUserProfileRequest,
   updatePreferencesRequest,
@@ -8,6 +9,9 @@ import {
   userPreferences,
   jobPreferences,
   notificationPreferences,
+  sessionListResponse,
+  sessionDeleteResponse,
+  sessionClearAllResponse,
   errorResponse,
 } from "@valet/shared/schemas";
 
@@ -86,5 +90,33 @@ export const userContract = c.router({
       400: errorResponse,
     },
     summary: "Update the user's notification preferences",
+  },
+  listSessions: {
+    method: "GET",
+    path: "/api/v1/users/me/sessions",
+    responses: {
+      200: sessionListResponse,
+    },
+    summary: "List browser sessions for the current user",
+  },
+  deleteSession: {
+    method: "DELETE",
+    path: "/api/v1/users/me/sessions/:domain",
+    pathParams: z.object({ domain: z.string() }),
+    body: z.object({}),
+    responses: {
+      200: sessionDeleteResponse,
+      404: errorResponse,
+    },
+    summary: "Delete a browser session by domain",
+  },
+  clearAllSessions: {
+    method: "DELETE",
+    path: "/api/v1/users/me/sessions",
+    body: z.object({}),
+    responses: {
+      200: sessionClearAllResponse,
+    },
+    summary: "Clear all browser sessions for the current user",
   },
 });

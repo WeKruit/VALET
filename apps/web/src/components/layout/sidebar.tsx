@@ -10,6 +10,7 @@ import {
   PanelLeft,
   User,
   Server,
+  Globe,
 } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
 import { useUIStore } from "@/stores/ui.store";
@@ -26,6 +27,7 @@ const navItems = [
 
 const adminNavItems = [
   { path: "/admin/sandboxes", label: "Sandboxes", icon: Server },
+  { path: "/admin/sessions", label: "Sessions", icon: Globe },
 ];
 
 interface SidebarContentProps {
@@ -44,23 +46,21 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--wk-border-subtle)]">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--wk-radius-lg)] bg-[var(--wk-text-primary)]">
-          <span className="text-sm font-bold text-[var(--wk-surface-page)]">
-            V
-          </span>
+          <span className="text-sm font-bold text-[var(--wk-surface-page)]">V</span>
         </div>
         {expanded && (
-          <span className="font-display text-lg font-semibold tracking-tight">
-            Valet
-          </span>
+          <span className="font-display text-lg font-semibold tracking-tight">Valet</span>
         )}
       </div>
 
       {/* User info */}
       {user && (
-        <div className={cn(
-          "flex items-center border-b border-[var(--wk-border-subtle)]",
-          expanded ? "gap-3 px-4 py-3" : "justify-center py-3"
-        )}>
+        <div
+          className={cn(
+            "flex items-center border-b border-[var(--wk-border-subtle)]",
+            expanded ? "gap-3 px-4 py-3" : "justify-center py-3",
+          )}
+        >
           <Avatar className="h-7 w-7 shrink-0">
             <AvatarImage src={user.avatarUrl ?? undefined} alt={user.name} />
             <AvatarFallback>
@@ -91,7 +91,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
                 isActive
                   ? "bg-[var(--wk-surface-raised)] text-[var(--wk-text-primary)]"
                   : "text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)]",
-                !expanded && "justify-center"
+                !expanded && "justify-center",
               )
             }
           >
@@ -137,7 +137,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
                     isActive
                       ? "bg-[var(--wk-surface-raised)] text-[var(--wk-text-primary)]"
                       : "text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)]",
-                    !expanded && "justify-center"
+                    !expanded && "justify-center",
                   )
                 }
               >
@@ -177,7 +177,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
             "flex items-center gap-3 w-full px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium cursor-pointer",
             "text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)]",
             "transition-all duration-200 ease-[var(--wk-ease-default)]",
-            !expanded && "justify-center"
+            !expanded && "justify-center",
           )}
         >
           {theme === "dark" ? (
@@ -185,9 +185,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
           ) : (
             <Moon className="h-5 w-5 shrink-0" />
           )}
-          {expanded && (
-            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-          )}
+          {expanded && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
         </button>
 
         {/* Only show collapse toggle on desktop */}
@@ -200,7 +198,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
               "flex items-center gap-3 w-full px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium cursor-pointer",
               "text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)]",
               "transition-all duration-200 ease-[var(--wk-ease-default)]",
-              !expanded && "justify-center"
+              !expanded && "justify-center",
             )}
           >
             {sidebarOpen ? (
@@ -225,7 +223,7 @@ export function Sidebar() {
         "hidden md:flex flex-col h-screen border-r border-[var(--wk-border-subtle)]",
         "bg-[var(--wk-surface-page)]",
         "transition-all duration-[var(--wk-duration-base)] ease-[var(--wk-ease-default)]",
-        sidebarOpen ? "w-60" : "w-16"
+        sidebarOpen ? "w-60" : "w-16",
       )}
     >
       <SidebarContent />

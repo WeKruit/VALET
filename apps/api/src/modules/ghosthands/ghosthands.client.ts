@@ -6,6 +6,11 @@ import type {
   GHSubmitGenericTaskParams,
   GHSubmitGenericTaskResponse,
   GHJobStatus,
+  GHResumeJobParams,
+  GHResumeJobResponse,
+  GHSessionListResponse,
+  GHClearSessionResponse,
+  GHClearAllSessionsResponse,
 } from "./ghosthands.types.js";
 
 export class GhostHandsClient {
@@ -94,5 +99,35 @@ export class GhostHandsClient {
 
   async healthCheck(): Promise<{ status: string }> {
     return this.request<{ status: string }>("GET", "/health", undefined, 5_000);
+  }
+
+  async resumeJob(jobId: string, params?: GHResumeJobParams): Promise<GHResumeJobResponse> {
+    this.logger.info({ jobId }, "Resuming GhostHands job");
+    return this.request<GHResumeJobResponse>(
+      "POST",
+      `/api/v1/gh/valet/resume/${encodeURIComponent(jobId)}`,
+      params,
+    );
+  }
+
+  async listSessions(userId: string): Promise<GHSessionListResponse> {
+    return this.request<GHSessionListResponse>(
+      "GET",
+      `/api/v1/gh/sessions?user_id=${encodeURIComponent(userId)}`,
+    );
+  }
+
+  async clearSession(userId: string, domain: string): Promise<GHClearSessionResponse> {
+    return this.request<GHClearSessionResponse>(
+      "DELETE",
+      `/api/v1/gh/sessions?user_id=${encodeURIComponent(userId)}&domain=${encodeURIComponent(domain)}`,
+    );
+  }
+
+  async clearAllSessions(userId: string): Promise<GHClearAllSessionsResponse> {
+    return this.request<GHClearAllSessionsResponse>(
+      "DELETE",
+      `/api/v1/gh/sessions?user_id=${encodeURIComponent(userId)}&all=true`,
+    );
   }
 }

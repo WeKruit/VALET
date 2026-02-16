@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, AlertTriangle } from "lucide-react";
 import { formatRelativeTime } from "@/lib/utils";
 
 interface TaskItem {
@@ -32,7 +32,10 @@ const statusBadgeVariant: Record<string, "default" | "success" | "warning" | "er
   cancelled: "default",
 };
 
-const externalStatusBadgeVariant: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
+const externalStatusBadgeVariant: Record<
+  string,
+  "default" | "success" | "warning" | "error" | "info"
+> = {
   applied: "info",
   viewed: "default",
   interview: "warning",
@@ -74,17 +77,11 @@ export function TaskList({ tasks }: TaskListProps) {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="default">{task.platform}</Badge>
-                    <Badge
-                      variant={
-                        task.mode === "copilot" ? "copilot" : "autopilot"
-                      }
-                    >
+                    <Badge variant={task.mode === "copilot" ? "copilot" : "autopilot"}>
                       {task.mode}
                     </Badge>
                     {task.externalStatus && (
-                      <Badge
-                        variant={externalStatusBadgeVariant[task.externalStatus] ?? "default"}
-                      >
+                      <Badge variant={externalStatusBadgeVariant[task.externalStatus] ?? "default"}>
                         {task.externalStatus}
                       </Badge>
                     )}
@@ -109,7 +106,13 @@ export function TaskList({ tasks }: TaskListProps) {
                     </span>
                   </div>
                 )}
-                <Badge variant={statusBadgeVariant[task.status] ?? "default"}>
+                {task.status === "waiting_human" && (
+                  <AlertTriangle className="h-4 w-4 text-[var(--wk-status-warning)]" />
+                )}
+                <Badge
+                  variant={statusBadgeVariant[task.status] ?? "default"}
+                  className={task.status === "waiting_human" ? "animate-pulse" : ""}
+                >
                   {task.status.replace("_", " ")}
                 </Badge>
               </div>

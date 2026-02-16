@@ -287,4 +287,31 @@ export class TaskRepository {
 
     return rows[0] ?? { total: 0, completed: 0, inProgress: 0, needsReview: 0 };
   }
+
+  async updateInteractionData(
+    id: string,
+    data: { interactionType: string; interactionData: Record<string, unknown> },
+  ) {
+    await this.db
+      .update(tasks)
+      .set({
+        interactionType: data.interactionType,
+        interactionData: data.interactionData,
+        currentStep: `Blocked: ${data.interactionType}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, id));
+  }
+
+  async clearInteractionData(id: string) {
+    await this.db
+      .update(tasks)
+      .set({
+        interactionType: null,
+        interactionData: null,
+        currentStep: "Resumed",
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, id));
+  }
 }

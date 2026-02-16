@@ -97,6 +97,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         completed: "completed",
         failed: "failed",
         cancelled: "cancelled",
+        needs_human: "waiting_human",
+        resumed: "in_progress",
       };
 
       const taskStatus = statusMap[payload.status];
@@ -127,6 +129,17 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           error: "Not Found",
           message: `Task ${valetTaskId} not found`,
         });
+      }
+
+      // HITL-specific data handling
+      if (payload.status === "needs_human" && payload.interaction) {
+        await taskRepo.updateInteractionData(valetTaskId, {
+          interactionType: payload.interaction.type,
+          interactionData: payload.interaction as unknown as Record<string, unknown>,
+        });
+      }
+      if (payload.status === "resumed") {
+        await taskRepo.clearInteractionData(valetTaskId);
       }
 
       // Normalize result/error from GH's flat format into our storage format
@@ -167,24 +180,46 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         });
       }
 
-      // Build error message for WebSocket
-      const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
-
-      // Publish progress update to WebSocket clients via Redis
-      await publishToUser(redis, task.userId, {
-        type: "task_update",
-        taskId: task.id,
-        status: taskStatus,
-        progress: taskStatus === "completed" ? 100 : task.progress,
-        currentStep:
-          taskStatus === "completed"
-            ? (payload.result_summary ?? "Application submitted")
-            : taskStatus === "failed"
-              ? `Failed: ${errorMessage}`
-              : "Cancelled",
-        result: resultObj,
-        error: errorObj,
-      });
+      // Publish WebSocket events based on status
+      if (taskStatus === "waiting_human" && payload.interaction) {
+        // HITL blocker: publish task_needs_human with interaction data
+        await publishToUser(redis, task.userId, {
+          type: "task_needs_human",
+          taskId: task.id,
+          status: taskStatus,
+          interaction: {
+            type: payload.interaction.type,
+            screenshotUrl: payload.interaction.screenshot_url ?? null,
+            pageUrl: payload.interaction.page_url ?? null,
+            timeoutSeconds: payload.interaction.timeout_seconds ?? null,
+            message: payload.interaction.message ?? null,
+          },
+        });
+      } else if (taskStatus === "in_progress" && payload.status === "resumed") {
+        // Resumed from HITL: publish task_resumed
+        await publishToUser(redis, task.userId, {
+          type: "task_resumed",
+          taskId: task.id,
+          status: taskStatus,
+        });
+      } else {
+        // Standard task_update for completed/failed/cancelled
+        const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
+        await publishToUser(redis, task.userId, {
+          type: "task_update",
+          taskId: task.id,
+          status: taskStatus,
+          progress: taskStatus === "completed" ? 100 : task.progress,
+          currentStep:
+            taskStatus === "completed"
+              ? (payload.result_summary ?? "Application submitted")
+              : taskStatus === "failed"
+                ? `Failed: ${errorMessage}`
+                : "Cancelled",
+          result: resultObj,
+          error: errorObj,
+        });
+      }
 
       return reply.status(200).send({ received: true });
     },

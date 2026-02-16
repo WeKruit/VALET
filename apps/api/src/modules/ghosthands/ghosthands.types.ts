@@ -147,7 +147,7 @@ export interface GHCallbackCost {
 export interface GHCallbackPayload {
   job_id: string;
   valet_task_id: string | null;
-  status: "completed" | "failed" | "cancelled";
+  status: "completed" | "failed" | "cancelled" | "needs_human" | "resumed";
   completed_at?: string;
   // Success fields (flat, not nested)
   result_data?: Record<string, unknown>;
@@ -158,8 +158,56 @@ export interface GHCallbackPayload {
   error_message?: string;
   // Cost tracking
   cost?: GHCallbackCost;
+  // HITL interaction data (when status is "needs_human")
+  interaction?: GHInteractionData;
   // Legacy format support (if GH is updated to match original spec)
   result?: GHJobResult;
   error?: GHJobError;
   timestamps?: GHJobTimestamps;
+}
+
+export type GHInteractionType = "captcha" | "2fa" | "login_required" | "bot_check";
+
+export interface GHInteractionData {
+  type: GHInteractionType;
+  screenshot_url?: string;
+  page_url?: string;
+  paused_at?: string;
+  timeout_seconds?: number;
+  message?: string;
+}
+
+export interface GHResumeJobParams {
+  resolved_by?: string;
+  notes?: string;
+}
+
+export interface GHResumeJobResponse {
+  job_id: string;
+  status: string;
+  message?: string;
+}
+
+export interface GHBrowserSession {
+  id: string;
+  user_id: string;
+  domain: string;
+  created_at: string;
+  last_used_at: string;
+  expires_at?: string;
+}
+
+export interface GHSessionListResponse {
+  sessions: GHBrowserSession[];
+  total: number;
+}
+
+export interface GHClearSessionResponse {
+  deleted: boolean;
+  session_id: string;
+}
+
+export interface GHClearAllSessionsResponse {
+  deleted_count: number;
+  user_id: string;
 }

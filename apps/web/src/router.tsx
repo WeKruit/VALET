@@ -84,6 +84,11 @@ const SandboxDetailPage = lazy(() =>
     default: m.SandboxDetailPage,
   })),
 );
+const SessionsPage = lazy(() =>
+  import("./features/admin/pages/sessions-page").then((m) => ({
+    default: m.SessionsPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -132,8 +137,30 @@ export function AppRouter() {
           <Route path="/apply" element={<ApplyPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/settings/*" element={<SettingsPage />} />
-          <Route path="/admin/sandboxes" element={<AdminGuard><SandboxesPage /></AdminGuard>} />
-          <Route path="/admin/sandboxes/:id" element={<AdminGuard><SandboxDetailPage /></AdminGuard>} />
+          <Route
+            path="/admin/sandboxes"
+            element={
+              <AdminGuard>
+                <SandboxesPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/sandboxes/:id"
+            element={
+              <AdminGuard>
+                <SandboxDetailPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/sessions"
+            element={
+              <AdminGuard>
+                <SessionsPage />
+              </AdminGuard>
+            }
+          />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />
