@@ -6,6 +6,8 @@ import type {
   GHSubmitGenericTaskParams,
   GHSubmitGenericTaskResponse,
   GHJobStatus,
+  GHResumeJobParams,
+  GHResumeJobResponse,
 } from "./ghosthands.types.js";
 
 export class GhostHandsClient {
@@ -90,6 +92,15 @@ export class GhostHandsClient {
 
   async retryJob(jobId: string): Promise<void> {
     await this.request<unknown>("POST", `/api/v1/gh/jobs/${encodeURIComponent(jobId)}/retry`);
+  }
+
+  async resumeJob(jobId: string, params?: GHResumeJobParams): Promise<GHResumeJobResponse> {
+    this.logger.info({ jobId }, "Resuming GhostHands job");
+    return this.request<GHResumeJobResponse>(
+      "POST",
+      `/api/v1/gh/valet/resume/${encodeURIComponent(jobId)}`,
+      params,
+    );
   }
 
   async healthCheck(): Promise<{ status: string }> {

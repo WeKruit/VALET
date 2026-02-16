@@ -350,10 +350,21 @@ export class TaskService {
     const task = await this.taskRepo.findById(id, userId);
     if (!task) throw new TaskNotFoundError(id);
 
-    this.logger.info(
-      { taskId: id, fieldOverrides },
-      "Task approved (GhostHands handles continuation)",
-    );
+    this.logger.info({ taskId: id, fieldOverrides }, "Task approved, resuming GhostHands job");
+
+    if (task.workflowRunId) {
+      try {
+        await this.ghosthandsClient.resumeJob(task.workflowRunId, {
+          resolved_by: "human",
+          notes: fieldOverrides ? `Field overrides: ${JSON.stringify(fieldOverrides)}` : undefined,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { err, taskId: id, jobId: task.workflowRunId },
+          "Failed to resume GhostHands job after approval",
+        );
+      }
+    }
 
     await this.taskRepo.updateStatus(id, "in_progress");
     const updated = await this.taskRepo.findById(id, userId);
@@ -369,7 +380,21 @@ export class TaskService {
     const task = await this.taskRepo.findById(id, userId);
     if (!task) throw new TaskNotFoundError(id);
 
-    this.logger.info({ taskId: id }, "Captcha solved (GhostHands handles continuation)");
+    this.logger.info({ taskId: id }, "Captcha solved, resuming GhostHands job");
+
+    if (task.workflowRunId) {
+      try {
+        await this.ghosthandsClient.resumeJob(task.workflowRunId, {
+          resolved_by: "human",
+          notes: "CAPTCHA manually solved by user",
+        });
+      } catch (err) {
+        this.logger.warn(
+          { err, taskId: id, jobId: task.workflowRunId },
+          "Failed to resume GhostHands job after CAPTCHA solve",
+        );
+      }
+    }
 
     await this.taskRepo.updateStatus(id, "in_progress");
   }

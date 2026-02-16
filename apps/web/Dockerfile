@@ -29,7 +29,13 @@ ARG VITE_SENTRY_DSN
 ARG VITE_PAYPAL_CLIENT_ID
 
 # Build only the web app and its dependencies
-RUN pnpm turbo build --filter=@valet/web
+# ARGs must be explicitly passed as env vars for Vite to pick them up
+RUN VITE_API_URL=$VITE_API_URL \
+    VITE_WS_URL=$VITE_WS_URL \
+    VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID \
+    VITE_SENTRY_DSN=$VITE_SENTRY_DSN \
+    VITE_PAYPAL_CLIENT_ID=$VITE_PAYPAL_CLIENT_ID \
+    pnpm turbo build --filter=@valet/web
 
 # ---- Runtime Stage ----
 FROM nginx:1.27-alpine AS runtime
