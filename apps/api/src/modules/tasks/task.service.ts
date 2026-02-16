@@ -407,6 +407,43 @@ export class TaskService {
     return task;
   }
 
+  async retry(id: string, userId: string) {
+    const task = await this.taskRepo.findById(id, userId);
+    if (!task) throw new TaskNotFoundError(id);
+
+    if (task.status !== "failed") {
+      throw new TaskNotCancellableError(id, task.status);
+    }
+
+    if (!task.workflowRunId) {
+      throw new TaskNotResolvableError(id, "no GhostHands job to retry");
+    }
+
+    this.logger.info({ taskId: id, jobId: task.workflowRunId }, "Retrying GhostHands job");
+
+    try {
+      await this.ghosthandsClient.retryJob(task.workflowRunId);
+    } catch (err) {
+      this.logger.error({ err, taskId: id }, "Failed to retry GhostHands job");
+      throw err;
+    }
+
+    await this.taskRepo.updateStatus(id, "queued");
+    await this.taskRepo.updateProgress(id, { progress: 0, currentStep: "Retry submitted" });
+
+    await publishToUser(this.redis, userId, {
+      type: "task_update",
+      taskId: id,
+      status: "queued",
+      progress: 0,
+      currentStep: "Retry submitted to GhostHands",
+    });
+
+    const updated = await this.taskRepo.findById(id, userId);
+    if (!updated) throw new TaskNotFoundError(id);
+    return updated;
+  }
+
   async cancel(id: string, userId: string) {
     const task = await this.taskRepo.findById(id, userId);
     if (!task) throw new TaskNotFoundError(id);

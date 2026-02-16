@@ -76,6 +76,16 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     },
   });
 
+  const retryTask = api.tasks.retry.useMutation({
+    onSuccess: () => {
+      toast.success("Task retry submitted to GhostHands.");
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+    onError: () => {
+      toast.error("Failed to retry task.");
+    },
+  });
+
   const updateExternalStatus = api.tasks.updateExternalStatus.useMutation({
     onSuccess: () => {
       toast.success("External status updated.");
@@ -325,12 +335,24 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 )}
               </div>
             )}
-            <Button asChild variant="secondary" size="sm" className="mt-2">
-              <Link to={`/apply?url=${encodeURIComponent(task.jobUrl)}`}>
-                <RefreshCw className="h-3.5 w-3.5" />
-                Retry Application
-              </Link>
-            </Button>
+            <div className="flex gap-2 mt-2">
+              {task.workflowRunId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={retryTask.isPending}
+                  onClick={() => retryTask.mutate({ params: { id: taskId }, body: {} })}
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${retryTask.isPending ? "animate-spin" : ""}`}
+                  />
+                  {retryTask.isPending ? "Retrying..." : "Retry via GhostHands"}
+                </Button>
+              )}
+              <Button asChild variant="ghost" size="sm">
+                <Link to={`/apply?url=${encodeURIComponent(task.jobUrl)}`}>New Application</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

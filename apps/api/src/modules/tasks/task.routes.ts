@@ -69,4 +69,10 @@ export const taskRouter = s.router(taskContract, {
     );
     return { status: 200 as const, body: result };
   },
+
+  retry: async ({ params, request }) => {
+    const { taskService } = request.diScope.cradle;
+    const task = await taskService.retry(params.id, request.userId);
+    return { status: 200, body: task };
+  },
 });

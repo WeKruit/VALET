@@ -214,28 +214,34 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           status: taskStatus,
         });
       } else if (taskStatus === "in_progress" && payload.status === "running") {
-        // Worker picked up the job: publish task_update with in_progress
+        // Worker picked up the job: persist progress and publish WS event
+        const progress = payload.progress ?? 5;
+        const currentStep = payload.result_summary ?? "Processing application";
+        await taskRepo.updateProgress(task.id, { progress, currentStep });
         await publishToUser(redis, task.userId, {
           type: "task_update",
           taskId: task.id,
           status: taskStatus,
-          progress: payload.progress ?? 5,
-          currentStep: payload.result_summary ?? "Processing application",
+          progress,
+          currentStep,
         });
       } else {
         // Standard task_update for completed/failed/cancelled
         const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
+        const stepLabel =
+          taskStatus === "completed"
+            ? (payload.result_summary ?? "Application submitted")
+            : taskStatus === "failed"
+              ? `Failed: ${errorMessage}`
+              : "Cancelled";
+        // Persist currentStep for terminal states (progress is set by updateStatus for completed)
+        await taskRepo.updateProgress(task.id, { currentStep: stepLabel });
         await publishToUser(redis, task.userId, {
           type: "task_update",
           taskId: task.id,
           status: taskStatus,
           progress: taskStatus === "completed" ? 100 : task.progress,
-          currentStep:
-            taskStatus === "completed"
-              ? (payload.result_summary ?? "Application submitted")
-              : taskStatus === "failed"
-                ? `Failed: ${errorMessage}`
-                : "Cancelled",
+          currentStep: stepLabel,
           result: resultObj,
           error: errorObj,
         });
