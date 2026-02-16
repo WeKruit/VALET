@@ -4,7 +4,6 @@ import { asClass, asFunction, Lifetime } from "awilix";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "@valet/db";
 import type Redis from "ioredis";
-import { Hatchet } from "@hatchet-dev/typescript-sdk";
 import { S3Client } from "@aws-sdk/client-s3";
 
 import { TaskRepository } from "../modules/tasks/task.repository.js";
@@ -38,7 +37,6 @@ export interface AppCradle {
   db: Database;
   redis: Redis;
   logger: FastifyInstance["log"];
-  hatchet: Hatchet;
   s3: S3Client;
   taskRepo: TaskRepository;
   taskService: TaskService;
@@ -83,17 +81,6 @@ export default fp(async (fastify: FastifyInstance) => {
     db: asFunction(() => fastify.db, { lifetime: Lifetime.SINGLETON }),
     redis: asFunction(() => fastify.redis, { lifetime: Lifetime.SINGLETON }),
     logger: asFunction(() => fastify.log, { lifetime: Lifetime.SINGLETON }),
-    hatchet: asFunction(
-      () =>
-        new Hatchet({
-          token: process.env.HATCHET_CLIENT_TOKEN,
-          tls_config: {
-            tls_strategy:
-              (process.env.HATCHET_CLIENT_TLS_STRATEGY as "none" | "tls" | "mtls") ?? "none",
-          },
-        }),
-      { lifetime: Lifetime.SINGLETON },
-    ),
     s3: asFunction(
       () =>
         new S3Client({
