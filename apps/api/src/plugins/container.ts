@@ -32,6 +32,8 @@ import { EC2Service } from "../modules/sandboxes/ec2.service.js";
 import { AutoStopMonitor } from "../modules/sandboxes/auto-stop-monitor.js";
 import { GhostHandsClient } from "../modules/ghosthands/ghosthands.client.js";
 import { GhAutomationJobRepository } from "../modules/ghosthands/gh-automation-job.repository.js";
+import { GhBrowserSessionRepository } from "../modules/ghosthands/gh-browser-session.repository.js";
+import { GhJobEventRepository } from "../modules/ghosthands/gh-job-event.repository.js";
 import { DeployService } from "../modules/sandboxes/deploy.service.js";
 
 export interface AppCradle {
@@ -65,6 +67,8 @@ export interface AppCradle {
   autoStopMonitor: AutoStopMonitor;
   ghosthandsClient: GhostHandsClient;
   ghJobRepo: GhAutomationJobRepository;
+  ghSessionRepo: GhBrowserSessionRepository;
+  ghJobEventRepo: GhJobEventRepository;
   deployService: DeployService;
 }
 
@@ -121,6 +125,8 @@ export default fp(async (fastify: FastifyInstance) => {
     ec2Service: asClass(EC2Service, { lifetime: Lifetime.SINGLETON }),
     autoStopMonitor: asClass(AutoStopMonitor, { lifetime: Lifetime.SINGLETON }),
     ghJobRepo: asClass(GhAutomationJobRepository, { lifetime: Lifetime.SINGLETON }),
+    ghSessionRepo: asClass(GhBrowserSessionRepository, { lifetime: Lifetime.SINGLETON }),
+    ghJobEventRepo: asClass(GhJobEventRepository, { lifetime: Lifetime.SINGLETON }),
     deployService: asClass(DeployService, { lifetime: Lifetime.SINGLETON }),
     ghosthandsClient: asFunction(
       ({ logger }) =>

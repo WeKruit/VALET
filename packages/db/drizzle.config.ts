@@ -52,6 +52,8 @@ export default defineConfig({
     "manual_steps",
     "sandboxes",
     "gh_automation_jobs",
+    "gh_browser_sessions",
+    "gh_job_events",
     // "sandbox_secrets" — deprecated, excluded from drizzle-kit management
   ],
 });

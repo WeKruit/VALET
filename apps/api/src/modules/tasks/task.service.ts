@@ -12,6 +12,7 @@ import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
+import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -45,6 +46,7 @@ export class TaskService {
   private qaBankRepo: QaBankRepository;
   private ghosthandsClient: GhostHandsClient;
   private ghJobRepo: GhAutomationJobRepository;
+  private ghSessionRepo: GhBrowserSessionRepository;
   private redis: Redis;
   private logger: FastifyBaseLogger;
 
@@ -54,6 +56,7 @@ export class TaskService {
     qaBankRepo,
     ghosthandsClient,
     ghJobRepo,
+    ghSessionRepo,
     redis,
     logger,
   }: {
@@ -62,6 +65,7 @@ export class TaskService {
     qaBankRepo: QaBankRepository;
     ghosthandsClient: GhostHandsClient;
     ghJobRepo: GhAutomationJobRepository;
+    ghSessionRepo: GhBrowserSessionRepository;
     redis: Redis;
     logger: FastifyBaseLogger;
   }) {
@@ -70,6 +74,7 @@ export class TaskService {
     this.qaBankRepo = qaBankRepo;
     this.ghosthandsClient = ghosthandsClient;
     this.ghJobRepo = ghJobRepo;
+    this.ghSessionRepo = ghSessionRepo;
     this.redis = redis;
     this.logger = logger;
   }
@@ -588,20 +593,58 @@ export class TaskService {
   }
 
   async listSessions(userId: string) {
+    // Read from local gh_browser_sessions table (no GH API dependency)
+    try {
+      const sessions = await this.ghSessionRepo.findByUserId(userId);
+      return {
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          user_id: s.userId ?? userId,
+          domain: s.domain ?? "",
+          created_at: s.createdAt.toISOString(),
+          last_used_at: s.lastUsedAt?.toISOString() ?? null,
+          expires_at: s.expiresAt?.toISOString() ?? undefined,
+        })),
+        total: sessions.length,
+      };
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to read sessions from local DB, trying GH API");
+    }
+
+    // Fallback to GH API
     try {
       return await this.ghosthandsClient.listSessions(userId);
     } catch {
-      // GH API may not have sessions endpoint yet — degrade gracefully
       return { sessions: [], total: 0 };
     }
   }
 
   async clearSession(userId: string, domain: string) {
-    return this.ghosthandsClient.clearSession(userId, domain);
+    // Clear locally first, then try GH API
+    try {
+      await this.ghSessionRepo.deleteByUserAndDomain(userId, domain);
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to delete session from local DB");
+    }
+    try {
+      return await this.ghosthandsClient.clearSession(userId, domain);
+    } catch {
+      return { deleted: true, session_id: "" };
+    }
   }
 
   async clearAllSessions(userId: string) {
-    return this.ghosthandsClient.clearAllSessions(userId);
+    // Clear locally first, then try GH API
+    try {
+      await this.ghSessionRepo.deleteAllByUser(userId);
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to delete sessions from local DB");
+    }
+    try {
+      return await this.ghosthandsClient.clearAllSessions(userId);
+    } catch {
+      return { deleted_count: 0, user_id: userId };
+    }
   }
 
   /**
