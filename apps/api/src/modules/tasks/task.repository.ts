@@ -334,6 +334,16 @@ export class TaskRepository {
     return rows.map((r) => toTaskRecord(r as Record<string, unknown>));
   }
 
+  async findByWorkflowRunId(workflowRunId: string): Promise<TaskRecord | null> {
+    const rows = await this.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.workflowRunId, workflowRunId))
+      .limit(1);
+    const row = rows[0];
+    return row ? toTaskRecord(row as Record<string, unknown>) : null;
+  }
+
   async clearInteractionData(id: string) {
     await this.db
       .update(tasks)

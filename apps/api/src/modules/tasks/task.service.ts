@@ -546,7 +546,12 @@ export class TaskService {
   }
 
   async listSessions(userId: string) {
-    return this.ghosthandsClient.listSessions(userId);
+    try {
+      return await this.ghosthandsClient.listSessions(userId);
+    } catch {
+      // GH API may not have sessions endpoint yet — degrade gracefully
+      return { sessions: [], total: 0 };
+    }
   }
 
   async clearSession(userId: string, domain: string) {

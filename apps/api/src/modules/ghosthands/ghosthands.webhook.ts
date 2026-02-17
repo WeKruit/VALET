@@ -112,13 +112,23 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
       }
 
       // Find the task — try valet_task_id first, fall back to job_id lookup
-      const valetTaskId = payload.valet_task_id;
+      let valetTaskId = payload.valet_task_id;
       if (!valetTaskId) {
         request.log.warn(
           { jobId: payload.job_id },
-          "No valet_task_id in callback, cannot update task",
+          "No valet_task_id in callback, looking up by job_id",
         );
-        return reply.status(200).send({ received: true, warning: "no valet_task_id" });
+        const taskByJobId = await taskRepo.findByWorkflowRunId(payload.job_id);
+        if (taskByJobId) {
+          valetTaskId = taskByJobId.id;
+          request.log.info(
+            { jobId: payload.job_id, resolvedTaskId: valetTaskId },
+            "Resolved task via job_id fallback",
+          );
+        } else {
+          request.log.warn({ jobId: payload.job_id }, "No task found by valet_task_id or job_id");
+          return reply.status(200).send({ received: true, warning: "task not found" });
+        }
       }
 
       // Update the task record
