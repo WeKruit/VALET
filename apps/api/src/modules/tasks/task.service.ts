@@ -1,6 +1,11 @@
 import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
-import type { ApplicationMode, ExternalStatus } from "@valet/shared/schemas";
+import type {
+  ApplicationMode,
+  ExternalStatus,
+  TaskStatus,
+  InteractionType,
+} from "@valet/shared/schemas";
 import type { TaskRepository } from "./task.repository.js";
 import type { ResumeRepository } from "../resumes/resume.repository.js";
 import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
@@ -67,7 +72,82 @@ export class TaskService {
   async getById(id: string, userId: string) {
     const task = await this.taskRepo.findById(id, userId);
     if (!task) throw new TaskNotFoundError(id);
-    return task;
+
+    // Build interaction object from DB fields
+    const VALID_INTERACTION_TYPES: readonly InteractionType[] = [
+      "captcha",
+      "two_factor",
+      "login_required",
+      "bot_check",
+    ];
+    const rawType = task.interactionType;
+    const interaction =
+      rawType &&
+      VALID_INTERACTION_TYPES.includes(rawType as InteractionType) &&
+      task.interactionData
+        ? {
+            type: rawType as InteractionType,
+            screenshotUrl: ((task.interactionData.screenshot_url as string) ?? null) as
+              | string
+              | null
+              | undefined,
+            pageUrl: ((task.interactionData.page_url as string) ?? null) as
+              | string
+              | null
+              | undefined,
+            timeoutSeconds: ((task.interactionData.timeout_seconds as number) ?? null) as
+              | number
+              | null
+              | undefined,
+            message: ((task.interactionData.message as string) ?? null) as
+              | string
+              | null
+              | undefined,
+            pausedAt: new Date((task.interactionData.paused_at as string) ?? Date.now()),
+          }
+        : (null as null);
+
+    // Enrich with GhostHands job data if a GH job exists
+    const ghJob = await this.fetchGhJobData(task.workflowRunId);
+    return { ...task, interaction, ghJob };
+  }
+
+  private async fetchGhJobData(workflowRunId: string | null) {
+    if (!workflowRunId) return null;
+
+    try {
+      const ghStatus = await this.ghosthandsClient.getJobStatus(workflowRunId);
+      // GH API may include extra fields beyond our typed interface
+      const raw = ghStatus as unknown as Record<string, unknown>;
+      const rawCost = raw.cost as Record<string, number> | undefined;
+      return {
+        jobId: ghStatus.job_id,
+        ghStatus: ghStatus.status,
+        executionMode: (raw.execution_mode as string) ?? null,
+        progress: ghStatus.progress ?? null,
+        statusMessage: ghStatus.status_message ?? null,
+        result: ghStatus.result ? { ...ghStatus.result } : null,
+        error: ghStatus.error
+          ? { code: ghStatus.error.code, message: ghStatus.error.message }
+          : null,
+        cost: rawCost
+          ? {
+              totalCostUsd: rawCost.total_cost_usd ?? 0,
+              actionCount: rawCost.action_count ?? 0,
+              totalTokens: rawCost.total_tokens ?? 0,
+            }
+          : null,
+        timestamps: {
+          createdAt: ghStatus.timestamps.created_at,
+          startedAt: ghStatus.timestamps.started_at ?? null,
+          completedAt: ghStatus.timestamps.completed_at ?? null,
+        },
+        targetWorkerId: ghStatus.target_worker_id ?? null,
+      };
+    } catch (err) {
+      this.logger.debug({ err, workflowRunId }, "Failed to fetch GH job status (non-critical)");
+      return null;
+    }
   }
 
   async list(
@@ -327,6 +407,43 @@ export class TaskService {
     return task;
   }
 
+  async retry(id: string, userId: string) {
+    const task = await this.taskRepo.findById(id, userId);
+    if (!task) throw new TaskNotFoundError(id);
+
+    if (task.status !== "failed") {
+      throw new TaskNotCancellableError(id, task.status);
+    }
+
+    if (!task.workflowRunId) {
+      throw new TaskNotResolvableError(id, "no GhostHands job to retry");
+    }
+
+    this.logger.info({ taskId: id, jobId: task.workflowRunId }, "Retrying GhostHands job");
+
+    try {
+      await this.ghosthandsClient.retryJob(task.workflowRunId);
+    } catch (err) {
+      this.logger.error({ err, taskId: id }, "Failed to retry GhostHands job");
+      throw err;
+    }
+
+    await this.taskRepo.updateStatus(id, "queued");
+    await this.taskRepo.updateProgress(id, { progress: 0, currentStep: "Retry submitted" });
+
+    await publishToUser(this.redis, userId, {
+      type: "task_update",
+      taskId: id,
+      status: "queued",
+      progress: 0,
+      currentStep: "Retry submitted to GhostHands",
+    });
+
+    const updated = await this.taskRepo.findById(id, userId);
+    if (!updated) throw new TaskNotFoundError(id);
+    return updated;
+  }
+
   async cancel(id: string, userId: string) {
     const task = await this.taskRepo.findById(id, userId);
     if (!task) throw new TaskNotFoundError(id);
@@ -438,5 +555,83 @@ export class TaskService {
 
   async clearAllSessions(userId: string) {
     return this.ghosthandsClient.clearAllSessions(userId);
+  }
+
+  /**
+   * Find stuck jobs (queued/in_progress for too long) and optionally sync their status
+   * with GhostHands. Admin-only operation.
+   */
+  async findStuckJobs(stuckMinutes = 30) {
+    const stuck = await this.taskRepo.findStuckJobs(stuckMinutes);
+
+    // For each stuck job with a workflowRunId, check GH status
+    const enriched = await Promise.all(
+      stuck.map(async (task) => {
+        const ghJob = await this.fetchGhJobData(task.workflowRunId);
+        return { ...task, ghJob };
+      }),
+    );
+
+    return enriched;
+  }
+
+  /**
+   * Force-sync a task's status with GhostHands. Admin-only operation.
+   * If GH says it's done but VALET thinks it's still running, fix the mismatch.
+   */
+  async syncTaskWithGh(taskId: string) {
+    // findById without userId to allow admin access - use raw query
+    const rows = await this.taskRepo.findStuckJobs(0); // get all active
+    const task = rows.find((t) => t.id === taskId);
+    if (!task?.workflowRunId) return null;
+
+    try {
+      const ghStatus = await this.ghosthandsClient.getJobStatus(task.workflowRunId);
+      const statusMap: Record<string, TaskStatus> = {
+        running: "in_progress",
+        completed: "completed",
+        failed: "failed",
+        cancelled: "cancelled",
+        needs_human: "waiting_human",
+      };
+
+      const mappedStatus = statusMap[ghStatus.status];
+      if (mappedStatus && mappedStatus !== task.status) {
+        this.logger.info(
+          { taskId, fromStatus: task.status, toStatus: mappedStatus, ghStatus: ghStatus.status },
+          "Syncing task status with GhostHands",
+        );
+        await this.taskRepo.updateStatus(taskId, mappedStatus);
+
+        if (ghStatus.result || ghStatus.error) {
+          await this.taskRepo.updateGhosthandsResult(taskId, {
+            ghJobId: ghStatus.job_id,
+            result: ghStatus.result ? { ...ghStatus.result } : null,
+            error: ghStatus.error
+              ? { code: ghStatus.error.code, message: ghStatus.error.message }
+              : null,
+            completedAt: ghStatus.timestamps.completed_at ?? null,
+          });
+        }
+
+        return {
+          taskId,
+          previousStatus: task.status,
+          newStatus: mappedStatus,
+          ghStatus: ghStatus.status,
+        };
+      }
+
+      return {
+        taskId,
+        previousStatus: task.status,
+        newStatus: task.status,
+        ghStatus: ghStatus.status,
+        message: "Already in sync",
+      };
+    } catch (err) {
+      this.logger.warn({ err, taskId }, "Failed to sync task with GhostHands");
+      return { taskId, error: "Failed to fetch GH status" };
+    }
   }
 }

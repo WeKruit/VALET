@@ -109,4 +109,16 @@ export const taskContract = c.router({
     },
     summary: "Resolve a HITL blocker on a paused task",
   },
+  retry: {
+    method: "POST",
+    path: "/api/v1/tasks/:id/retry",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      200: taskResponse,
+      404: errorResponse,
+      409: errorResponse,
+    },
+    summary: "Retry a failed GhostHands task",
+  },
 });

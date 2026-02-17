@@ -27,6 +27,7 @@ import { ghosthandsWebhookRoute } from "./modules/ghosthands/ghosthands.webhook.
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
 import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
+import { taskAdminRoutes } from "./modules/tasks/task.admin-routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -97,6 +98,9 @@ export async function buildApp() {
   // Standalone webhook routes (outside ts-rest — needs raw body + no auth)
   await fastify.register(billingWebhookRoute);
   await fastify.register(ghosthandsWebhookRoute);
+
+  // Admin routes (need auth via onRequest hook, so registered after auth middleware)
+  await fastify.register(taskAdminRoutes);
 
   // WebSocket
   await registerWebSocket(fastify);

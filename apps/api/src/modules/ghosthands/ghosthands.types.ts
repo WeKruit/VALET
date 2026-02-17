@@ -147,8 +147,9 @@ export interface GHCallbackCost {
 export interface GHCallbackPayload {
   job_id: string;
   valet_task_id: string | null;
-  status: "completed" | "failed" | "cancelled" | "needs_human" | "resumed";
+  status: "running" | "completed" | "failed" | "cancelled" | "needs_human" | "resumed";
   completed_at?: string;
+  progress?: number;
   // Success fields (flat, not nested)
   result_data?: Record<string, unknown>;
   result_summary?: string;
