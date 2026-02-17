@@ -212,3 +212,21 @@ export interface GHClearAllSessionsResponse {
   deleted_count: number;
   user_id: string;
 }
+
+// ─── Monitoring Endpoints ───
+
+export interface GHDetailedHealth {
+  status: string;
+  components?: Record<string, { status: string; message?: string }>;
+  active_workers?: number;
+  uptime_seconds?: number;
+}
+
+export interface GHMetrics {
+  jobs_created?: number;
+  jobs_completed?: number;
+  jobs_failed?: number;
+  jobs_active?: number;
+  queue_depth?: number;
+  avg_duration_ms?: number;
+}

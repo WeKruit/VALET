@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
-import { Activity, Server, Cpu, CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react";
+import { Activity, Server, ListTodo, Clock } from "lucide-react";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useWorkerStatus } from "../hooks/use-sandboxes";
 
@@ -9,11 +9,12 @@ interface WorkerStatusCardProps {
   ec2Running: boolean;
 }
 
-function StatusDot({ status }: { status: "healthy" | "unhealthy" | "unreachable" }) {
+function StatusDot({ status }: { status: "healthy" | "degraded" | "unhealthy" | "unreachable" }) {
   const colors = {
     healthy: "bg-[var(--wk-status-success)]",
-    unhealthy: "bg-[var(--wk-status-warning)]",
-    unreachable: "bg-[var(--wk-status-error)]",
+    degraded: "bg-[var(--wk-status-warning)]",
+    unhealthy: "bg-[var(--wk-status-error)]",
+    unreachable: "bg-[var(--wk-text-tertiary)]",
   };
   return <span className={`inline-block h-2 w-2 rounded-full ${colors[status]}`} />;
 }
@@ -115,39 +116,22 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
 
           <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              <Cpu className="h-3.5 w-3.5" />
-              Hatchet Worker
+              <Activity className="h-3.5 w-3.5" />
+              Workers
             </div>
             <div className="flex items-center gap-2">
-              {ws?.worker.hatchetConnected === true ? (
-                <CheckCircle2 className="h-4 w-4 text-[var(--wk-status-success)]" />
-              ) : ws?.worker.hatchetConnected === false ? (
-                <XCircle className="h-4 w-4 text-[var(--wk-status-error)]" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
-              )}
-              <span className="text-sm font-medium">
-                {ws?.worker.hatchetConnected === true
-                  ? "Connected"
-                  : ws?.worker.hatchetConnected === false
-                    ? "Disconnected"
-                    : "Unknown"}
-              </span>
+              <StatusDot status={ws?.worker.status ?? "unreachable"} />
+              <span className="text-sm font-medium">{ws?.worker.activeWorkers ?? 0}</span>
             </div>
           </div>
 
           <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              <Activity className="h-3.5 w-3.5" />
-              AdsPower
+              <ListTodo className="h-3.5 w-3.5" />
+              Queue
             </div>
             <div className="flex items-center gap-2">
-              {ws?.worker.adspowerStatus === "running" ? (
-                <CheckCircle2 className="h-4 w-4 text-[var(--wk-status-success)]" />
-              ) : (
-                <XCircle className="h-4 w-4 text-[var(--wk-status-error)]" />
-              )}
-              <span className="text-sm font-medium">{ws?.worker.adspowerStatus ?? "Unknown"}</span>
+              <span className="text-sm font-medium">{ws?.worker.queueDepth ?? 0}</span>
             </div>
           </div>
         </div>

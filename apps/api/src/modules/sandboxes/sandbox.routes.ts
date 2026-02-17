@@ -250,15 +250,38 @@ export const sandboxRouter = s.router(sandboxContract, {
       logger.debug({ sandboxId: params.id }, "GhostHands API unreachable for worker status");
     }
 
-    // Get worker info from sandbox metrics (best effort)
-    let hatchetConnected: boolean | null = null;
-    let adspowerStatus: string | null = null;
-    try {
-      const metrics = await sandboxService.getMetrics(params.id);
-      hatchetConnected = metrics.hatchetConnected;
-      adspowerStatus = metrics.adspowerStatus;
-    } catch {
-      // Metrics may fail if EC2 is not running
+    // Get richer worker data from GH monitoring endpoints (graceful fallback)
+    let activeWorkers: number | null = null;
+    let queueDepth: number | null = null;
+    let workerOverallStatus: "healthy" | "degraded" | "unhealthy" | "unreachable" = "unreachable";
+
+    if (ghApiStatus !== "unreachable") {
+      // Try detailed health endpoint first
+      try {
+        const detailedHealth = await ghosthandsClient.getDetailedHealth();
+        activeWorkers = detailedHealth.active_workers ?? null;
+        workerOverallStatus =
+          detailedHealth.status === "ok" || detailedHealth.status === "healthy"
+            ? "healthy"
+            : detailedHealth.status === "degraded"
+              ? "degraded"
+              : "unhealthy";
+      } catch {
+        // Monitoring endpoint may not be deployed; fall back to basic health
+        logger.debug(
+          { sandboxId: params.id },
+          "GH monitoring/health not available, using basic health",
+        );
+        workerOverallStatus = ghApiStatus === "healthy" ? "healthy" : "unhealthy";
+      }
+
+      // Try metrics endpoint for queue depth
+      try {
+        const metrics = await ghosthandsClient.getMetrics();
+        queueDepth = metrics.queue_depth ?? null;
+      } catch {
+        logger.debug({ sandboxId: params.id }, "GH monitoring/metrics not available");
+      }
     }
 
     // Query active and recent tasks for this sandbox
@@ -270,7 +293,7 @@ export const sandboxRouter = s.router(sandboxContract, {
       body: {
         sandboxId: sandbox.id,
         ghosthandsApi: { status: ghApiStatus },
-        worker: { hatchetConnected, adspowerStatus },
+        worker: { status: workerOverallStatus, activeWorkers, queueDepth },
         activeTasks: activeTasks.map((t) => ({
           taskId: t.id,
           jobUrl: t.jobUrl,

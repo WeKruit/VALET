@@ -11,6 +11,8 @@ import type {
   GHSessionListResponse,
   GHClearSessionResponse,
   GHClearAllSessionsResponse,
+  GHDetailedHealth,
+  GHMetrics,
 } from "./ghosthands.types.js";
 
 export class GhostHandsClient {
@@ -108,6 +110,14 @@ export class GhostHandsClient {
 
   async healthCheck(): Promise<{ status: string }> {
     return this.request<{ status: string }>("GET", "/health", undefined, 5_000);
+  }
+
+  async getDetailedHealth(): Promise<GHDetailedHealth> {
+    return this.request<GHDetailedHealth>("GET", "/monitoring/health", undefined, 5_000);
+  }
+
+  async getMetrics(): Promise<GHMetrics> {
+    return this.request<GHMetrics>("GET", "/monitoring/metrics/json", undefined, 5_000);
   }
 
   async listSessions(userId: string): Promise<GHSessionListResponse> {

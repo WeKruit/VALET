@@ -184,14 +184,17 @@ export const adminTriggerTestResponse = z.object({
 });
 
 // ─── Worker Status ───
+export const workerStatus = z.enum(["healthy", "degraded", "unhealthy", "unreachable"]);
+
 export const workerStatusResponse = z.object({
   sandboxId: z.string().uuid(),
   ghosthandsApi: z.object({
     status: z.enum(["healthy", "unhealthy", "unreachable"]),
   }),
   worker: z.object({
-    hatchetConnected: z.boolean().nullable(),
-    adspowerStatus: z.string().nullable(),
+    status: workerStatus,
+    activeWorkers: z.number().nullable(),
+    queueDepth: z.number().nullable(),
   }),
   activeTasks: z.array(
     z.object({
@@ -303,6 +306,7 @@ export type AdminTriggerTaskRequest = z.infer<typeof adminTriggerTaskRequest>;
 export type AdminTriggerTaskResponse = z.infer<typeof adminTriggerTaskResponse>;
 export type AdminTriggerTestRequest = z.infer<typeof adminTriggerTestRequest>;
 export type AdminTriggerTestResponse = z.infer<typeof adminTriggerTestResponse>;
+export type WorkerStatus = z.infer<typeof workerStatus>;
 export type WorkerStatusResponse = z.infer<typeof workerStatusResponse>;
 export type DeployStatus = z.infer<typeof deployStatus>;
 export type DeploySandboxStatus = z.infer<typeof deploySandboxStatus>;
