@@ -13,4 +13,5 @@ export * from "./notifications.js";
 export * from "./action-manuals.js";
 export * from "./sandboxes.js";
 export * from "./sandbox-secrets.js";
+export * from "./gh-automation-jobs.js";
 export * from "./relations.js";

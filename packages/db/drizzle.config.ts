@@ -12,7 +12,10 @@ try {
     const eqIdx = trimmed.indexOf("=");
     if (eqIdx === -1) continue;
     const key = trimmed.slice(0, eqIdx).trim();
-    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+    const val = trimmed
+      .slice(eqIdx + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (!process.env[key]) process.env[key] = val;
   }
 } catch {
@@ -25,7 +28,10 @@ export default defineConfig({
   dialect: "postgresql",
   dbCredentials: {
     // Session pooler for migrations (IPv4-compatible, supports DDL)
-    url: process.env["DATABASE_DIRECT_URL"] ?? process.env["DATABASE_URL"] ?? "postgres://wekruit:wekruit_dev@localhost:5432/wekruit",
+    url:
+      process.env["DATABASE_DIRECT_URL"] ??
+      process.env["DATABASE_URL"] ??
+      "postgres://wekruit:wekruit_dev@localhost:5432/wekruit",
   },
   // Only manage VALET tables — Hatchet also creates tables in the public schema
   // and drizzle-kit chokes on their partition tables (null identity names).
@@ -45,6 +51,7 @@ export default defineConfig({
     "action_manuals",
     "manual_steps",
     "sandboxes",
+    "gh_automation_jobs",
     // "sandbox_secrets" — deprecated, excluded from drizzle-kit management
   ],
 });

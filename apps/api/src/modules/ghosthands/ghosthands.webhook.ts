@@ -71,7 +71,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
 
-      const { taskRepo, redis } = request.diScope.cradle;
+      const { taskRepo, ghJobRepo, redis } = request.diScope.cradle;
       const payload = request.body as GHCallbackPayload;
 
       if (!payload?.job_id || !payload?.status) {
@@ -197,6 +197,64 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           actionCount: payload.cost.action_count,
           totalTokens: payload.cost.total_tokens,
         });
+      }
+
+      // ── Sync gh_automation_jobs table ──────────────────────────
+      try {
+        const now = new Date();
+        const ghJobUpdate: Record<string, unknown> = {
+          status: payload.status, // keep GH's native status (running, completed, etc.)
+          statusMessage: payload.result_summary ?? null,
+          resultSummary: payload.result_summary ?? null,
+          updatedAt: now,
+        };
+
+        if (payload.status === "running") {
+          ghJobUpdate.startedAt = now;
+          ghJobUpdate.lastHeartbeat = now;
+        }
+        if (
+          payload.status === "completed" ||
+          payload.status === "failed" ||
+          payload.status === "cancelled"
+        ) {
+          ghJobUpdate.completedAt = completedAt ? new Date(completedAt) : now;
+        }
+        if (errorObj) {
+          ghJobUpdate.errorCode = errorObj.code as string;
+          ghJobUpdate.errorDetails = errorObj;
+        }
+        if (resultObj) {
+          ghJobUpdate.resultData = resultObj;
+        }
+        if (payload.cost) {
+          ghJobUpdate.actionCount = payload.cost.action_count;
+          ghJobUpdate.totalTokens = payload.cost.total_tokens;
+          ghJobUpdate.llmCostCents = Math.round(payload.cost.total_cost_usd * 100);
+        }
+        if (payload.status === "needs_human" && payload.interaction) {
+          const mappedInteractionType =
+            interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
+          ghJobUpdate.interactionType = mappedInteractionType;
+          ghJobUpdate.interactionData = payload.interaction as unknown as Record<string, unknown>;
+          ghJobUpdate.pausedAt = now;
+        }
+        if (payload.status === "resumed") {
+          ghJobUpdate.interactionType = null;
+          ghJobUpdate.interactionData = null;
+          ghJobUpdate.pausedAt = null;
+        }
+
+        await ghJobRepo.updateStatus(
+          payload.job_id,
+          ghJobUpdate as Parameters<typeof ghJobRepo.updateStatus>[1],
+        );
+      } catch (err) {
+        // Non-critical: log but don't fail the webhook
+        request.log.warn(
+          { err, jobId: payload.job_id },
+          "Failed to sync gh_automation_jobs (non-critical)",
+        );
       }
 
       // Publish WebSocket events based on status

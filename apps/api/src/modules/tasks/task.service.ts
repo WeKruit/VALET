@@ -11,6 +11,7 @@ import type { ResumeRepository } from "../resumes/resume.repository.js";
 import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
+import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -43,6 +44,7 @@ export class TaskService {
   private resumeRepo: ResumeRepository;
   private qaBankRepo: QaBankRepository;
   private ghosthandsClient: GhostHandsClient;
+  private ghJobRepo: GhAutomationJobRepository;
   private redis: Redis;
   private logger: FastifyBaseLogger;
 
@@ -51,6 +53,7 @@ export class TaskService {
     resumeRepo,
     qaBankRepo,
     ghosthandsClient,
+    ghJobRepo,
     redis,
     logger,
   }: {
@@ -58,6 +61,7 @@ export class TaskService {
     resumeRepo: ResumeRepository;
     qaBankRepo: QaBankRepository;
     ghosthandsClient: GhostHandsClient;
+    ghJobRepo: GhAutomationJobRepository;
     redis: Redis;
     logger: FastifyBaseLogger;
   }) {
@@ -65,6 +69,7 @@ export class TaskService {
     this.resumeRepo = resumeRepo;
     this.qaBankRepo = qaBankRepo;
     this.ghosthandsClient = ghosthandsClient;
+    this.ghJobRepo = ghJobRepo;
     this.redis = redis;
     this.logger = logger;
   }
@@ -115,9 +120,46 @@ export class TaskService {
   private async fetchGhJobData(workflowRunId: string | null) {
     if (!workflowRunId) return null;
 
+    // Try local DB first (synced by webhook handler)
+    try {
+      const job = await this.ghJobRepo.findById(workflowRunId);
+      if (job) {
+        return {
+          jobId: job.id,
+          ghStatus: job.status,
+          executionMode: job.executionMode ?? null,
+          progress: null as number | null,
+          statusMessage: job.statusMessage ?? null,
+          result: job.resultData ? { ...job.resultData } : null,
+          error: job.errorCode
+            ? {
+                code: job.errorCode,
+                message: (job.errorDetails as any)?.message ?? "Unknown error",
+              }
+            : null,
+          cost:
+            job.llmCostCents != null
+              ? {
+                  totalCostUsd: (job.llmCostCents ?? 0) / 100,
+                  actionCount: job.actionCount ?? 0,
+                  totalTokens: job.totalTokens ?? 0,
+                }
+              : null,
+          timestamps: {
+            createdAt: job.createdAt.toISOString(),
+            startedAt: job.startedAt?.toISOString() ?? null,
+            completedAt: job.completedAt?.toISOString() ?? null,
+          },
+          targetWorkerId: job.targetWorkerId ?? null,
+        };
+      }
+    } catch (err) {
+      this.logger.debug({ err, workflowRunId }, "Failed to read GH job from local DB");
+    }
+
+    // Fallback to GH API if not in local DB
     try {
       const ghStatus = await this.ghosthandsClient.getJobStatus(workflowRunId);
-      // GH API may include extra fields beyond our typed interface
       const raw = ghStatus as unknown as Record<string, unknown>;
       const rawCost = raw.cost as Record<string, number> | undefined;
       return {
