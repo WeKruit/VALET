@@ -117,18 +117,50 @@ export class TaskService {
           }
         : (null as null);
 
-    // Enrich with GhostHands job data if a GH job exists
-    const ghJob = await this.fetchGhJobData(task.workflowRunId);
+    // Enrich with GhostHands job data if a GH job exists (self-healing reconciliation)
+    const ghJob = await this.fetchGhJobData(task.workflowRunId, task.status as TaskStatus);
     return { ...task, interaction, ghJob };
   }
 
-  private async fetchGhJobData(workflowRunId: string | null) {
+  private async fetchGhJobData(workflowRunId: string | null, taskStatus?: TaskStatus) {
     if (!workflowRunId) return null;
+
+    const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+    const GH_NON_TERMINAL = new Set(["pending", "queued", "running", "needs_human"]);
+
+    // Map task status -> gh_automation_jobs status for reverse sync
+    const taskToGhStatus: Partial<Record<TaskStatus, string>> = {
+      completed: "completed",
+      failed: "failed",
+      cancelled: "cancelled",
+    };
 
     // Try local DB first (synced by webhook handler)
     try {
       const job = await this.ghJobRepo.findById(workflowRunId);
       if (job) {
+        // Self-healing: if task is terminal but GH job is not, fix the GH job
+        if (taskStatus && TERMINAL_STATUSES.has(taskStatus) && GH_NON_TERMINAL.has(job.status)) {
+          const correctedGhStatus = taskToGhStatus[taskStatus];
+          if (correctedGhStatus) {
+            this.logger.warn(
+              {
+                workflowRunId,
+                taskStatus,
+                ghJobStatus: job.status,
+                correctedGhStatus,
+              },
+              "Reconciling divergent gh_automation_jobs status to match terminal task",
+            );
+            await this.ghJobRepo.updateStatus(workflowRunId, {
+              status: correctedGhStatus,
+              statusMessage: `Reconciled: task was ${taskStatus}`,
+              completedAt: new Date(),
+            });
+            job.status = correctedGhStatus;
+          }
+        }
+
         return {
           jobId: job.id,
           ghStatus: job.status,
@@ -139,7 +171,9 @@ export class TaskService {
           error: job.errorCode
             ? {
                 code: job.errorCode,
-                message: (job.errorDetails as any)?.message ?? "Unknown error",
+                message:
+                  ((job.errorDetails as Record<string, unknown>)?.message as string) ??
+                  "Unknown error",
               }
             : null,
           cost:
@@ -657,7 +691,7 @@ export class TaskService {
     // For each stuck job with a workflowRunId, check GH status
     const enriched = await Promise.all(
       stuck.map(async (task) => {
-        const ghJob = await this.fetchGhJobData(task.workflowRunId);
+        const ghJob = await this.fetchGhJobData(task.workflowRunId, task.status as TaskStatus);
         return { ...task, ghJob };
       }),
     );
@@ -666,62 +700,144 @@ export class TaskService {
   }
 
   /**
-   * Force-sync a task's status with GhostHands. Admin-only operation.
-   * If GH says it's done but VALET thinks it's still running, fix the mismatch.
+   * Force-sync a single task's status with GhostHands API. Admin-only operation.
+   * Pulls latest from GH API and syncs BOTH the tasks table and gh_automation_jobs table.
    */
-  async syncTaskWithGh(taskId: string) {
-    // findById without userId to allow admin access - use raw query
-    const rows = await this.taskRepo.findStuckJobs(0); // get all active
-    const task = rows.find((t) => t.id === taskId);
-    if (!task?.workflowRunId) return null;
+  async syncGhJobStatus(taskId: string) {
+    const task = await this.taskRepo.findByIdAdmin(taskId);
+    if (!task) return { taskId, error: "Task not found" };
+    if (!task.workflowRunId) return { taskId, error: "No GhostHands job linked" };
+
+    // GH status -> task status mapping
+    const ghToTaskStatus: Record<string, TaskStatus> = {
+      running: "in_progress",
+      completed: "completed",
+      failed: "failed",
+      cancelled: "cancelled",
+      needs_human: "waiting_human",
+    };
 
     try {
-      const ghStatus = await this.ghosthandsClient.getJobStatus(task.workflowRunId);
-      const statusMap: Record<string, TaskStatus> = {
-        running: "in_progress",
-        completed: "completed",
-        failed: "failed",
-        cancelled: "cancelled",
-        needs_human: "waiting_human",
-      };
+      const ghApiStatus = await this.ghosthandsClient.getJobStatus(task.workflowRunId);
+      const mappedTaskStatus = ghToTaskStatus[ghApiStatus.status];
 
-      const mappedStatus = statusMap[ghStatus.status];
-      if (mappedStatus && mappedStatus !== task.status) {
+      let taskUpdated = false;
+      const previousTaskStatus = task.status;
+
+      // 1. Sync tasks table: if GH status maps to a different task status, update
+      if (mappedTaskStatus && mappedTaskStatus !== task.status) {
         this.logger.info(
-          { taskId, fromStatus: task.status, toStatus: mappedStatus, ghStatus: ghStatus.status },
-          "Syncing task status with GhostHands",
+          {
+            taskId,
+            fromStatus: task.status,
+            toStatus: mappedTaskStatus,
+            ghStatus: ghApiStatus.status,
+          },
+          "Syncing task status from GhostHands API",
         );
-        await this.taskRepo.updateStatus(taskId, mappedStatus);
+        await this.taskRepo.updateStatus(taskId, mappedTaskStatus);
+        taskUpdated = true;
 
-        if (ghStatus.result || ghStatus.error) {
+        if (ghApiStatus.result || ghApiStatus.error) {
           await this.taskRepo.updateGhosthandsResult(taskId, {
-            ghJobId: ghStatus.job_id,
-            result: ghStatus.result ? { ...ghStatus.result } : null,
-            error: ghStatus.error
-              ? { code: ghStatus.error.code, message: ghStatus.error.message }
+            ghJobId: ghApiStatus.job_id,
+            result: ghApiStatus.result ? { ...ghApiStatus.result } : null,
+            error: ghApiStatus.error
+              ? { code: ghApiStatus.error.code, message: ghApiStatus.error.message }
               : null,
-            completedAt: ghStatus.timestamps.completed_at ?? null,
+            completedAt: ghApiStatus.timestamps.completed_at ?? null,
           });
         }
-
-        return {
-          taskId,
-          previousStatus: task.status,
-          newStatus: mappedStatus,
-          ghStatus: ghStatus.status,
-        };
       }
 
+      // 2. Sync gh_automation_jobs table
+      let ghJobUpdated = false;
+      const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
+      if (ghJob && ghJob.status !== ghApiStatus.status) {
+        this.logger.info(
+          {
+            workflowRunId: task.workflowRunId,
+            fromGhStatus: ghJob.status,
+            toGhStatus: ghApiStatus.status,
+          },
+          "Syncing gh_automation_jobs status from GhostHands API",
+        );
+        const now = new Date();
+        const updateData: Record<string, unknown> = {
+          status: ghApiStatus.status,
+          statusMessage: ghApiStatus.status_message ?? null,
+          updatedAt: now,
+        };
+        if (ghApiStatus.timestamps.completed_at) {
+          updateData.completedAt = new Date(ghApiStatus.timestamps.completed_at);
+        }
+        if (ghApiStatus.error) {
+          updateData.errorCode = ghApiStatus.error.code;
+          updateData.errorDetails = ghApiStatus.error;
+        }
+        if (ghApiStatus.result) {
+          updateData.resultData = ghApiStatus.result;
+        }
+        await this.ghJobRepo.updateStatus(
+          task.workflowRunId,
+          updateData as Parameters<typeof this.ghJobRepo.updateStatus>[1],
+        );
+        ghJobUpdated = true;
+      }
+
+      const finalTaskStatus = mappedTaskStatus ?? task.status;
       return {
         taskId,
-        previousStatus: task.status,
-        newStatus: task.status,
-        ghStatus: ghStatus.status,
-        message: "Already in sync",
+        previousTaskStatus,
+        newTaskStatus: finalTaskStatus,
+        ghApiStatus: ghApiStatus.status,
+        ghJobPreviousStatus: ghJob?.status ?? null,
+        taskUpdated,
+        ghJobUpdated,
+        message: taskUpdated || ghJobUpdated ? "Status synced from GhostHands" : "Already in sync",
       };
     } catch (err) {
-      this.logger.warn({ err, taskId }, "Failed to sync task with GhostHands");
+      this.logger.warn({ err, taskId }, "Failed to sync task with GhostHands API");
       return { taskId, error: "Failed to fetch GH status" };
     }
+  }
+
+  /** @deprecated Use syncGhJobStatus instead */
+  async syncTaskWithGh(taskId: string) {
+    return this.syncGhJobStatus(taskId);
+  }
+
+  /**
+   * Admin: list all tasks across all users with optional filters.
+   */
+  async listAll(query: {
+    page: number;
+    pageSize: number;
+    status?: string;
+    platform?: string;
+    search?: string;
+    userId?: string;
+    sortBy: string;
+    sortOrder: string;
+  }) {
+    const { data, total } = await this.taskRepo.findManyAdmin(query);
+
+    // Enrich each task with GH job data
+    const enriched = await Promise.all(
+      data.map(async (task) => {
+        const ghJob = await this.fetchGhJobData(task.workflowRunId, task.status as TaskStatus);
+        return { ...task, ghJob };
+      }),
+    );
+
+    return {
+      data: enriched,
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: Math.ceil(total / query.pageSize),
+      },
+    };
   }
 }

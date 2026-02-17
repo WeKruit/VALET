@@ -88,6 +88,31 @@ export const taskExportQuery = z.object({
   format: z.enum(["csv"]).default("csv"),
 });
 
+// ─── Admin Schemas ───
+export const adminTaskListQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  status: taskStatus.optional(),
+  platform: platform.optional(),
+  search: z.string().max(200).optional(),
+  userId: z.string().uuid().optional(),
+  sortBy: z
+    .enum(["createdAt", "updatedAt", "status", "jobTitle", "companyName"])
+    .default("createdAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export const adminTaskSyncResponse = z.object({
+  taskId: z.string().uuid(),
+  previousTaskStatus: taskStatus,
+  newTaskStatus: taskStatus,
+  ghApiStatus: z.string(),
+  ghJobPreviousStatus: z.string().nullable(),
+  taskUpdated: z.boolean(),
+  ghJobUpdated: z.boolean(),
+  message: z.string(),
+});
+
 // ─── Interaction Schemas ───
 export const interactionType = z.enum(["captcha", "two_factor", "login_required", "bot_check"]);
 
@@ -186,3 +211,5 @@ export type TaskInteraction = z.infer<typeof taskInteractionSchema>;
 export type ResolveBlockerRequest = z.infer<typeof resolveBlockerRequest>;
 export type ResolveBlockerResponse = z.infer<typeof resolveBlockerResponse>;
 export type GhJob = z.infer<typeof ghJobSchema>;
+export type AdminTaskListQuery = z.infer<typeof adminTaskListQuery>;
+export type AdminTaskSyncResponse = z.infer<typeof adminTaskSyncResponse>;

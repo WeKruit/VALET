@@ -200,15 +200,15 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
       }
 
       // ── Sync gh_automation_jobs table ──────────────────────────
-      try {
-        const now = new Date();
-        const ghJobUpdate: Record<string, unknown> = {
-          status: payload.status, // keep GH's native status (running, completed, etc.)
-          statusMessage: payload.result_summary ?? null,
-          resultSummary: payload.result_summary ?? null,
-          updatedAt: now,
-        };
+      const ghJobUpdate: Record<string, unknown> = {
+        status: payload.status, // keep GH's native status (running, completed, etc.)
+        statusMessage: payload.result_summary ?? null,
+        resultSummary: payload.result_summary ?? null,
+        updatedAt: new Date(),
+      };
 
+      {
+        const now = new Date();
         if (payload.status === "running") {
           ghJobUpdate.startedAt = now;
           ghJobUpdate.lastHeartbeat = now;
@@ -244,17 +244,30 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           ghJobUpdate.interactionData = null;
           ghJobUpdate.pausedAt = null;
         }
+      }
 
-        await ghJobRepo.updateStatus(
-          payload.job_id,
-          ghJobUpdate as Parameters<typeof ghJobRepo.updateStatus>[1],
-        );
-      } catch (err) {
-        // Non-critical: log but don't fail the webhook
-        request.log.warn(
-          { err, jobId: payload.job_id },
-          "Failed to sync gh_automation_jobs (non-critical)",
-        );
+      // Attempt with one immediate retry on failure
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await ghJobRepo.updateStatus(
+            payload.job_id,
+            ghJobUpdate as Parameters<typeof ghJobRepo.updateStatus>[1],
+          );
+          break; // success
+        } catch (err) {
+          if (attempt === 0) {
+            request.log.warn(
+              { err, jobId: payload.job_id },
+              "gh_automation_jobs sync failed, retrying once",
+            );
+            continue;
+          }
+          // Final attempt failed — log at ERROR level but don't fail the webhook
+          request.log.error(
+            { err, jobId: payload.job_id },
+            "Failed to sync gh_automation_jobs after retry (non-critical)",
+          );
+        }
       }
 
       // Publish WebSocket events based on status

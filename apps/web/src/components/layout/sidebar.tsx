@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   ListTodo,
+  ClipboardList,
   Send,
   Settings,
   Moon,
@@ -26,6 +27,7 @@ const navItems = [
 ];
 
 const adminNavItems = [
+  { path: "/admin/tasks", label: "Tasks", icon: ClipboardList },
   { path: "/admin/sandboxes", label: "Sandboxes", icon: Server },
   { path: "/admin/sessions", label: "Sessions", icon: Globe },
 ];

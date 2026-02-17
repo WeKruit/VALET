@@ -344,6 +344,76 @@ export class TaskRepository {
     return row ? toTaskRecord(row as Record<string, unknown>) : null;
   }
 
+  /** Admin-only: find task by ID without userId filter */
+  async findByIdAdmin(id: string): Promise<TaskRecord | null> {
+    const rows = await this.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    const row = rows[0];
+    return row ? toTaskRecord(row as Record<string, unknown>) : null;
+  }
+
+  /** Admin-only: list all tasks with optional filters */
+  async findManyAdmin(query: {
+    page: number;
+    pageSize: number;
+    status?: string;
+    platform?: string;
+    search?: string;
+    userId?: string;
+    sortBy: string;
+    sortOrder: string;
+  }): Promise<{ data: TaskRecord[]; total: number }> {
+    const conditions: SQL[] = [];
+
+    if (query.userId) {
+      conditions.push(eq(tasks.userId, query.userId));
+    }
+    if (query.status) {
+      conditions.push(eq(tasks.status, query.status as TaskStatus));
+    }
+    if (query.platform) {
+      conditions.push(eq(tasks.platform, query.platform as Platform));
+    }
+    if (query.search) {
+      const pattern = `%${query.search}%`;
+      conditions.push(
+        or(
+          ilike(tasks.jobTitle, pattern),
+          ilike(tasks.companyName, pattern),
+          ilike(tasks.jobUrl, pattern),
+        )!,
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const sortColumnMap = {
+      updatedAt: tasks.updatedAt,
+      status: tasks.status,
+      jobTitle: tasks.jobTitle,
+      companyName: tasks.companyName,
+      createdAt: tasks.createdAt,
+    } as const;
+    const sortColumn = sortColumnMap[query.sortBy as keyof typeof sortColumnMap] ?? tasks.createdAt;
+
+    const orderFn = query.sortOrder === "asc" ? asc : desc;
+
+    const [data, totalResult] = await Promise.all([
+      this.db
+        .select()
+        .from(tasks)
+        .where(whereClause)
+        .orderBy(orderFn(sortColumn))
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize),
+      this.db.select({ count: count() }).from(tasks).where(whereClause),
+    ]);
+
+    return {
+      data: data.map((r) => toTaskRecord(r as Record<string, unknown>)),
+      total: totalResult[0]?.count ?? 0,
+    };
+  }
+
   async clearInteractionData(id: string) {
     await this.db
       .update(tasks)

@@ -6,6 +6,26 @@ import { adminOnly } from "../../common/middleware/admin.js";
  * Registered as standalone Fastify routes outside ts-rest.
  */
 export async function taskAdminRoutes(fastify: FastifyInstance) {
+  // ── List all tasks (admin view) ──────────────────────────────
+  fastify.get("/api/v1/admin/tasks", async (request: FastifyRequest, reply: FastifyReply) => {
+    await adminOnly(request);
+
+    const { taskService } = request.diScope.cradle;
+    const q = request.query as Record<string, string>;
+    const result = await taskService.listAll({
+      page: Number(q.page) || 1,
+      pageSize: Math.min(Number(q.pageSize) || 25, 100),
+      status: q.status || undefined,
+      platform: q.platform || undefined,
+      search: q.search || undefined,
+      userId: q.userId || undefined,
+      sortBy: q.sortBy || "createdAt",
+      sortOrder: q.sortOrder || "desc",
+    });
+
+    return reply.status(200).send(result);
+  });
+
   // ── List stuck jobs ────────────────────────────────────────
   fastify.get("/api/v1/admin/tasks/stuck", async (request: FastifyRequest, reply: FastifyReply) => {
     await adminOnly(request);
@@ -38,10 +58,10 @@ export async function taskAdminRoutes(fastify: FastifyInstance) {
 
       const { taskService } = request.diScope.cradle;
       const { taskId } = request.params as { taskId: string };
-      const result = await taskService.syncTaskWithGh(taskId);
+      const result = await taskService.syncGhJobStatus(taskId);
 
-      if (!result) {
-        return reply.status(404).send({ error: "Task not found or has no GH job" });
+      if ("error" in result) {
+        return reply.status(404).send({ error: result.error });
       }
 
       return reply.status(200).send(result);
@@ -61,7 +81,7 @@ export async function taskAdminRoutes(fastify: FastifyInstance) {
       const results = [];
       for (const task of stuck) {
         if (task.workflowRunId) {
-          const syncResult = await taskService.syncTaskWithGh(task.id);
+          const syncResult = await taskService.syncGhJobStatus(task.id);
           results.push(syncResult);
         }
       }

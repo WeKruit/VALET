@@ -89,6 +89,16 @@ const SessionsPage = lazy(() =>
     default: m.SessionsPage,
   })),
 );
+const AdminTasksPage = lazy(() =>
+  import("./features/admin/pages/admin-tasks-page").then((m) => ({
+    default: m.AdminTasksPage,
+  })),
+);
+const AdminTaskDetailPage = lazy(() =>
+  import("./features/admin/pages/admin-task-detail-page").then((m) => ({
+    default: m.AdminTaskDetailPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -150,6 +160,22 @@ export function AppRouter() {
             element={
               <AdminGuard>
                 <SandboxDetailPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/tasks"
+            element={
+              <AdminGuard>
+                <AdminTasksPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/tasks/:id"
+            element={
+              <AdminGuard>
+                <AdminTaskDetailPage />
               </AdminGuard>
             }
           />
