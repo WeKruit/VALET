@@ -215,18 +215,38 @@ export interface GHClearAllSessionsResponse {
 
 // ─── Monitoring Endpoints ───
 
+export interface GHHealthCheck {
+  name: string;
+  status: string;
+  message?: string;
+  latencyMs?: number;
+}
+
 export interface GHDetailedHealth {
   status: string;
-  components?: Record<string, { status: string; message?: string }>;
-  active_workers?: number;
-  uptime_seconds?: number;
+  version?: string;
+  uptime?: number;
+  checks?: GHHealthCheck[];
 }
 
 export interface GHMetrics {
-  jobs_created?: number;
-  jobs_completed?: number;
-  jobs_failed?: number;
-  jobs_active?: number;
-  queue_depth?: number;
-  avg_duration_ms?: number;
+  jobs: {
+    created: number;
+    completed: number;
+    failed: number;
+  };
+  llm: {
+    calls: number;
+  };
+  worker: {
+    activeJobs: number;
+    maxConcurrent: number;
+    totalProcessed: number;
+    queueDepth: number;
+  };
+  api: {
+    totalRequests: number;
+    totalErrors: number;
+  };
+  uptime: number;
 }

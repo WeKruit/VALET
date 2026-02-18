@@ -250,16 +250,29 @@ export const sandboxRouter = s.router(sandboxContract, {
       logger.debug({ sandboxId: params.id }, "GhostHands API unreachable for worker status");
     }
 
-    // Get richer worker data from GH monitoring endpoints (graceful fallback)
-    let activeWorkers: number | null = null;
-    let queueDepth: number | null = null;
+    // Defaults for monitoring data
     let workerOverallStatus: "healthy" | "degraded" | "unhealthy" | "unreachable" = "unreachable";
+    let ghVersion: string | null = null;
+    let ghChecks: Array<{ name: string; status: string; message?: string; latencyMs?: number }> =
+      [];
+    let activeJobs: number | null = null;
+    let maxConcurrent: number | null = null;
+    let totalProcessed: number | null = null;
+    let queueDepth: number | null = null;
+    let jobStats = { created: 0, completed: 0, failed: 0 };
+    let uptime: number | null = null;
 
     if (ghApiStatus !== "unreachable") {
-      // Try detailed health endpoint first
+      // Try detailed health endpoint (/monitoring/health)
       try {
         const detailedHealth = await ghosthandsClient.getDetailedHealth();
-        activeWorkers = detailedHealth.active_workers ?? null;
+        ghVersion = detailedHealth.version ?? null;
+        ghChecks = (detailedHealth.checks ?? []).map((c) => ({
+          name: c.name,
+          status: c.status,
+          ...(c.message ? { message: c.message } : {}),
+          ...(c.latencyMs != null ? { latencyMs: c.latencyMs } : {}),
+        }));
         workerOverallStatus =
           detailedHealth.status === "ok" || detailedHealth.status === "healthy"
             ? "healthy"
@@ -267,7 +280,6 @@ export const sandboxRouter = s.router(sandboxContract, {
               ? "degraded"
               : "unhealthy";
       } catch {
-        // Monitoring endpoint may not be deployed; fall back to basic health
         logger.debug(
           { sandboxId: params.id },
           "GH monitoring/health not available, using basic health",
@@ -275,10 +287,19 @@ export const sandboxRouter = s.router(sandboxContract, {
         workerOverallStatus = ghApiStatus === "healthy" ? "healthy" : "unhealthy";
       }
 
-      // Try metrics endpoint for queue depth
+      // Try metrics endpoint (/monitoring/metrics/json)
       try {
         const metrics = await ghosthandsClient.getMetrics();
-        queueDepth = metrics.queue_depth ?? null;
+        activeJobs = metrics.worker.activeJobs;
+        maxConcurrent = metrics.worker.maxConcurrent;
+        totalProcessed = metrics.worker.totalProcessed;
+        queueDepth = metrics.worker.queueDepth;
+        jobStats = {
+          created: metrics.jobs.created,
+          completed: metrics.jobs.completed,
+          failed: metrics.jobs.failed,
+        };
+        uptime = metrics.uptime;
       } catch {
         logger.debug({ sandboxId: params.id }, "GH monitoring/metrics not available");
       }
@@ -292,8 +313,17 @@ export const sandboxRouter = s.router(sandboxContract, {
       status: 200 as const,
       body: {
         sandboxId: sandbox.id,
-        ghosthandsApi: { status: ghApiStatus },
-        worker: { status: workerOverallStatus, activeWorkers, queueDepth },
+        ghosthandsApi: { status: ghApiStatus, version: ghVersion },
+        worker: {
+          status: workerOverallStatus,
+          activeJobs,
+          maxConcurrent,
+          totalProcessed,
+          queueDepth,
+        },
+        ghChecks,
+        jobStats,
+        uptime,
         activeTasks: activeTasks.map((t) => ({
           taskId: t.id,
           jobUrl: t.jobUrl,

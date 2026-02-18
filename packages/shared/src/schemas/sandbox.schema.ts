@@ -186,16 +186,33 @@ export const adminTriggerTestResponse = z.object({
 // ─── Worker Status ───
 export const workerStatus = z.enum(["healthy", "degraded", "unhealthy", "unreachable"]);
 
+export const ghHealthCheckSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  message: z.string().optional(),
+  latencyMs: z.number().optional(),
+});
+
 export const workerStatusResponse = z.object({
   sandboxId: z.string().uuid(),
   ghosthandsApi: z.object({
     status: z.enum(["healthy", "unhealthy", "unreachable"]),
+    version: z.string().nullable().optional(),
   }),
   worker: z.object({
     status: workerStatus,
-    activeWorkers: z.number().nullable(),
+    activeJobs: z.number().nullable(),
+    maxConcurrent: z.number().nullable(),
+    totalProcessed: z.number().nullable(),
     queueDepth: z.number().nullable(),
   }),
+  ghChecks: z.array(ghHealthCheckSchema),
+  jobStats: z.object({
+    created: z.number(),
+    completed: z.number(),
+    failed: z.number(),
+  }),
+  uptime: z.number().nullable(),
   activeTasks: z.array(
     z.object({
       taskId: z.string().uuid(),
