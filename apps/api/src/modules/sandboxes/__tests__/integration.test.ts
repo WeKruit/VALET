@@ -81,8 +81,8 @@ function makeMockGhosthandsClient() {
 
 const SANDBOX_FIXTURE: SandboxRecord = {
   id: "11111111-1111-1111-1111-111111111111",
-  name: "dev-sandbox-1",
-  environment: "dev",
+  name: "staging-sandbox-1",
+  environment: "staging",
   instanceId: "i-0123456789abcdef0",
   instanceType: "t3.medium",
   publicIp: "34.197.248.80",

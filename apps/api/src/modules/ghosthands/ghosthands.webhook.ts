@@ -146,6 +146,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
       // Map GH interaction types to VALET's schema (e.g. "2fa" → "two_factor")
       const interactionTypeMap: Record<string, string> = {
         "2fa": "two_factor",
+        login: "login_required",
       };
       if (payload.status === "needs_human" && payload.interaction) {
         const mappedType = interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
@@ -196,6 +197,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           totalCostUsd: payload.cost.total_cost_usd,
           actionCount: payload.cost.action_count,
           totalTokens: payload.cost.total_tokens,
+          costBreakdown: (payload.cost_breakdown as Record<string, unknown> | undefined) ?? null,
         });
       }
 
@@ -231,6 +233,12 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           ghJobUpdate.actionCount = payload.cost.action_count;
           ghJobUpdate.totalTokens = payload.cost.total_tokens;
           ghJobUpdate.llmCostCents = Math.round(payload.cost.total_cost_usd * 100);
+          if (payload.cost_breakdown) {
+            ghJobUpdate.metadata = {
+              ...((ghJobUpdate.metadata as Record<string, unknown>) ?? {}),
+              cost_breakdown: payload.cost_breakdown,
+            };
+          }
         }
         if (payload.status === "needs_human" && payload.interaction) {
           const mappedInteractionType =

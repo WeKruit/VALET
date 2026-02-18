@@ -12,7 +12,7 @@
  *   pnpm --filter @valet/web exec playwright test tests/e2e/admin-sandboxes.spec.ts
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 const API_URL = process.env.VITE_API_URL ?? "http://localhost:8000";
 const WEB_URL = process.env.VITE_WEB_URL ?? "http://localhost:5173";
@@ -21,7 +21,7 @@ const WEB_URL = process.env.VITE_WEB_URL ?? "http://localhost:5173";
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function loginAsAdmin(page: import("@playwright/test").Page) {
+async function loginAsAdmin(page: Page) {
   // Navigate to login and authenticate as admin.
   // This assumes the admin user (admin@test.com) exists in the DB
   // and has a valid password or Google OAuth setup.
@@ -31,32 +31,26 @@ async function loginAsAdmin(page: import("@playwright/test").Page) {
   // This is a common pattern for E2E tests that bypass OAuth.
   const adminToken = await getTestToken("admin@test.com", "admin");
 
-  await page.evaluate(
-    (token) => {
-      localStorage.setItem("auth_token", token);
-    },
-    adminToken,
-  );
+  await page.evaluate((token) => {
+    localStorage.setItem("auth_token", token);
+  }, adminToken);
 
   await page.goto(`${WEB_URL}/admin/sandboxes`);
   await page.waitForLoadState("networkidle");
 }
 
-async function loginAsUser(page: import("@playwright/test").Page) {
+async function loginAsUser(page: Page) {
   const userToken = await getTestToken("user@test.com", "user");
 
-  await page.evaluate(
-    (token) => {
-      localStorage.setItem("auth_token", token);
-    },
-    userToken,
-  );
+  await page.evaluate((token) => {
+    localStorage.setItem("auth_token", token);
+  }, userToken);
 
   await page.goto(`${WEB_URL}/admin/sandboxes`);
   await page.waitForLoadState("networkidle");
 }
 
-async function getTestToken(email: string, role: string): Promise<string> {
+async function getTestToken(email: string, _role: string): Promise<string> {
   // Generate a test JWT using the API's login endpoint
   // In a real setup, use the test seed user credentials
   const response = await fetch(`${API_URL}/api/v1/auth/login`, {
@@ -85,14 +79,10 @@ test.describe("Admin Authentication", () => {
   test("admin user can access /admin/sandboxes", async ({ page }) => {
     await loginAsAdmin(page);
     await expect(page).toHaveURL(/\/admin\/sandboxes/);
-    await expect(
-      page.getByRole("heading", { name: /sandbox/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /sandbox/i })).toBeVisible();
   });
 
-  test("regular user is denied access to /admin/sandboxes", async ({
-    page,
-  }) => {
+  test("regular user is denied access to /admin/sandboxes", async ({ page }) => {
     await loginAsUser(page);
     // Should show access denied message
     await expect(page.getByText(/access denied/i)).toBeVisible();
@@ -116,18 +106,18 @@ test.describe("Sandbox List Page", () => {
 
   test("displays sandboxes from database", async ({ page }) => {
     // The seeded sandboxes should appear
-    await expect(page.getByText("dev-sandbox-1")).toBeVisible();
+    await expect(page.getByText("staging-sandbox-2")).toBeVisible();
     await expect(page.getByText("staging-sandbox-1")).toBeVisible();
     await expect(page.getByText("prod-sandbox-1")).toBeVisible();
   });
 
   test("environment filter works", async ({ page }) => {
-    // Click environment filter and select "dev"
+    // Click environment filter and select "staging"
     const envFilter = page.getByRole("combobox", { name: /environment/i });
     if (await envFilter.isVisible()) {
-      await envFilter.selectOption("dev");
+      await envFilter.selectOption("staging");
       await page.waitForLoadState("networkidle");
-      await expect(page.getByText("dev-sandbox-1")).toBeVisible();
+      await expect(page.getByText("staging-sandbox-2")).toBeVisible();
     }
   });
 
@@ -141,9 +131,7 @@ test.describe("Sandbox List Page", () => {
   });
 
   test("create button is visible", async ({ page }) => {
-    await expect(
-      page.getByRole("button", { name: /create|add|new/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /create|add|new/i })).toBeVisible();
   });
 });
 
@@ -188,18 +176,18 @@ test.describe("Sandbox Detail Page", () => {
   });
 
   test("clicking a sandbox shows detail view", async ({ page }) => {
-    const sandboxLink = page.getByText("dev-sandbox-1");
+    const sandboxLink = page.getByText("staging-sandbox-2");
     await sandboxLink.click();
 
     await page.waitForLoadState("networkidle");
 
     // Detail page should show sandbox info
-    await expect(page.getByText("dev-sandbox-1")).toBeVisible();
+    await expect(page.getByText("staging-sandbox-2")).toBeVisible();
     await expect(page.getByText("t3.medium")).toBeVisible();
   });
 
   test("health check button triggers a check", async ({ page }) => {
-    const sandboxLink = page.getByText("dev-sandbox-1");
+    const sandboxLink = page.getByText("staging-sandbox-2");
     await sandboxLink.click();
     await page.waitForLoadState("networkidle");
 
@@ -222,15 +210,19 @@ test.describe("Error Handling", () => {
   test("shows error for non-existent sandbox", async ({ page }) => {
     await loginAsAdmin(page);
 
-    await page.goto(
-      `${WEB_URL}/admin/sandboxes/00000000-0000-0000-0000-000000000000`,
-    );
+    await page.goto(`${WEB_URL}/admin/sandboxes/00000000-0000-0000-0000-000000000000`);
     await page.waitForLoadState("networkidle");
 
     // Should show not found or error message
     const hasError =
-      (await page.getByText(/not found/i).isVisible().catch(() => false)) ||
-      (await page.getByText(/error/i).isVisible().catch(() => false));
+      (await page
+        .getByText(/not found/i)
+        .isVisible()
+        .catch(() => false)) ||
+      (await page
+        .getByText(/error/i)
+        .isVisible()
+        .catch(() => false));
     expect(hasError).toBeTruthy();
   });
 });

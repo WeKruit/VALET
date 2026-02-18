@@ -25,8 +25,7 @@ import { createDatabase } from "./client.js";
 import { users } from "./schema/users.js";
 import { sandboxes } from "./schema/sandboxes.js";
 
-const connectionString =
-  process.env.DATABASE_DIRECT_URL ?? process.env.DATABASE_URL;
+const connectionString = process.env.DATABASE_DIRECT_URL ?? process.env.DATABASE_URL;
 if (!connectionString) {
   console.error("DATABASE_URL or DATABASE_DIRECT_URL must be set");
   process.exit(1);
@@ -106,9 +105,9 @@ async function seed() {
 
   const sandboxData = [
     {
-      name: "dev-sandbox-1",
-      environment: "dev" as const,
-      instanceId: "i-test-dev-001",
+      name: "staging-sandbox-2",
+      environment: "staging" as const,
+      instanceId: "i-test-stg-002",
       instanceType: "t3.medium",
       publicIp: "10.0.0.1",
       status: "active" as const,
@@ -162,10 +161,7 @@ async function seed() {
         .where(eq(sandboxes.id, existing[0].id));
       console.log(`  Updated existing sandbox: ${data.name} (${existing[0].id})`);
     } else {
-      const created = await db
-        .insert(sandboxes)
-        .values(data)
-        .returning({ id: sandboxes.id });
+      const created = await db.insert(sandboxes).values(data).returning({ id: sandboxes.id });
       console.log(`  Created sandbox: ${data.name} (${created[0]!.id})`);
     }
   }

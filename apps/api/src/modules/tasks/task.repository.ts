@@ -244,7 +244,12 @@ export class TaskRepository {
 
   async updateLlmUsage(
     id: string,
-    data: { totalCostUsd: number; actionCount: number; totalTokens: number },
+    data: {
+      totalCostUsd: number;
+      actionCount: number;
+      totalTokens: number;
+      costBreakdown?: Record<string, unknown> | null;
+    },
   ) {
     await this.db
       .update(tasks)
@@ -253,6 +258,7 @@ export class TaskRepository {
           totalCostUsd: data.totalCostUsd,
           actionCount: data.actionCount,
           totalTokens: data.totalTokens,
+          ...(data.costBreakdown ? { costBreakdown: data.costBreakdown } : {}),
         },
         updatedAt: new Date(),
       })

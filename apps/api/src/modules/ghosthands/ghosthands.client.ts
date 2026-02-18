@@ -13,10 +13,13 @@ import type {
   GHClearAllSessionsResponse,
   GHDetailedHealth,
   GHMetrics,
+  GHWorkerStatus,
+  GHWorkerHealth,
 } from "./ghosthands.types.js";
 
 export class GhostHandsClient {
   private baseUrl: string;
+  private workerBaseUrl: string;
   private serviceKey: string;
   private logger: FastifyBaseLogger;
 
@@ -30,6 +33,7 @@ export class GhostHandsClient {
     logger: FastifyBaseLogger;
   }) {
     this.baseUrl = ghosthandsApiUrl.replace(/\/+$/, "");
+    this.workerBaseUrl = ghosthandsApiUrl.replace(/:\d+\/?$/, "").replace(/\/+$/, "") + ":3101";
     this.serviceKey = ghosthandsServiceKey;
     this.logger = logger;
   }
@@ -68,6 +72,21 @@ export class GhostHandsClient {
       throw AppError.internal(`GhostHands API error: ${res.status} ${res.statusText}`);
     }
 
+    return (await res.json()) as T;
+  }
+
+  private async workerRequest<T>(method: string, path: string, timeoutMs = 5_000): Promise<T> {
+    const url = `${this.workerBaseUrl}${path}`;
+    this.logger.debug({ method, url }, "GhostHands worker request");
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw AppError.internal(`GhostHands worker API error: ${res.status} ${text}`);
+    }
     return (await res.json()) as T;
   }
 
@@ -143,5 +162,17 @@ export class GhostHandsClient {
       "DELETE",
       `/api/v1/gh/sessions?user_id=${encodeURIComponent(userId)}&all=true`,
     );
+  }
+
+  async getWorkerStatus(): Promise<GHWorkerStatus> {
+    return this.workerRequest<GHWorkerStatus>("GET", "/worker/status");
+  }
+
+  async getWorkerHealth(): Promise<GHWorkerHealth> {
+    return this.workerRequest<GHWorkerHealth>("GET", "/worker/health");
+  }
+
+  async drainWorker(): Promise<void> {
+    await this.workerRequest<unknown>("POST", "/worker/drain");
   }
 }

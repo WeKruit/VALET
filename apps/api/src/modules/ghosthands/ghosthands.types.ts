@@ -140,6 +140,18 @@ export interface GHCallbackCost {
   total_tokens: number;
 }
 
+export interface GHCallbackCostBreakdown {
+  total_cost_usd: number;
+  action_count: number;
+  total_tokens: number;
+  cookbook_steps: number;
+  magnitude_steps: number;
+  cookbook_cost_usd: number;
+  magnitude_cost_usd: number;
+  image_cost_usd: number;
+  reasoning_cost_usd: number;
+}
+
 /**
  * Actual payload sent by GhostHands callbackNotifier.
  * Differs from original spec — uses flat fields instead of nested objects.
@@ -159,6 +171,7 @@ export interface GHCallbackPayload {
   error_message?: string;
   // Cost tracking
   cost?: GHCallbackCost;
+  cost_breakdown?: GHCallbackCostBreakdown;
   // HITL interaction data (when status is "needs_human")
   interaction?: GHInteractionData;
   // Legacy format support (if GH is updated to match original spec)
@@ -167,7 +180,7 @@ export interface GHCallbackPayload {
   timestamps?: GHJobTimestamps;
 }
 
-export type GHInteractionType = "captcha" | "2fa" | "login_required" | "bot_check";
+export type GHInteractionType = "captcha" | "2fa" | "login" | "bot_check";
 
 export interface GHInteractionData {
   type: GHInteractionType;
@@ -249,4 +262,18 @@ export interface GHMetrics {
     totalErrors: number;
   };
   uptime: number;
+}
+
+// ─── Worker Status Endpoints (port 3101) ───
+
+export interface GHWorkerStatus {
+  worker_id: string;
+  active_jobs: number;
+  is_draining: boolean;
+  uptime_ms: number;
+}
+
+export interface GHWorkerHealth {
+  status: "idle" | "busy" | "draining";
+  deploy_safe: boolean;
 }

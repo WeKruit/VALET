@@ -51,4 +51,36 @@ export async function ghosthandsMonitoringRoutes(fastify: FastifyInstance) {
       }
     },
   );
+
+  // Proxy GH worker /worker/status (port 3101)
+  fastify.get(
+    "/api/v1/admin/monitoring/worker-status",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      await adminOnly(request);
+      const { ghosthandsClient } = request.diScope.cradle;
+      try {
+        const data = await ghosthandsClient.getWorkerStatus();
+        return reply.send(data);
+      } catch (err) {
+        request.log.error({ err }, "Failed to fetch GH worker status");
+        return reply.status(502).send({ error: "GhostHands worker unreachable" });
+      }
+    },
+  );
+
+  // Proxy GH worker /worker/health (port 3101)
+  fastify.get(
+    "/api/v1/admin/monitoring/worker-health",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      await adminOnly(request);
+      const { ghosthandsClient } = request.diScope.cradle;
+      try {
+        const data = await ghosthandsClient.getWorkerHealth();
+        return reply.send(data);
+      } catch (err) {
+        request.log.error({ err }, "Failed to fetch GH worker health");
+        return reply.status(502).send({ error: "GhostHands worker unreachable" });
+      }
+    },
+  );
 }
