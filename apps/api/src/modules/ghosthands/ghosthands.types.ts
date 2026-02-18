@@ -185,7 +185,13 @@ export interface GHCallbackPayload {
   timestamps?: GHJobTimestamps;
 }
 
-export type GHInteractionType = "captcha" | "2fa" | "login" | "bot_check";
+export type GHInteractionType =
+  | "captcha"
+  | "2fa"
+  | "login"
+  | "bot_check"
+  | "rate_limited"
+  | "verification";
 
 export interface GHInteractionData {
   type: GHInteractionType;
@@ -194,11 +200,19 @@ export interface GHInteractionData {
   paused_at?: string;
   timeout_seconds?: number;
   message?: string;
+  description?: string;
+  metadata?: {
+    blocker_confidence?: number;
+    captcha_type?: string;
+    detection_method?: string;
+  };
 }
 
 export interface GHResumeJobParams {
   resolved_by?: string;
   notes?: string;
+  resolution_type?: string;
+  resolution_data?: Record<string, unknown>;
 }
 
 export interface GHResumeJobResponse {

@@ -66,6 +66,8 @@ export const taskRouter = s.router(taskContract, {
       request.userId,
       body.resolvedBy,
       body.notes,
+      body.resolutionType,
+      body.resolutionData,
     );
     return { status: 200 as const, body: result };
   },
