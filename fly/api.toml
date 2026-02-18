@@ -15,6 +15,7 @@ kill_timeout = 30
 # Requires DATABASE_DIRECT_URL (session pooler) set as a Fly secret.
 [deploy]
   release_command = "node packages/db/dist/migrate.js"
+  release_command_timeout = "300s"
 
 [env]
   NODE_ENV = "production"

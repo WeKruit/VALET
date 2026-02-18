@@ -7,16 +7,14 @@ import { dirname, resolve } from "node:path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const connectionString =
-  process.env["DATABASE_DIRECT_URL"] ??
-  process.env["DATABASE_URL"];
+const connectionString = process.env["DATABASE_DIRECT_URL"] ?? process.env["DATABASE_URL"];
 
 if (!connectionString) {
   console.error("DATABASE_DIRECT_URL or DATABASE_URL must be set");
   process.exit(1);
 }
 
-const sql = postgres(connectionString, { max: 1 });
+const sql = postgres(connectionString, { max: 1, connect_timeout: 30, idle_timeout: 30 });
 const db = drizzle(sql);
 
 const migrationsFolder = resolve(__dirname, "../drizzle");
