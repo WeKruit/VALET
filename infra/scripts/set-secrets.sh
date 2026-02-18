@@ -174,10 +174,6 @@ collect() {
 echo ""
 echo -e "  ${BOLD}--- Required Secrets ---${NC}"
 
-collect "HATCHET_CLIENT_TOKEN" \
-    "Hatchet SDK token. Get from Hatchet dashboard > Settings > API Tokens" \
-    "yes"
-
 collect "DATABASE_URL" \
     "PostgreSQL connection string (Supabase transaction pooler, port 6543)" \
     "yes"
@@ -238,10 +234,7 @@ ENV_CONTENT="# =================================================================
 NODE_ENV=production
 "
 
-# Add Hatchet config (preserve existing non-prompted values)
-HATCHET_TLS=$(get_current "HATCHET_CLIENT_TLS_STRATEGY")
-HATCHET_TLS_NAME=$(get_current "HATCHET_CLIENT_TLS_SERVER_NAME")
-HATCHET_HOST=$(get_current "HATCHET_CLIENT_HOST_PORT")
+# Preserve existing non-prompted config values
 ADSPOWER_URL=$(get_current "ADSPOWER_API_URL")
 S3_REGION=$(get_current "S3_REGION")
 S3_BUCKET_RESUMES=$(get_current "S3_BUCKET_RESUMES")
@@ -249,11 +242,6 @@ S3_BUCKET_SCREENSHOTS=$(get_current "S3_BUCKET_SCREENSHOTS")
 S3_BUCKET_ARTIFACTS=$(get_current "S3_BUCKET_ARTIFACTS")
 
 ENV_CONTENT+="
-# ─── Hatchet ───
-HATCHET_CLIENT_TLS_STRATEGY=${HATCHET_TLS:-tls}
-HATCHET_CLIENT_TLS_SERVER_NAME=${HATCHET_TLS_NAME:-valet-hatchet-stg.fly.dev}
-HATCHET_CLIENT_HOST_PORT=${HATCHET_HOST:-valet-hatchet-stg.fly.dev:443}
-
 # ─── AdsPower ───
 ADSPOWER_API_URL=${ADSPOWER_URL:-http://localhost:50325}
 
