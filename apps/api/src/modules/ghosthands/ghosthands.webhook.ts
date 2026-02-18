@@ -252,6 +252,9 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           ghJobUpdate.interactionData = null;
           ghJobUpdate.pausedAt = null;
         }
+        if (payload.worker_id) {
+          ghJobUpdate.workerId = payload.worker_id;
+        }
       }
 
       // Attempt with one immediate retry on failure

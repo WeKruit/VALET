@@ -13,7 +13,7 @@ kill_timeout = 60
 [env]
   NODE_ENV = "production"
 
-# Worker has no HTTP service - it connects to Hatchet via gRPC
+# Worker has no HTTP service - it connects to GhostHands API
 # Use a process group instead
 [processes]
   worker = "node apps/worker/dist/main.js"

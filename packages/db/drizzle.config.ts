@@ -33,8 +33,7 @@ export default defineConfig({
       process.env["DATABASE_URL"] ??
       "postgres://wekruit:wekruit_dev@localhost:5432/wekruit",
   },
-  // Only manage VALET tables — Hatchet also creates tables in the public schema
-  // and drizzle-kit chokes on their partition tables (null identity names).
+  // Only manage VALET tables
   tablesFilter: [
     "users",
     "resumes",

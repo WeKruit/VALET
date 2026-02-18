@@ -543,18 +543,6 @@ export function SandboxDetailPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span>Hatchet</span>
-                    <span
-                      className={
-                        metrics.hatchetConnected
-                          ? "text-[var(--wk-status-success)]"
-                          : "text-[var(--wk-status-error)]"
-                      }
-                    >
-                      {metrics.hatchetConnected ? "Connected" : "Disconnected"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
                     <span>Active Profiles</span>
                     <span className="font-medium">{metrics.activeProfiles}</span>
                   </div>

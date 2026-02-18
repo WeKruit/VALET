@@ -8,7 +8,6 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32),
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
-  HATCHET_CLIENT_TOKEN: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().startsWith("sk-ant-"),
   OPENAI_API_KEY: z.string().startsWith("sk-"),
   S3_ENDPOINT: z.string().url(),
@@ -23,10 +22,7 @@ const envSchema = z.object({
 export function validateEnv() {
   const result = envSchema.safeParse(process.env);
   if (!result.success) {
-    console.error(
-      "Invalid environment variables:",
-      result.error.flatten().fieldErrors,
-    );
+    console.error("Invalid environment variables:", result.error.flatten().fieldErrors);
     process.exit(1);
   }
   return result.data;

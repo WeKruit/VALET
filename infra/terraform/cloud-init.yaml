@@ -148,14 +148,8 @@ write_files:
   # --- Environment template for the Valet worker process ---
   - path: /opt/valet/.env.template
     content: |
-      # AdsPower (local — runs on the same instance)
-      ADSPOWER_API_URL=http://127.0.0.1:50325
-
-      # Hatchet (remote — fill these in)
-      HATCHET_CLIENT_TOKEN=
-      HATCHET_CLIENT_TLS_STRATEGY=tls
-      HATCHET_CLIENT_TLS_SERVER_NAME=valet-hatchet-stg.fly.dev
-      HATCHET_CLIENT_HOST_PORT=valet-hatchet-stg.fly.dev:443
+      # GhostHands (local — runs on the same instance)
+      GHOSTHANDS_API_URL=http://127.0.0.1:3100
 
       # Database (remote — fill in)
       DATABASE_URL=

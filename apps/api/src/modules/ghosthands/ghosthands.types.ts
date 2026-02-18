@@ -40,6 +40,8 @@ export interface GHResume {
   storage_path: string;
 }
 
+export type GHWorkerAffinity = "strict" | "preferred" | "any";
+
 export interface GHSubmitApplicationParams {
   valet_task_id: string;
   valet_user_id: string;
@@ -55,6 +57,7 @@ export interface GHSubmitApplicationParams {
   max_retries?: number;
   idempotency_key?: string;
   target_worker_id?: string | null;
+  worker_affinity?: GHWorkerAffinity;
 }
 
 export interface GHSubmitApplicationResponse {
@@ -109,6 +112,7 @@ export interface GHSubmitGenericTaskParams {
   max_retries?: number;
   idempotency_key?: string;
   target_worker_id?: string | null;
+  worker_affinity?: GHWorkerAffinity;
 }
 
 export interface GHSubmitGenericTaskResponse {
@@ -160,6 +164,7 @@ export interface GHCallbackPayload {
   job_id: string;
   valet_task_id: string | null;
   status: "running" | "completed" | "failed" | "cancelled" | "needs_human" | "resumed";
+  worker_id?: string;
   completed_at?: string;
   progress?: number;
   // Success fields (flat, not nested)
@@ -276,4 +281,39 @@ export interface GHWorkerStatus {
 export interface GHWorkerHealth {
   status: "idle" | "busy" | "draining";
   deploy_safe: boolean;
+}
+
+// ─── Worker Fleet Monitoring (port 3100) ───
+
+export interface GHWorkerRegistryEntry {
+  worker_id: string;
+  status: "active" | "draining" | "offline";
+  target_worker_id: string | null;
+  ec2_instance_id: string | null;
+  ec2_ip: string | null;
+  current_job_id: string | null;
+  registered_at: string;
+  last_heartbeat: string;
+  jobs_completed: number;
+  jobs_failed: number;
+  uptime_seconds?: number;
+}
+
+export interface GHWorkerFleetResponse {
+  workers: GHWorkerRegistryEntry[];
+}
+
+// ─── Worker Deregistration ───
+
+export interface GHDeregisterWorkerParams {
+  target_worker_id: string;
+  reason: string;
+  cancel_active_jobs?: boolean;
+  drain_timeout_seconds?: number;
+}
+
+export interface GHDeregisterWorkerResponse {
+  deregistered: string[];
+  cancelled_jobs: string[];
+  reason: string;
 }

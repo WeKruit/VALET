@@ -137,7 +137,6 @@ export const sandboxMetricsResponse = z.object({
   diskTotalGb: z.number().nullable(),
   activeProfiles: z.number().int(),
   adspowerStatus: z.string(),
-  hatchetConnected: z.boolean(),
   uptime: z.number().nullable(),
 });
 

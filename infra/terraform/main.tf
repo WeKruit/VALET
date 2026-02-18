@@ -126,7 +126,7 @@ resource "aws_security_group" "valet_worker" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # All outbound traffic allowed — instance needs to reach Hatchet,
+  # All outbound traffic allowed — instance needs to reach
   # Supabase, Upstash, and external job-application sites
   egress {
     description = "All outbound"

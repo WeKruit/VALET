@@ -83,4 +83,46 @@ export async function ghosthandsMonitoringRoutes(fastify: FastifyInstance) {
       }
     },
   );
+
+  // Proxy GH /monitoring/workers (worker fleet)
+  fastify.get(
+    "/api/v1/admin/monitoring/workers",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      await adminOnly(request);
+      const { ghosthandsClient } = request.diScope.cradle;
+      try {
+        const data = await ghosthandsClient.getWorkerFleet();
+        return reply.send(data);
+      } catch (err) {
+        request.log.error({ err }, "Failed to fetch GH worker fleet");
+        return reply.status(502).send({ error: "GhostHands API unreachable" });
+      }
+    },
+  );
+
+  // Proxy GH worker deregister
+  fastify.post(
+    "/api/v1/admin/monitoring/workers/deregister",
+    async (
+      request: FastifyRequest<{
+        Body: {
+          target_worker_id: string;
+          reason: string;
+          cancel_active_jobs?: boolean;
+          drain_timeout_seconds?: number;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      await adminOnly(request);
+      const { ghosthandsClient } = request.diScope.cradle;
+      try {
+        const data = await ghosthandsClient.deregisterWorker(request.body);
+        return reply.send(data);
+      } catch (err) {
+        request.log.error({ err }, "Failed to deregister GH worker");
+        return reply.status(502).send({ error: "GhostHands API unreachable" });
+      }
+    },
+  );
 }

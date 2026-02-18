@@ -346,7 +346,9 @@ export class TaskService {
         callback_url: callbackUrl,
         quality: body.mode === "autopilot" ? "fast" : "thorough",
         max_retries: 1,
-        ...(body.targetWorkerId ? { target_worker_id: body.targetWorkerId } : {}),
+        ...(body.targetWorkerId
+          ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }
+          : {}),
       });
 
       // Store the GhostHands job ID in workflowRunId field
@@ -461,6 +463,7 @@ export class TaskService {
         callback_url: callbackUrl,
         max_retries: 1,
         target_worker_id: body.targetWorkerId,
+        worker_affinity: "strict",
       });
 
       await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);

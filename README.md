@@ -8,20 +8,19 @@ AI-powered job application system with dual-mode operation: **Copilot** (human r
 
 ```bash
 cp .env.example .env              # Configure environment variables
-./scripts/setup-dev.sh            # Start infrastructure (Postgres, Redis, Hatchet, MinIO)
+./scripts/setup-dev.sh            # Start infrastructure (Postgres, Redis, MinIO)
 pnpm install                      # Install all workspace dependencies
 pnpm db:migrate                   # Run database migrations
 pnpm db:seed                      # Load development seed data
 pnpm dev                          # Start all apps with hot-reload
 ```
 
-| Service          | URL                          |
-|------------------|------------------------------|
-| Dashboard        | http://localhost:5173        |
-| API              | http://localhost:8000        |
-| API Docs         | http://localhost:8000/api/docs |
-| Hatchet UI       | http://localhost:8888        |
-| MinIO Console    | http://localhost:9001        |
+| Service       | URL                            |
+| ------------- | ------------------------------ |
+| Dashboard     | http://localhost:5173          |
+| API           | http://localhost:8000          |
+| API Docs      | http://localhost:8000/api/docs |
+| MinIO Console | http://localhost:9001          |
 
 ## Architecture
 
@@ -30,7 +29,7 @@ wekruit-valet/
 ├── apps/
 │   ├── web/              @valet/web       React + Vite dashboard (SPA)
 │   ├── api/              @valet/api       Fastify REST API + WebSocket
-│   └── worker/           @valet/worker    Hatchet background worker
+│   └── worker/           @valet/worker    GhostHands browser automation worker
 ├── packages/
 │   ├── shared/           @valet/shared    Zod schemas, types, constants, errors
 │   ├── contracts/        @valet/contracts ts-rest API contract definitions
@@ -104,26 +103,25 @@ Fastify 5.x with ts-rest router integration, @fastify/awilix DI, JWT authenticat
 
 ### apps/worker
 
-Hatchet TypeScript SDK worker for durable workflow execution. Handles job application workflows with pause/resume for human-in-the-loop review. Stagehand browser automation interfaces are stubbed for Sprint 0-1.
+GhostHands browser automation worker. Handles job application workflows with pause/resume for human-in-the-loop review via the GhostHands API running on EC2 instances.
 
 ## Environment Variables
 
 Copy `.env.example` to `.env` and configure. Required variables:
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection for pub/sub and queues |
-| `JWT_SECRET` | JWT signing secret (min 32 chars) |
-| `JWT_REFRESH_SECRET` | Refresh token signing secret |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `HATCHET_CLIENT_TOKEN` | Hatchet SDK token (from dashboard) |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `S3_ENDPOINT` | S3-compatible endpoint (MinIO in dev) |
-| `S3_ACCESS_KEY` | S3 access key |
-| `S3_SECRET_KEY` | S3 secret key |
+| Variable               | Description                             |
+| ---------------------- | --------------------------------------- |
+| `DATABASE_URL`         | PostgreSQL connection string            |
+| `REDIS_URL`            | Redis connection for pub/sub and queues |
+| `JWT_SECRET`           | JWT signing secret (min 32 chars)       |
+| `JWT_REFRESH_SECRET`   | Refresh token signing secret            |
+| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                  |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret              |
+| `ANTHROPIC_API_KEY`    | Anthropic API key                       |
+| `OPENAI_API_KEY`       | OpenAI API key                          |
+| `S3_ENDPOINT`          | S3-compatible endpoint (MinIO in dev)   |
+| `S3_ACCESS_KEY`        | S3 access key                           |
+| `S3_SECRET_KEY`        | S3 secret key                           |
 
 See `.env.example` for the full list with defaults.
 
@@ -146,6 +144,7 @@ fix/S1-05-websocket-reconnect
 ### CI/CD
 
 GitHub Actions runs on every PR:
+
 - `pnpm lint` -- ESLint + Prettier
 - `pnpm typecheck` -- TypeScript strict mode
 - `pnpm test` -- Vitest across all workspaces
@@ -166,36 +165,36 @@ pnpm --filter @valet/db db:studio  # Open Drizzle Studio for database inspection
 
 WeKruit espresso theme applied via Tailwind CSS custom properties:
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| Heading font | Halant (serif) | h1-h4, modal titles |
-| Body font | Geist Sans | Body text, labels, buttons |
-| Mono font | Geist Mono | Code, technical values |
-| Copilot color | `#1E40AF` | Copilot mode indicators |
-| Autopilot color | `#7C3AED` | Autopilot mode indicators |
+| Token           | Value          | Usage                      |
+| --------------- | -------------- | -------------------------- |
+| Heading font    | Halant (serif) | h1-h4, modal titles        |
+| Body font       | Geist Sans     | Body text, labels, buttons |
+| Mono font       | Geist Mono     | Code, technical values     |
+| Copilot color   | `#1E40AF`      | Copilot mode indicators    |
+| Autopilot color | `#7C3AED`      | Autopilot mode indicators  |
 
 Dark mode via `[data-theme="dark"]` attribute on `<html>`. CSS custom properties redefine automatically.
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Language | TypeScript (end-to-end) |
-| Monorepo | Turborepo + pnpm workspaces |
-| Frontend | React 18 + Vite + shadcn/ui |
-| Styling | Tailwind CSS 3 |
-| Server State | React Query (via ts-rest) |
-| Client State | Zustand |
-| API Framework | Fastify 5.x |
-| API Contracts | ts-rest |
-| Validation | Zod |
-| ORM | Drizzle ORM |
-| Database | PostgreSQL 16 |
-| Cache / Queue | Redis 7 |
-| Orchestration | Hatchet (TypeScript SDK) |
-| Auth | Google OAuth 2.0 + JWT |
-| Object Storage | MinIO (dev) / S3 (prod) |
-| LLM Providers | Anthropic + OpenAI |
-| CI/CD | GitHub Actions |
-| Testing | Vitest + Playwright |
-| Linting | ESLint 9 (flat config) + Prettier |
+| Layer              | Technology                        |
+| ------------------ | --------------------------------- |
+| Language           | TypeScript (end-to-end)           |
+| Monorepo           | Turborepo + pnpm workspaces       |
+| Frontend           | React 18 + Vite + shadcn/ui       |
+| Styling            | Tailwind CSS 3                    |
+| Server State       | React Query (via ts-rest)         |
+| Client State       | Zustand                           |
+| API Framework      | Fastify 5.x                       |
+| API Contracts      | ts-rest                           |
+| Validation         | Zod                               |
+| ORM                | Drizzle ORM                       |
+| Database           | PostgreSQL 16                     |
+| Cache / Queue      | Redis 7                           |
+| Browser Automation | GhostHands (EC2)                  |
+| Auth               | Google OAuth 2.0 + JWT            |
+| Object Storage     | MinIO (dev) / S3 (prod)           |
+| LLM Providers      | Anthropic + OpenAI                |
+| CI/CD              | GitHub Actions                    |
+| Testing            | Vitest + Playwright               |
+| Linting            | ESLint 9 (flat config) + Prettier |

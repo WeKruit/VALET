@@ -23,7 +23,7 @@ packages/db        - Drizzle ORM, migrations, seed
 packages/ui        - Radix + Tailwind component library
 packages/llm       - LLM provider abstraction (Anthropic, OpenAI)
 apps/api           - Fastify API server (port 8000)
-apps/worker        - Hatchet workflow worker (browser automation)
+apps/worker        - GhostHands browser automation worker
 apps/web           - React SPA (Vite + TanStack Router, port 5173)
 ```
 
@@ -31,15 +31,14 @@ apps/web           - React SPA (Vite + TanStack Router, port 5173)
 
 All services are cloud-hosted. No Docker needed for local development.
 
-| Service      | Provider          | Dashboard                                                    |
-|--------------|-------------------|--------------------------------------------------------------|
-| Database     | Supabase Postgres | https://supabase.com/dashboard/project/unistzvhgvgjyzotwzxr |
-| Redis        | Upstash           | https://console.upstash.com                                  |
-| Object Store | Supabase Storage  | Supabase Dashboard → Storage                                 |
-| Auth         | Google OAuth 2.0  | https://console.cloud.google.com → Credentials               |
-| Workflows    | Hatchet (Fly.io)  | https://valet-hatchet-stg.fly.dev                            |
-| Message Queue| CloudAMQP         | https://customer.cloudamqp.com                               |
-| Hosting      | Fly.io            | https://fly.io/dashboard                                     |
+| Service       | Provider          | Dashboard                                                   |
+| ------------- | ----------------- | ----------------------------------------------------------- |
+| Database      | Supabase Postgres | https://supabase.com/dashboard/project/unistzvhgvgjyzotwzxr |
+| Redis         | Upstash           | https://console.upstash.com                                 |
+| Object Store  | Supabase Storage  | Supabase Dashboard → Storage                                |
+| Auth          | Google OAuth 2.0  | https://console.cloud.google.com → Credentials              |
+| Message Queue | CloudAMQP         | https://customer.cloudamqp.com                              |
+| Hosting       | Fly.io            | https://fly.io/dashboard                                    |
 
 ### Database Connections
 
@@ -88,7 +87,7 @@ hotfix/*    ← urgent prod fixes (branch from main)
 ### Workflow
 
 1. **New feature**: `git checkout -b feature/my-feature staging`
-2. **Open PR**: feature/* → staging (CI runs lint + typecheck + test + build)
+2. **Open PR**: feature/\* → staging (CI runs lint + typecheck + test + build)
 3. **After merge to staging**: auto-deploys to staging environment
 4. **Promote to production**: PR staging → main (requires approval)
 5. **Hotfix**: `git checkout -b hotfix/fix-name main`, PR → main, then backport to staging
@@ -100,11 +99,11 @@ hotfix/*    ← urgent prod fixes (branch from main)
 
 ## Environments
 
-| Env        | Branch    | API URL                           | Web URL                          | Hatchet URL                          |
-|------------|-----------|-----------------------------------|----------------------------------|--------------------------------------|
-| Local      | any       | http://localhost:8000             | http://localhost:5173            | https://valet-hatchet-dev.fly.dev    |
-| Staging    | staging   | https://valet-api-stg.fly.dev     | https://valet-web-stg.fly.dev    | https://valet-hatchet-stg.fly.dev    |
-| Production | main      | https://valet-api.fly.dev         | https://valet-web.fly.dev        | https://valet-hatchet-prod.fly.dev   |
+| Env        | Branch  | API URL                       | Web URL                       |
+| ---------- | ------- | ----------------------------- | ----------------------------- |
+| Local      | any     | http://localhost:8000         | http://localhost:5173         |
+| Staging    | staging | https://valet-api-stg.fly.dev | https://valet-web-stg.fly.dev |
+| Production | main    | https://valet-api.fly.dev     | https://valet-web.fly.dev     |
 
 ### Google OAuth Redirect URIs
 
@@ -130,11 +129,11 @@ The frontend then exchanges the code with the API via `POST /api/v1/auth/google`
 
 ## Secrets Management
 
-| Where          | What                                                | How                                              |
-|----------------|-----------------------------------------------------|--------------------------------------------------|
-| Local          | All env vars                                        | `.env` file (gitignored)                         |
-| Fly.io apps    | DATABASE_URL, REDIS_URL, JWT_SECRET, API keys, etc. | `fly secrets set -a <app-name> KEY=value`        |
-| GitHub Actions | FLY_API_TOKEN, DATABASE_DIRECT_URL                  | Settings → Secrets and variables → Actions        |
+| Where          | What                                                | How                                        |
+| -------------- | --------------------------------------------------- | ------------------------------------------ |
+| Local          | All env vars                                        | `.env` file (gitignored)                   |
+| Fly.io apps    | DATABASE_URL, REDIS_URL, JWT_SECRET, API keys, etc. | `fly secrets set -a <app-name> KEY=value`  |
+| GitHub Actions | FLY_API_TOKEN, DATABASE_DIRECT_URL                  | Settings → Secrets and variables → Actions |
 
 ### Setting Fly.io Secrets
 
@@ -156,7 +155,6 @@ Copy the toml to the repo root before deploying.
 
 ```bash
 # Staging
-fly deploy --config fly/hatchet.toml --app valet-hatchet-stg --remote-only
 cp fly/api.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-api-stg --remote-only
 cp fly/worker.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-worker-stg --remote-only
 cp fly/web.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-web-stg --remote-only \
@@ -165,7 +163,6 @@ cp fly/web.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app val
   --build-arg VITE_GOOGLE_CLIENT_ID=108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com
 
 # Production
-fly deploy --config fly/hatchet.toml --app valet-hatchet-prod --remote-only
 cp fly/api.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-api --remote-only
 cp fly/worker.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-worker --remote-only
 cp fly/web.toml fly-deploy.toml && fly deploy --config fly-deploy.toml --app valet-web --remote-only \
@@ -203,7 +200,6 @@ Migrations run automatically during every API deploy via Fly.io's `release_comma
 
 - **ts-rest React Query v5**: Use `initTsrReactQuery` from `@ts-rest/react-query/v5` with single options object `{ queryKey, queryData, ...options }`
 - **DI Container**: Fastify + awilix, module augmentation uses `AppCradle` pattern (not recursive `Cradle extends Cradle`)
-- **Hatchet v1 SDK**: `workflow.task()` / `workflow.durableTask()` builder pattern with `Context<I>` / `DurableContext<I>`
 - **TypeScript strict**: `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, literal union types from Zod schemas
 - **Database**: Supabase Postgres with dual connections (pooler + direct)
 - **Storage**: Supabase Storage S3 protocol (not MinIO/R2)

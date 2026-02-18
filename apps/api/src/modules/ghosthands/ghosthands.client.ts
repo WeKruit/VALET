@@ -15,6 +15,9 @@ import type {
   GHMetrics,
   GHWorkerStatus,
   GHWorkerHealth,
+  GHWorkerFleetResponse,
+  GHDeregisterWorkerParams,
+  GHDeregisterWorkerResponse,
 } from "./ghosthands.types.js";
 
 export class GhostHandsClient {
@@ -174,5 +177,21 @@ export class GhostHandsClient {
 
   async drainWorker(): Promise<void> {
     await this.workerRequest<unknown>("POST", "/worker/drain");
+  }
+
+  async getWorkerFleet(): Promise<GHWorkerFleetResponse> {
+    return this.request<GHWorkerFleetResponse>("GET", "/monitoring/workers", undefined, 10_000);
+  }
+
+  async deregisterWorker(params: GHDeregisterWorkerParams): Promise<GHDeregisterWorkerResponse> {
+    this.logger.info(
+      { targetWorkerId: params.target_worker_id, reason: params.reason },
+      "Deregistering worker from GhostHands",
+    );
+    return this.request<GHDeregisterWorkerResponse>(
+      "POST",
+      "/api/v1/gh/valet/workers/deregister",
+      params,
+    );
   }
 }

@@ -59,17 +59,6 @@ function getAdspowerStatus() {
   return status ? "running" : "starting";
 }
 
-function getHatchetConnected() {
-  // Check systemd first (legacy), then Docker container
-  const systemd = exec("systemctl is-active valet-worker 2>/dev/null");
-  if (systemd === "active") return true;
-  // Check if ghosthands worker container is running via Docker
-  const docker = exec(
-    "docker ps --filter name=ghosthands-worker --filter status=running --format '{{.Names}}' 2>/dev/null",
-  );
-  return docker != null && docker.length > 0;
-}
-
 function getActiveProfiles() {
   const result = exec(
     "curl -sf --connect-timeout 2 'http://localhost:50325/api/v1/browser/active?page_size=100' 2>/dev/null",
@@ -106,7 +95,6 @@ function handleHealthRequest(_req, res) {
     ...mem,
     ...disk,
     adspowerStatus: getAdspowerStatus(),
-    hatchetConnected: getHatchetConnected(),
     activeProfiles: getActiveProfiles(),
     activeWorkers: getActiveWorkers(),
     uptime: getUptime(),

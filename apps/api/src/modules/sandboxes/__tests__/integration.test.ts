@@ -363,7 +363,6 @@ describe("SandboxService", () => {
         json: async () => ({
           status: "ok",
           adspowerStatus: "ok",
-          hatchetConnected: true,
         }),
       });
 
@@ -387,7 +386,6 @@ describe("SandboxService", () => {
         json: async () => ({
           status: "ok",
           adspowerStatus: "unreachable",
-          hatchetConnected: true,
         }),
       });
 

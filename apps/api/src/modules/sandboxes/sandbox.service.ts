@@ -93,6 +93,22 @@ export class SandboxService {
     const existing = await this.sandboxRepo.findById(id);
     if (!existing) throw new SandboxNotFoundError(id);
 
+    // Deregister the worker from GhostHands fleet
+    try {
+      await this.ghosthandsClient.deregisterWorker({
+        target_worker_id: id,
+        reason: "sandbox_terminated",
+        cancel_active_jobs: true,
+        drain_timeout_seconds: 30,
+      });
+      this.logger.info({ sandboxId: id }, "Deregistered worker from GhostHands");
+    } catch (err) {
+      this.logger.warn(
+        { err, sandboxId: id },
+        "Failed to deregister worker from GhostHands (non-critical)",
+      );
+    }
+
     // Cancel active tasks associated with this sandbox before terminating
     if (userId) {
       try {
@@ -183,8 +199,7 @@ export class SandboxService {
         healthStatus = "healthy";
         details = body;
 
-        // Degrade if AdsPower is down or Hatchet disconnected
-        if (body.adspowerStatus !== "ok" || body.hatchetConnected === false) {
+        if (body.adspowerStatus !== "ok") {
           healthStatus = "degraded";
         }
       } else {
@@ -240,7 +255,6 @@ export class SandboxService {
         diskTotalGb: (body.diskTotalGb as number) ?? null,
         activeProfiles: (body.activeProfiles as number) ?? 0,
         adspowerStatus: (body.adspowerStatus as string) ?? "unknown",
-        hatchetConnected: (body.hatchetConnected as boolean) ?? false,
         uptime: (body.uptime as number) ?? null,
       };
     } catch (err) {

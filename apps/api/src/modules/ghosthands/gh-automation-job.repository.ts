@@ -108,6 +108,8 @@ export class GhAutomationJobRepository {
       interactionType?: string | null;
       interactionData?: Record<string, unknown> | null;
       pausedAt?: Date | null;
+      workerId?: string | null;
+      metadata?: Record<string, unknown> | null;
     },
   ): Promise<GhJobRecord | null> {
     const updates: Record<string, unknown> = {
@@ -128,6 +130,8 @@ export class GhAutomationJobRepository {
     if (data.interactionType !== undefined) updates.interactionType = data.interactionType;
     if (data.interactionData !== undefined) updates.interactionData = data.interactionData;
     if (data.pausedAt !== undefined) updates.pausedAt = data.pausedAt;
+    if (data.workerId !== undefined) updates.workerId = data.workerId;
+    if (data.metadata !== undefined) updates.metadata = data.metadata;
 
     const rows = await this.db
       .update(ghAutomationJobs)
