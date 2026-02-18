@@ -1,8 +1,15 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Root vitest configuration for WeKruit Valet monorepo.
  * Uses test.projects to configure each workspace package separately.
+ *
+ * Note: path.resolve is used instead of new URL().pathname to avoid
+ * URL-encoding issues when the repo path contains spaces or special chars.
  */
 export default defineConfig({
   test: {
@@ -44,17 +51,15 @@ export default defineConfig({
         },
         resolve: {
           alias: {
-            "@": new URL("./apps/web/src/", import.meta.url).pathname,
-            "@valet/ui/components/": new URL("./packages/ui/src/components/", import.meta.url)
-              .pathname,
-            "@valet/ui/lib/": new URL("./packages/ui/src/lib/", import.meta.url).pathname,
-            "@valet/contracts": new URL("./packages/contracts/src/index.ts", import.meta.url)
-              .pathname,
-            "@valet/shared/schemas": new URL(
-              "./packages/shared/src/schemas/index.ts",
-              import.meta.url,
-            ).pathname,
-            "@valet/shared": new URL("./packages/shared/src/index.ts", import.meta.url).pathname,
+            "@/": path.resolve(__dirname, "apps/web/src") + "/",
+            "@valet/ui/components/": path.resolve(__dirname, "packages/ui/src/components") + "/",
+            "@valet/ui/lib/": path.resolve(__dirname, "packages/ui/src/lib") + "/",
+            "@valet/contracts": path.resolve(__dirname, "packages/contracts/src/index.ts"),
+            "@valet/shared/schemas": path.resolve(
+              __dirname,
+              "packages/shared/src/schemas/index.ts",
+            ),
+            "@valet/shared": path.resolve(__dirname, "packages/shared/src/index.ts"),
           },
         },
       },
@@ -67,7 +72,7 @@ export default defineConfig({
         },
         resolve: {
           alias: {
-            "@": new URL("./packages/ui/src/", import.meta.url).pathname,
+            "@/": path.resolve(__dirname, "packages/ui/src") + "/",
           },
         },
       },

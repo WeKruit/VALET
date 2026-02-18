@@ -86,6 +86,8 @@ jobs:
             if flyctl deploy \
               --config fly/api.toml \
               --app ${{ inputs.api-app }} \
+              --build-arg COMMIT_SHA=${{ github.sha }} \
+              --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
               --remote-only \
               --strategy rolling \
               --release-command-timeout 300s \

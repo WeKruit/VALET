@@ -28,6 +28,10 @@ RUN pnpm turbo build --filter=@valet/api
 # ---- Runtime Stage ----
 FROM node:20-slim AS runtime
 
+# Build metadata (passed via --build-arg at deploy time)
+ARG COMMIT_SHA="unknown"
+ARG BUILD_TIME="unknown"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     && rm -rf /var/lib/apt/lists/*
@@ -49,6 +53,8 @@ USER valet
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV COMMIT_SHA=$COMMIT_SHA
+ENV BUILD_TIME=$BUILD_TIME
 
 EXPOSE 3000
 
