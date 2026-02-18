@@ -321,9 +321,15 @@ export class DeployService {
     publicIp: string,
     imageTag: string,
   ): Promise<{ success: boolean; message: string }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const deploySecret = process.env.GH_DEPLOY_SECRET;
+    if (deploySecret) {
+      headers["X-Deploy-Secret"] = deploySecret;
+    }
+
     const resp = await fetch(`http://${publicIp}:8000/deploy`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ image_tag: imageTag }),
       signal: AbortSignal.timeout(DEPLOY_ENDPOINT_TIMEOUT_MS),
     });
