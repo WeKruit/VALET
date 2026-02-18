@@ -241,6 +241,22 @@ export const sandboxRouter = s.router(sandboxContract, {
 
     const sandbox = await sandboxService.getById(params.id);
 
+    // Get Docker container count from EC2 health-server
+    let dockerContainers: number | null = null;
+    if (sandbox.publicIp) {
+      try {
+        const ec2Resp = await fetch(`http://${sandbox.publicIp}:8000/health`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (ec2Resp.ok) {
+          const ec2Body = (await ec2Resp.json()) as Record<string, unknown>;
+          dockerContainers = (ec2Body.activeWorkers as number) ?? null;
+        }
+      } catch {
+        logger.debug({ sandboxId: params.id }, "EC2 health-server unreachable for container count");
+      }
+    }
+
     // Check GhostHands API health (graceful failure)
     let ghApiStatus: "healthy" | "unhealthy" | "unreachable" = "unreachable";
     try {
@@ -323,6 +339,7 @@ export const sandboxRouter = s.router(sandboxContract, {
         },
         ghChecks,
         jobStats,
+        dockerContainers,
         uptime,
         activeTasks: activeTasks.map((t) => ({
           taskId: t.id,

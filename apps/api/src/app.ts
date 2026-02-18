@@ -24,10 +24,12 @@ import { consentRouter } from "./modules/consent/consent.routes.js";
 import { gdprRouter } from "./modules/gdpr/gdpr.routes.js";
 import { billingRouter, billingWebhookRoute } from "./modules/billing/billing.routes.js";
 import { ghosthandsWebhookRoute } from "./modules/ghosthands/ghosthands.webhook.js";
+import { ghosthandsMonitoringRoutes } from "./modules/ghosthands/ghosthands.monitoring.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
 import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
 import { taskAdminRoutes } from "./modules/tasks/task.admin-routes.js";
+import { deployAdminRoutes } from "./modules/sandboxes/deploy.admin-routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -101,6 +103,8 @@ export async function buildApp() {
 
   // Admin routes (need auth via onRequest hook, so registered after auth middleware)
   await fastify.register(taskAdminRoutes);
+  await fastify.register(ghosthandsMonitoringRoutes);
+  await fastify.register(deployAdminRoutes);
 
   // WebSocket
   await registerWebSocket(fastify);

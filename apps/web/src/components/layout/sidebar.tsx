@@ -12,6 +12,8 @@ import {
   User,
   Server,
   Globe,
+  Rocket,
+  Activity,
 } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
 import { useUIStore } from "@/stores/ui.store";
@@ -29,6 +31,8 @@ const navItems = [
 const adminNavItems = [
   { path: "/admin/tasks", label: "Tasks", icon: ClipboardList },
   { path: "/admin/sandboxes", label: "Sandboxes", icon: Server },
+  { path: "/admin/deploys", label: "Deploys", icon: Rocket },
+  { path: "/admin/monitoring", label: "Monitoring", icon: Activity },
   { path: "/admin/sessions", label: "Sessions", icon: Globe },
 ];
 

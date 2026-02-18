@@ -1,6 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
-import { Activity, Server, ListTodo, Clock, CheckCircle, XCircle, BarChart3 } from "lucide-react";
+import {
+  Activity,
+  Server,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Container,
+  Zap,
+  Inbox,
+  BarChart3,
+} from "lucide-react";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useWorkerStatus } from "../hooks/use-sandboxes";
 
@@ -41,6 +51,24 @@ function formatUptime(seconds: number): string {
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${mins}m`;
   return `${mins}m`;
+}
+
+function OverallStatusBadge({
+  status,
+}: {
+  status: "healthy" | "degraded" | "unhealthy" | "unreachable";
+}) {
+  const variants = {
+    healthy: "success" as const,
+    degraded: "warning" as const,
+    unhealthy: "error" as const,
+    unreachable: "secondary" as const,
+  };
+  return (
+    <Badge variant={variants[status]} className="text-xs capitalize">
+      {status}
+    </Badge>
+  );
 }
 
 export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProps) {
@@ -99,17 +127,19 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
     );
   }
 
+  const containerCount = ws?.dockerContainers ?? 0;
+  const containersHealthy = containerCount > 0;
+  const activeJobs = ws?.worker.activeJobs ?? 0;
+  const queueDepth = ws?.worker.queueDepth ?? 0;
+  const totalProcessed = ws?.worker.totalProcessed ?? 0;
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-lg flex items-center gap-2">
           <Activity className="h-5 w-5" />
           Worker Status
-          {ws?.ghosthandsApi.version && (
-            <span className="text-xs font-normal text-[var(--wk-text-tertiary)]">
-              v{ws.ghosthandsApi.version}
-            </span>
-          )}
+          {ws && <OverallStatusBadge status={ws.worker.status} />}
           {ws?.uptime != null && (
             <span className="ml-auto text-xs font-normal text-[var(--wk-text-tertiary)]">
               Uptime: {formatUptime(ws.uptime)}
@@ -117,122 +147,171 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Service Status Row */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              <Server className="h-3.5 w-3.5" />
-              GhostHands API
+      <CardContent className="space-y-5">
+        {/* ── Infrastructure ── */}
+        <div className="space-y-3">
+          <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+            Infrastructure
+          </h4>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Docker Containers — hero number */}
+            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-4 flex items-center gap-4">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--wk-radius-md)] ${
+                  containersHealthy
+                    ? "bg-[color-mix(in_srgb,var(--wk-status-success)_12%,transparent)]"
+                    : "bg-[var(--wk-surface-sunken)]"
+                }`}
+              >
+                <Container
+                  className={`h-5 w-5 ${containersHealthy ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
+                />
+              </div>
+              <div>
+                <p
+                  className={`text-2xl font-semibold ${containersHealthy ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
+                >
+                  {containerCount}
+                </p>
+                <p className="text-xs text-[var(--wk-text-secondary)]">Containers Running</p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <StatusDot status={ws?.ghosthandsApi.status ?? "unreachable"} />
-              <span className="text-sm font-medium capitalize">
-                {ws?.ghosthandsApi.status ?? "unknown"}
-              </span>
+
+            {/* GhostHands API */}
+            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-4 flex items-center gap-4">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--wk-radius-md)] ${
+                  ws?.ghosthandsApi.status === "healthy"
+                    ? "bg-[color-mix(in_srgb,var(--wk-status-success)_12%,transparent)]"
+                    : "bg-[var(--wk-surface-sunken)]"
+                }`}
+              >
+                <Server
+                  className={`h-5 w-5 ${ws?.ghosthandsApi.status === "healthy" ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <StatusDot status={ws?.ghosthandsApi.status ?? "unreachable"} />
+                  <span className="text-sm font-medium capitalize">
+                    {ws?.ghosthandsApi.status ?? "unknown"}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--wk-text-secondary)]">
+                  GhostHands API
+                  {ws?.ghosthandsApi.version && (
+                    <span className="text-[var(--wk-text-tertiary)]">
+                      {" "}
+                      v{ws.ghosthandsApi.version}
+                    </span>
+                  )}
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              <Activity className="h-3.5 w-3.5" />
-              Active Jobs
-            </div>
-            <div className="flex items-center gap-2">
-              <StatusDot status={ws?.worker.status ?? "unreachable"} />
-              <span className="text-sm font-medium">{ws?.worker.activeJobs ?? 0}</span>
-              {ws?.worker.maxConcurrent != null && (
-                <span className="text-xs text-[var(--wk-text-tertiary)]">
-                  / {ws.worker.maxConcurrent} max
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              <ListTodo className="h-3.5 w-3.5" />
-              Queue
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{ws?.worker.queueDepth ?? 0}</span>
-            </div>
-          </div>
-
-          <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 space-y-1">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              <BarChart3 className="h-3.5 w-3.5" />
-              Processed
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{ws?.worker.totalProcessed ?? 0}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Health Checks */}
-        {ws && ws.ghChecks.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              Health Checks
-            </h4>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {/* Health checks as compact pills */}
+          {ws && ws.ghChecks.length > 0 && (
+            <div className="flex flex-wrap gap-2">
               {ws.ghChecks.map((check) => (
                 <div
                   key={check.name}
-                  className="flex items-center gap-2 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] px-3 py-2"
+                  className="inline-flex items-center gap-1.5 rounded-[var(--wk-radius-full)] border border-[var(--wk-border-subtle)] px-2.5 py-1 text-xs"
                 >
                   {check.status === "healthy" ? (
-                    <CheckCircle className="h-3.5 w-3.5 text-[var(--wk-status-success)] shrink-0" />
+                    <CheckCircle className="h-3 w-3 text-[var(--wk-status-success)]" />
                   ) : (
-                    <XCircle className="h-3.5 w-3.5 text-[var(--wk-status-error)] shrink-0" />
+                    <XCircle className="h-3 w-3 text-[var(--wk-status-error)]" />
                   )}
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium capitalize truncate">
-                      {check.name.replace(/_/g, " ")}
-                    </p>
-                    {check.message && (
-                      <p className="text-xs text-[var(--wk-text-tertiary)] truncate">
-                        {check.message}
-                      </p>
-                    )}
-                  </div>
+                  <span className="capitalize text-[var(--wk-text-secondary)]">
+                    {check.name.replace(/_/g, " ")}
+                  </span>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Job Stats */}
-        {ws && (ws.jobStats.created > 0 || ws.jobStats.completed > 0 || ws.jobStats.failed > 0) && (
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-              Job Stats (since restart)
-            </h4>
-            <div className="flex gap-4 text-sm">
-              <span className="text-[var(--wk-text-secondary)]">
-                Created:{" "}
-                <span className="font-medium text-[var(--wk-text-primary)]">
-                  {ws.jobStats.created}
-                </span>
-              </span>
-              <span className="text-[var(--wk-text-secondary)]">
-                Completed:{" "}
-                <span className="font-medium text-[var(--wk-status-success)]">
-                  {ws.jobStats.completed}
-                </span>
-              </span>
-              <span className="text-[var(--wk-text-secondary)]">
-                Failed:{" "}
-                <span className="font-medium text-[var(--wk-status-error)]">
-                  {ws.jobStats.failed}
-                </span>
+        {/* ── Job Activity ── */}
+        <div className="space-y-3">
+          <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+            Job Activity
+          </h4>
+
+          {/* Idle / Active messaging */}
+          {activeJobs === 0 ? (
+            <div className="flex items-center gap-2 rounded-[var(--wk-radius-md)] bg-[color-mix(in_srgb,var(--wk-status-success)_8%,transparent)] px-3 py-2">
+              <Zap className="h-4 w-4 text-[var(--wk-status-success)]" />
+              <span className="text-sm text-[var(--wk-status-success)]">
+                Ready — no jobs in progress
               </span>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="flex items-center gap-2 rounded-[var(--wk-radius-md)] bg-[color-mix(in_srgb,var(--wk-copilot)_8%,transparent)] px-3 py-2">
+              <Activity className="h-4 w-4 text-[var(--wk-copilot)]" />
+              <span className="text-sm text-[var(--wk-copilot)]">
+                {activeJobs} {activeJobs === 1 ? "job" : "jobs"} processing
+              </span>
+            </div>
+          )}
 
-        {/* Active Tasks */}
+          {/* Stats grid */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 text-center">
+              <div className="flex items-center justify-center gap-1.5 mb-1">
+                <Inbox className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
+              </div>
+              <p className="text-lg font-semibold text-[var(--wk-text-primary)]">{queueDepth}</p>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">Queue</p>
+            </div>
+            <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 text-center">
+              <div className="flex items-center justify-center gap-1.5 mb-1">
+                <BarChart3 className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
+              </div>
+              <p className="text-lg font-semibold text-[var(--wk-text-primary)]">
+                {totalProcessed}
+              </p>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">Processed</p>
+            </div>
+            <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 text-center">
+              <div className="flex items-center justify-center gap-1.5 mb-1">
+                <XCircle className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
+              </div>
+              <p className="text-lg font-semibold text-[var(--wk-text-primary)]">
+                {ws?.jobStats.failed ?? 0}
+              </p>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">Failed</p>
+            </div>
+          </div>
+
+          {/* Job Stats detail - only if there's been activity */}
+          {ws &&
+            (ws.jobStats.created > 0 || ws.jobStats.completed > 0 || ws.jobStats.failed > 0) && (
+              <div className="flex gap-4 text-xs text-[var(--wk-text-tertiary)]">
+                <span>
+                  Created:{" "}
+                  <span className="font-medium text-[var(--wk-text-secondary)]">
+                    {ws.jobStats.created}
+                  </span>
+                </span>
+                <span>
+                  Completed:{" "}
+                  <span className="font-medium text-[var(--wk-status-success)]">
+                    {ws.jobStats.completed}
+                  </span>
+                </span>
+                <span>
+                  Failed:{" "}
+                  <span className="font-medium text-[var(--wk-status-error)]">
+                    {ws.jobStats.failed}
+                  </span>
+                </span>
+              </div>
+            )}
+        </div>
+
+        {/* ── Active Tasks ── */}
         {ws && ws.activeTasks.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
@@ -270,7 +349,7 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
           </div>
         )}
 
-        {/* Recent Tasks */}
+        {/* ── Recent Tasks ── */}
         {ws && ws.recentTasks.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">

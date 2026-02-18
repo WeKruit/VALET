@@ -98,6 +98,20 @@ export class DeployService {
 
     await this.notifyAdmins(record);
 
+    // Check if auto-deploy is enabled for this environment
+    const autoDeployKey = `config:auto_deploy:${payload.environment}`;
+    const autoDeployEnabled = await this.redis.get(autoDeployKey);
+    if (autoDeployEnabled === "true") {
+      this.logger.info(
+        { deployId: id, environment: payload.environment },
+        "Auto-deploy enabled, triggering immediately",
+      );
+      // Trigger in background — don't block webhook response
+      this.triggerDeploy(id).catch((err) => {
+        this.logger.error({ deployId: id, err }, "Auto-deploy trigger failed");
+      });
+    }
+
     return record;
   }
 
@@ -176,6 +190,15 @@ export class DeployService {
     record.status = "cancelled";
     record.updatedAt = new Date().toISOString();
     await this.saveRecord(record);
+  }
+
+  async getAutoDeployConfig(environment: string): Promise<boolean> {
+    const val = await this.redis.get(`config:auto_deploy:${environment}`);
+    return val === "true";
+  }
+
+  async setAutoDeployConfig(environment: string, enabled: boolean): Promise<void> {
+    await this.redis.set(`config:auto_deploy:${environment}`, enabled ? "true" : "false");
   }
 
   // ── Private helpers ─────────────────────────────────────

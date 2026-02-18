@@ -212,6 +212,7 @@ export const workerStatusResponse = z.object({
     completed: z.number(),
     failed: z.number(),
   }),
+  dockerContainers: z.number().nullable(),
   uptime: z.number().nullable(),
   activeTasks: z.array(
     z.object({

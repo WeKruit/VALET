@@ -9,6 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@valet/ui/components/dialog";
+import { Link } from "react-router-dom";
 import { Rocket, ExternalLink, X, CheckCircle, XCircle, Loader2, Clock, Ban } from "lucide-react";
 import { toast } from "sonner";
 import { formatRelativeTime } from "@/lib/utils";
@@ -80,6 +81,15 @@ export function DeployBanner() {
       {activeDeploys.map((deploy) => (
         <ActiveDeployCard key={deploy.id} deployId={deploy.id} />
       ))}
+
+      <div className="text-center">
+        <Link
+          to="/admin/deploys"
+          className="text-xs text-[var(--wk-text-secondary)] hover:text-[var(--wk-text-primary)] underline"
+        >
+          View all deploys →
+        </Link>
+      </div>
 
       {selectedDeployId && (
         <DeployConfirmDialog

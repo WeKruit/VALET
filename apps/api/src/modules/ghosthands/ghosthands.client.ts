@@ -120,6 +120,10 @@ export class GhostHandsClient {
     return this.request<GHMetrics>("GET", "/monitoring/metrics/json", undefined, 5_000);
   }
 
+  async getAlerts(): Promise<unknown> {
+    return this.request<unknown>("GET", "/monitoring/alerts", undefined, 5_000);
+  }
+
   async listSessions(userId: string): Promise<GHSessionListResponse> {
     return this.request<GHSessionListResponse>(
       "GET",

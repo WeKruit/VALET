@@ -99,6 +99,16 @@ const AdminTaskDetailPage = lazy(() =>
     default: m.AdminTaskDetailPage,
   })),
 );
+const DeploysPage = lazy(() =>
+  import("./features/admin/pages/deploys-page").then((m) => ({
+    default: m.DeploysPage,
+  })),
+);
+const MonitoringPage = lazy(() =>
+  import("./features/admin/pages/monitoring-page").then((m) => ({
+    default: m.MonitoringPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -176,6 +186,22 @@ export function AppRouter() {
             element={
               <AdminGuard>
                 <AdminTaskDetailPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/deploys"
+            element={
+              <AdminGuard>
+                <DeploysPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/monitoring"
+            element={
+              <AdminGuard>
+                <MonitoringPage />
               </AdminGuard>
             }
           />

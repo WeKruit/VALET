@@ -1,5 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api-client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, API_BASE_URL, getAccessToken } from "@/lib/api-client";
 import type { Ec2Status, SandboxEnvironment, SandboxStatus, SandboxHealthStatus } from "../types";
 
 export interface UseSandboxesParams {
@@ -251,6 +251,51 @@ export function useStopSandbox() {
       qc.invalidateQueries({
         queryKey: ["admin", "sandboxes", variables.params.id, "ec2-status"],
       });
+    },
+  });
+}
+
+// ─── Auto-deploy Config ───
+
+interface AutoDeployConfig {
+  autoDeployStaging: boolean;
+  autoDeployProd: boolean;
+}
+
+async function fetchWithAuth<T>(
+  url: string,
+  options?: { method?: string; body?: string },
+): Promise<T> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(url, { ...options, headers, credentials: "include" });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function useAutoDeployConfig() {
+  return useQuery<AutoDeployConfig>({
+    queryKey: ["admin", "deploys", "config"],
+    queryFn: () => fetchWithAuth<AutoDeployConfig>(`${API_BASE_URL}/api/v1/admin/deploys/config`),
+    staleTime: 1000 * 30,
+  });
+}
+
+export function useUpdateAutoDeployConfig() {
+  const qc = useQueryClient();
+  return useMutation<AutoDeployConfig, Error, Partial<AutoDeployConfig>>({
+    mutationFn: (body) =>
+      fetchWithAuth<AutoDeployConfig>(`${API_BASE_URL}/api/v1/admin/deploys/config`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "deploys", "config"] });
     },
   });
 }
