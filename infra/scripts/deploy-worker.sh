@@ -252,12 +252,6 @@ if [[ ! -f "$ENV_FILE" ]]; then
 # systemd service via EnvironmentFile.
 # =============================================================================
 
-# ─── Hatchet (REQUIRED) ───
-HATCHET_CLIENT_TOKEN=
-HATCHET_CLIENT_TLS_STRATEGY=tls
-HATCHET_CLIENT_TLS_SERVER_NAME=valet-hatchet-stg.fly.dev
-HATCHET_CLIENT_HOST_PORT=valet-hatchet-stg.fly.dev:443
-
 # ─── Database (REQUIRED) ───
 DATABASE_URL=
 
@@ -455,7 +449,7 @@ echo -e "  ${YELLOW}Logs:${NC}   ssh -i $SSH_KEY $SSH_USER@$EC2_IP 'sudo journal
 echo ""
 
 # Check if .env has been filled in
-SECRETS_CHECK=$($SSH_CMD "grep -c '^HATCHET_CLIENT_TOKEN=$' /opt/valet/.env 2>/dev/null" 2>/dev/null || echo "0")
+SECRETS_CHECK=$($SSH_CMD "grep -c '^DATABASE_URL=$' /opt/valet/.env 2>/dev/null" 2>/dev/null || echo "0")
 if [[ "$SECRETS_CHECK" != "0" ]]; then
     warn "Environment secrets are NOT configured yet!"
     echo -e "  Run: ${BOLD}./infra/scripts/set-secrets.sh $EC2_IP${NC}"
