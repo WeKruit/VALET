@@ -147,6 +147,11 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
       const interactionTypeMap: Record<string, string> = {
         "2fa": "two_factor",
         login: "login_required",
+        bot_check: "bot_check",
+        rate_limited: "rate_limited",
+        rate_limit: "rate_limited", // backwards compat with old GH
+        verification: "verification",
+        visual_verification: "verification", // backwards compat with old GH
       };
       if (payload.status === "needs_human" && payload.interaction) {
         const mappedType = interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
@@ -155,6 +160,9 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           interactionData: {
             ...(payload.interaction as unknown as Record<string, unknown>),
             type: mappedType,
+            description: payload.interaction.description ?? null,
+            metadata: payload.interaction.metadata ?? null,
+            paused_at: new Date().toISOString(),
           },
         });
       }
@@ -296,6 +304,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
             pageUrl: payload.interaction.page_url ?? null,
             timeoutSeconds: payload.interaction.timeout_seconds ?? null,
             message: payload.interaction.message ?? null,
+            description: payload.interaction.description ?? null,
+            metadata: payload.interaction.metadata ?? null,
           },
         });
       } else if (taskStatus === "in_progress" && payload.status === "resumed") {

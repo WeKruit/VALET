@@ -2,8 +2,18 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
+import { Input } from "@valet/ui/components/input";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@valet/ui/components/dialog";
-import { ShieldAlert, Bot, KeyRound, Puzzle, ExternalLink, Clock } from "lucide-react";
+import {
+  ShieldAlert,
+  Bot,
+  KeyRound,
+  Puzzle,
+  ExternalLink,
+  Clock,
+  Timer,
+  ShieldCheck,
+} from "lucide-react";
 import { useResolveBlocker } from "../hooks/use-tasks";
 
 interface HitlBlockerCardProps {
@@ -14,6 +24,12 @@ interface HitlBlockerCardProps {
     pageUrl?: string | null;
     timeoutSeconds?: number | null;
     message?: string | null;
+    description?: string | null;
+    metadata?: {
+      blocker_confidence?: number;
+      captcha_type?: string;
+      detection_method?: string;
+    } | null;
     pausedAt: string;
   };
   onCancel: () => void;
@@ -21,7 +37,7 @@ interface HitlBlockerCardProps {
 
 const blockerConfig: Record<
   string,
-  { label: string; icon: React.ElementType; description: string }
+  { label: string; icon: React.ElementType; description: string; color?: string }
 > = {
   two_factor: {
     label: "2FA Required",
@@ -43,6 +59,17 @@ const blockerConfig: Record<
     icon: Puzzle,
     description: "A captcha needs to be solved to continue.",
   },
+  rate_limited: {
+    label: "Rate Limited",
+    icon: Timer,
+    description: "The site is rate limiting requests. Auto-retry in progress.",
+    color: "amber",
+  },
+  verification: {
+    label: "Verification Required",
+    icon: ShieldCheck,
+    description: "Please complete the verification step.",
+  },
 };
 
 function formatCountdown(seconds: number): string {
@@ -55,6 +82,9 @@ function formatCountdown(seconds: number): string {
 export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCardProps) {
   const resolveBlocker = useResolveBlocker();
   const [remaining, setRemaining] = useState<number | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
 
   // Countdown timer
   useEffect(() => {
@@ -82,12 +112,18 @@ export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCa
     return () => clearInterval(interval);
   }, [interaction.timeoutSeconds, interaction.pausedAt]);
 
-  const handleResolve = useCallback(() => {
-    resolveBlocker.mutate({
-      params: { id: taskId },
-      body: { resolvedBy: "human" },
-    });
-  }, [taskId, resolveBlocker]);
+  const handleResolve = useCallback(
+    (
+      resolutionType: "manual" | "code_entry" | "credentials" | "skip",
+      resolutionData?: Record<string, unknown>,
+    ) => {
+      resolveBlocker.mutate({
+        params: { id: taskId },
+        body: { resolvedBy: "human", resolutionType, resolutionData },
+      });
+    },
+    [taskId, resolveBlocker],
+  );
 
   const config = blockerConfig[interaction.type] ?? {
     label: interaction.type.replace("_", " "),
@@ -96,6 +132,7 @@ export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCa
   };
   const BlockerIcon = config.icon;
   const isUrgent = remaining != null && remaining < 60;
+  const metadata = interaction.metadata;
 
   return (
     <Card className="border-2 border-amber-500">
@@ -108,6 +145,11 @@ export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCa
             <div>
               <CardTitle className="text-lg">{config.label}</CardTitle>
               <p className="text-sm text-[var(--wk-text-secondary)]">{config.description}</p>
+              {interaction.description && (
+                <p className="text-sm text-[var(--wk-text-secondary)] mt-1">
+                  {interaction.description}
+                </p>
+              )}
             </div>
           </div>
           <Badge variant="warning">Blocked</Badge>
@@ -121,6 +163,26 @@ export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCa
             <p className="text-sm text-[var(--wk-text-secondary)]">{interaction.message}</p>
           </div>
         )}
+
+        {/* Metadata info */}
+        {metadata &&
+          (metadata.captcha_type ||
+            metadata.blocker_confidence != null ||
+            metadata.detection_method) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {metadata.captcha_type && <Badge variant="default">{metadata.captcha_type}</Badge>}
+              {metadata.blocker_confidence != null && (
+                <span className="text-xs text-[var(--wk-text-tertiary)]">
+                  Confidence: {Math.round(metadata.blocker_confidence * 100)}%
+                </span>
+              )}
+              {metadata.detection_method && (
+                <span className="text-xs text-[var(--wk-text-tertiary)]">
+                  via {metadata.detection_method}
+                </span>
+              )}
+            </div>
+          )}
 
         {/* Page URL */}
         {interaction.pageUrl && (
@@ -184,19 +246,138 @@ export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCa
           </div>
         )}
 
-        {/* Action buttons */}
-        <div className="flex gap-3 pt-2">
-          <Button
-            variant="primary"
-            className="flex-1"
-            disabled={resolveBlocker.isPending}
-            onClick={handleResolve}
-          >
-            {resolveBlocker.isPending ? "Resolving..." : "I've Resolved It"}
-          </Button>
-          <Button variant="destructive" onClick={onCancel}>
-            Cancel Task
-          </Button>
+        {/* Type-specific resolution controls */}
+        <div className="space-y-3 pt-2">
+          {interaction.type === "two_factor" && (
+            <div className="space-y-2">
+              <Input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="Enter 2FA / TOTP code"
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value)}
+              />
+              <Button
+                variant="primary"
+                className="w-full"
+                disabled={resolveBlocker.isPending || !twoFactorCode.trim()}
+                onClick={() => handleResolve("code_entry", { code: twoFactorCode.trim() })}
+              >
+                {resolveBlocker.isPending ? "Submitting..." : "Submit Code"}
+              </Button>
+            </div>
+          )}
+
+          {interaction.type === "login_required" && (
+            <div className="space-y-2">
+              <Input
+                type="text"
+                autoComplete="username"
+                placeholder="Username or email"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+              />
+              <Input
+                type="password"
+                autoComplete="current-password"
+                placeholder="Password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+              />
+              <Button
+                variant="primary"
+                className="w-full"
+                disabled={resolveBlocker.isPending || !loginUsername.trim() || !loginPassword}
+                onClick={() =>
+                  handleResolve("credentials", {
+                    username: loginUsername.trim(),
+                    password: loginPassword,
+                  })
+                }
+              >
+                {resolveBlocker.isPending ? "Submitting..." : "Submit Credentials"}
+              </Button>
+            </div>
+          )}
+
+          {interaction.type === "captcha" && (
+            <Button
+              variant="primary"
+              className="w-full"
+              disabled={resolveBlocker.isPending}
+              onClick={() => handleResolve("manual")}
+            >
+              {resolveBlocker.isPending ? "Resolving..." : "I've Solved the CAPTCHA"}
+            </Button>
+          )}
+
+          {interaction.type === "bot_check" && (
+            <Button
+              variant="primary"
+              className="w-full"
+              disabled={resolveBlocker.isPending}
+              onClick={() => handleResolve("manual")}
+            >
+              {resolveBlocker.isPending ? "Resolving..." : "I've Completed Verification"}
+            </Button>
+          )}
+
+          {interaction.type === "rate_limited" && (
+            <Button
+              variant="primary"
+              className="w-full"
+              disabled={resolveBlocker.isPending}
+              onClick={() => handleResolve("manual")}
+            >
+              {resolveBlocker.isPending ? "Retrying..." : "Retry Now"}
+            </Button>
+          )}
+
+          {interaction.type === "verification" && (
+            <Button
+              variant="primary"
+              className="w-full"
+              disabled={resolveBlocker.isPending}
+              onClick={() => handleResolve("manual")}
+            >
+              {resolveBlocker.isPending ? "Resolving..." : "I've Completed This Step"}
+            </Button>
+          )}
+
+          {/* Fallback for unknown types */}
+          {![
+            "two_factor",
+            "login_required",
+            "captcha",
+            "bot_check",
+            "rate_limited",
+            "verification",
+          ].includes(interaction.type) && (
+            <Button
+              variant="primary"
+              className="w-full"
+              disabled={resolveBlocker.isPending}
+              onClick={() => handleResolve("manual")}
+            >
+              {resolveBlocker.isPending ? "Resolving..." : "I've Resolved It"}
+            </Button>
+          )}
+
+          {/* Skip + Cancel row */}
+          <div className="flex gap-3">
+            <Button
+              variant="ghost"
+              className="flex-1"
+              disabled={resolveBlocker.isPending}
+              onClick={() => handleResolve("skip")}
+            >
+              Skip This Step
+            </Button>
+            <Button variant="destructive" onClick={onCancel}>
+              Cancel Task
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

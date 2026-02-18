@@ -114,7 +114,14 @@ export const adminTaskSyncResponse = z.object({
 });
 
 // ─── Interaction Schemas ───
-export const interactionType = z.enum(["captcha", "two_factor", "login_required", "bot_check"]);
+export const interactionType = z.enum([
+  "captcha",
+  "two_factor",
+  "login_required",
+  "bot_check",
+  "rate_limited",
+  "verification",
+]);
 
 export const taskInteractionSchema = z.object({
   type: interactionType,
@@ -122,12 +129,22 @@ export const taskInteractionSchema = z.object({
   pageUrl: z.string().url().nullable().optional(),
   timeoutSeconds: z.number().int().positive().nullable().optional(),
   message: z.string().nullable().optional(),
+  description: z.string().nullish(),
+  metadata: z
+    .object({
+      blocker_confidence: z.number().optional(),
+      captcha_type: z.string().optional(),
+      detection_method: z.string().optional(),
+    })
+    .nullish(),
   pausedAt: z.coerce.date(),
 });
 
 export const resolveBlockerRequest = z.object({
   resolvedBy: z.enum(["human", "system"]).optional().default("human"),
   notes: z.string().max(1000).optional(),
+  resolutionType: z.enum(["manual", "code_entry", "credentials", "skip"]).optional(),
+  resolutionData: z.record(z.unknown()).optional(),
 });
 
 export const resolveBlockerResponse = z.object({

@@ -89,6 +89,8 @@ export class TaskService {
       "two_factor",
       "login_required",
       "bot_check",
+      "rate_limited",
+      "verification",
     ];
     const rawType = task.interactionType;
     const interaction =
@@ -113,6 +115,16 @@ export class TaskService {
               | string
               | null
               | undefined,
+            description: ((task.interactionData.description as string) ?? null) as
+              | string
+              | null
+              | undefined,
+            metadata:
+              (task.interactionData.metadata as {
+                blocker_confidence?: number;
+                captcha_type?: string;
+                detection_method?: string;
+              }) ?? null,
             pausedAt: new Date((task.interactionData.paused_at as string) ?? Date.now()),
           }
         : (null as null);
@@ -606,7 +618,14 @@ export class TaskService {
     await this.taskRepo.updateStatus(id, "in_progress");
   }
 
-  async resolveBlocker(taskId: string, userId: string, resolvedBy?: string, notes?: string) {
+  async resolveBlocker(
+    taskId: string,
+    userId: string,
+    resolvedBy?: string,
+    notes?: string,
+    resolutionType?: string,
+    resolutionData?: Record<string, unknown>,
+  ) {
     const task = await this.taskRepo.findById(taskId, userId);
     if (!task) throw new TaskNotFoundError(taskId);
 
@@ -621,6 +640,8 @@ export class TaskService {
     await this.ghosthandsClient.resumeJob(task.workflowRunId, {
       resolved_by: resolvedBy,
       notes,
+      resolution_type: resolutionType,
+      resolution_data: resolutionData,
     });
 
     // Do NOT update task status here — wait for GH resumed callback
