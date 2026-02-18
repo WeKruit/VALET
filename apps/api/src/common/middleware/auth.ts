@@ -24,6 +24,7 @@ const PUBLIC_EXACT_PATHS = [
   "/api/v1/auth/forgot-password",
   "/api/v1/auth/reset-password",
   "/api/v1/health",
+  "/api/v1/health/version",
   "/api/v1/billing/webhook",
   "/api/v1/webhooks/ghosthands",
   "/api/v1/webhooks/ghosthands/deploy",
