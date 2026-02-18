@@ -3,6 +3,13 @@ name: CD → Staging
 on:
   push:
     branches: [staging]
+  workflow_dispatch:
+    inputs:
+      deploy-all:
+        description: "Force deploy all services (bypass change detection)"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-staging
@@ -48,6 +55,16 @@ jobs:
       - name: Determine deploy targets
         id: targets
         run: |
+          # Manual dispatch with deploy-all overrides change detection
+          if [[ "${{ inputs.deploy-all }}" == "true" ]]; then
+            echo "deploy-api=true" >> $GITHUB_OUTPUT
+            echo "deploy-worker=true" >> $GITHUB_OUTPUT
+            echo "deploy-web=true" >> $GITHUB_OUTPUT
+            echo "any-deploy=true" >> $GITHUB_OUTPUT
+            echo "Manual deploy-all: deploying all services"
+            exit 0
+          fi
+
           # API depends on: shared, contracts, db, llm
           if [[ "${{ steps.changes.outputs.api }}" == "true" \
              || "${{ steps.changes.outputs.shared }}" == "true" \

@@ -81,11 +81,25 @@ jobs:
 
       - name: Deploy API to Fly.io
         run: |
-          flyctl deploy \
-            --config fly/api.toml \
-            --app ${{ inputs.api-app }} \
-            --remote-only \
-            --wait-timeout 300
+          for attempt in 1 2 3; do
+            echo "Deploy attempt $attempt/3..."
+            if flyctl deploy \
+              --config fly/api.toml \
+              --app ${{ inputs.api-app }} \
+              --remote-only \
+              --strategy rolling \
+              --release-command-timeout 300s \
+              --wait-timeout 300; then
+              echo "Deploy succeeded on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Deploy failed, retrying in 30s..."
+              sleep 30
+            fi
+          done
+          echo "Deploy failed after 3 attempts"
+          exit 1
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -118,11 +132,24 @@ jobs:
 
       - name: Deploy Worker to Fly.io
         run: |
-          flyctl deploy \
-            --config fly/worker.toml \
-            --app ${{ inputs.worker-app }} \
-            --remote-only \
-            --wait-timeout 300
+          for attempt in 1 2 3; do
+            echo "Deploy attempt $attempt/3..."
+            if flyctl deploy \
+              --config fly/worker.toml \
+              --app ${{ inputs.worker-app }} \
+              --remote-only \
+              --strategy rolling \
+              --wait-timeout 300; then
+              echo "Deploy succeeded on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Deploy failed, retrying in 30s..."
+              sleep 30
+            fi
+          done
+          echo "Deploy failed after 3 attempts"
+          exit 1
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -140,13 +167,26 @@ jobs:
       - name: Deploy Web to Fly.io
         run: |
           WS_URL=$(echo "${{ inputs.api-url }}" | sed 's|^https://|wss://|')/api/v1/ws
-          flyctl deploy \
-            --config fly/web.toml \
-            --app ${{ inputs.web-app }} \
-            --build-arg VITE_API_URL=${{ inputs.api-url }} \
-            --build-arg VITE_WS_URL=${WS_URL} \
-            --build-arg VITE_GOOGLE_CLIENT_ID=${{ inputs.google-client-id }} \
-            --remote-only \
-            --wait-timeout 300
+          for attempt in 1 2 3; do
+            echo "Deploy attempt $attempt/3..."
+            if flyctl deploy \
+              --config fly/web.toml \
+              --app ${{ inputs.web-app }} \
+              --build-arg VITE_API_URL=${{ inputs.api-url }} \
+              --build-arg VITE_WS_URL=${WS_URL} \
+              --build-arg VITE_GOOGLE_CLIENT_ID=${{ inputs.google-client-id }} \
+              --remote-only \
+              --strategy rolling \
+              --wait-timeout 300; then
+              echo "Deploy succeeded on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Deploy failed, retrying in 30s..."
+              sleep 30
+            fi
+          done
+          echo "Deploy failed after 3 attempts"
+          exit 1
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
