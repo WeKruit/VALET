@@ -183,36 +183,6 @@ fly secrets set -a valet-api-stg \
 fly secrets list -a valet-api-stg
 ```
 
-### Hatchet Token Management
-
-**Token Lifespan**: All environments use 5-year tokens (expires 2031-02-14).
-
-**Token by Environment**:
-
-| Environment | Hatchet Instance | Tenant ID | Where Stored |
-|-------------|-----------------|-----------|--------------|
-| Local | valet-hatchet-dev | `8a2eb94e-2203-414c-be79-fc4aceddaba2` | `.env` file |
-| Staging | valet-hatchet-stg | `588b3f37-c0e6-4a9b-9b3c-1019def429eb` | Fly secrets: `valet-api-stg`, `valet-worker-stg` |
-| Production | valet-hatchet-stg (shared) | `588b3f37-c0e6-4a9b-9b3c-1019def429eb` | Fly secrets: `valet-api`, `valet-worker` |
-
-**Regenerating Tokens** (only needed if Hatchet restarts or token expires):
-
-```bash
-# Local (dev) - 5-year token
-fly ssh console -a valet-hatchet-dev -C "/hatchet-admin token create --tenant-id 8a2eb94e-2203-414c-be79-fc4aceddaba2 --config /config --name local-dev-5yr --expiresIn 43800h"
-# Update .env file with new token
-
-# Staging/Production (shared instance) - 5-year token
-fly ssh console -a valet-hatchet-stg -C "/hatchet-admin token create --tenant-id 588b3f37-c0e6-4a9b-9b3c-1019def429eb --config /config --name staging-5yr --expiresIn 43800h"
-# Update Fly secrets on all 4 apps:
-fly secrets set -a valet-api-stg HATCHET_CLIENT_TOKEN="<token>"
-fly secrets set -a valet-worker-stg HATCHET_CLIENT_TOKEN="<token>"
-fly secrets set -a valet-api HATCHET_CLIENT_TOKEN="<token>"
-fly secrets set -a valet-worker HATCHET_CLIENT_TOKEN="<token>"
-```
-
-**Note**: If the database connection pool is full, kill the Hatchet process first: `fly ssh console -a <app> -C "kill 1"`, wait 40 seconds, then regenerate.
-
 ### Manual Deploy (without CI)
 
 Note: flyctl resolves Dockerfile paths relative to the toml file directory.
