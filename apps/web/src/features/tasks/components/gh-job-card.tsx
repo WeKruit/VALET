@@ -52,18 +52,32 @@ export function GhJobCard({ ghJob }: GhJobCardProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Progress bar */}
-        {ghJob.progress != null && ghJob.ghStatus === "running" && (
+        {(ghJob.ghStatus === "running" ||
+          ghJob.ghStatus === "completed" ||
+          ghJob.ghStatus === "failed") && (
           <div>
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-[var(--wk-text-secondary)]">
-                {ghJob.statusMessage ?? "Processing..."}
+                {ghJob.ghStatus === "completed"
+                  ? "Completed"
+                  : ghJob.ghStatus === "failed"
+                    ? (ghJob.statusMessage ?? "Failed")
+                    : (ghJob.statusMessage ?? "Processing...")}
               </span>
-              <span className="text-xs font-medium">{ghJob.progress}%</span>
+              <span className="text-xs font-medium">
+                {ghJob.ghStatus === "completed" ? 100 : (ghJob.progress ?? 0)}%
+              </span>
             </div>
             <div className="h-2 w-full rounded-full bg-[var(--wk-surface-sunken)] overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-[var(--wk-copilot)] to-[var(--wk-accent-teal)] transition-all duration-500"
-                style={{ width: `${ghJob.progress}%` }}
+                className={`h-full rounded-full transition-all duration-500 ${
+                  ghJob.ghStatus === "failed"
+                    ? "bg-[var(--wk-status-error)]"
+                    : "bg-gradient-to-r from-[var(--wk-copilot)] to-[var(--wk-accent-teal)]"
+                }`}
+                style={{
+                  width: `${ghJob.ghStatus === "completed" ? 100 : (ghJob.progress ?? 0)}%`,
+                }}
               />
             </div>
           </div>
@@ -103,10 +117,23 @@ export function GhJobCard({ ghJob }: GhJobCardProps) {
                 Cost
               </p>
               <p className="mt-1 text-sm">
-                ${ghJob.cost.totalCostUsd.toFixed(4)}
-                <span className="text-xs text-[var(--wk-text-tertiary)] ml-1">
-                  ({ghJob.cost.actionCount} actions)
-                </span>
+                {ghJob.cost.totalCostUsd > 0 ? (
+                  <>
+                    ${ghJob.cost.totalCostUsd.toFixed(4)}
+                    <span className="text-xs text-[var(--wk-text-tertiary)] ml-1">
+                      ({ghJob.cost.actionCount} actions)
+                    </span>
+                  </>
+                ) : ghJob.cost.actionCount > 0 ? (
+                  <>
+                    Pending
+                    <span className="text-xs text-[var(--wk-text-tertiary)] ml-1">
+                      ({ghJob.cost.actionCount} actions)
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[var(--wk-text-tertiary)]">N/A</span>
+                )}
               </p>
             </div>
           )}

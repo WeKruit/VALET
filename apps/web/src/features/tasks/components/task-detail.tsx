@@ -359,7 +359,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
 
       {/* Progress Timeline */}
       <TaskProgress
-        currentStep={task.currentStep ?? "queued"}
+        progress={task.progress}
         status={task.status}
         createdAt={task.createdAt}
         completedAt={task.completedAt}
