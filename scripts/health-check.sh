@@ -72,12 +72,6 @@ check_service "Storage S3 (Supabase)" \
   "curl -sf --max-time 5 '${S3_ENDPOINT:-http://localhost:9000}' -o /dev/null -w '%{http_code}'" \
   || FAILED=1
 
-# Hatchet (cloud-hosted on Fly.io)
-HATCHET_URL="${HATCHET_DASHBOARD_URL:-https://valet-hatchet-dev.fly.dev}"
-check_service "Hatchet (${HATCHET_URL})" \
-  "curl -sf --max-time 10 '${HATCHET_URL}' -o /dev/null -w '%{http_code}'" \
-  || FAILED=1
-
 echo ""
 
 if [ $FAILED -ne 0 ]; then

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import { AppLayout } from "./components/layout/app-layout";
 import { AuthGuard } from "./components/common/auth-guard";
+import { AdminGuard } from "./lib/guards/admin-guard";
 import { NotFoundPage } from "./components/common/not-found-page";
 import { LoadingSpinner } from "./components/common/loading-spinner";
 
@@ -73,6 +74,41 @@ const PrivacyPolicyPage = lazy(() =>
     default: m.PrivacyPolicyPage,
   })),
 );
+const SandboxesPage = lazy(() =>
+  import("./features/admin/pages/sandboxes-page").then((m) => ({
+    default: m.SandboxesPage,
+  })),
+);
+const SandboxDetailPage = lazy(() =>
+  import("./features/admin/pages/sandbox-detail-page").then((m) => ({
+    default: m.SandboxDetailPage,
+  })),
+);
+const SessionsPage = lazy(() =>
+  import("./features/admin/pages/sessions-page").then((m) => ({
+    default: m.SessionsPage,
+  })),
+);
+const AdminTasksPage = lazy(() =>
+  import("./features/admin/pages/admin-tasks-page").then((m) => ({
+    default: m.AdminTasksPage,
+  })),
+);
+const AdminTaskDetailPage = lazy(() =>
+  import("./features/admin/pages/admin-task-detail-page").then((m) => ({
+    default: m.AdminTaskDetailPage,
+  })),
+);
+const DeploysPage = lazy(() =>
+  import("./features/admin/pages/deploys-page").then((m) => ({
+    default: m.DeploysPage,
+  })),
+);
+const MonitoringPage = lazy(() =>
+  import("./features/admin/pages/monitoring-page").then((m) => ({
+    default: m.MonitoringPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -121,6 +157,62 @@ export function AppRouter() {
           <Route path="/apply" element={<ApplyPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/settings/*" element={<SettingsPage />} />
+          <Route
+            path="/admin/sandboxes"
+            element={
+              <AdminGuard>
+                <SandboxesPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/sandboxes/:id"
+            element={
+              <AdminGuard>
+                <SandboxDetailPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/tasks"
+            element={
+              <AdminGuard>
+                <AdminTasksPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/tasks/:id"
+            element={
+              <AdminGuard>
+                <AdminTaskDetailPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/deploys"
+            element={
+              <AdminGuard>
+                <DeploysPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/monitoring"
+            element={
+              <AdminGuard>
+                <MonitoringPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/sessions"
+            element={
+              <AdminGuard>
+                <SessionsPage />
+              </AdminGuard>
+            }
+          />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

@@ -80,7 +80,7 @@ This checklist must be completed before the Service is made available to product
 
 ### Worker
 
-- [ ] **Hatchet connection** — Worker connects to Hatchet engine and registers all workflows
+- [ ] **GhostHands API connection** — Worker can reach GhostHands API and authenticate with X-GH-Service-Key
 - [ ] **Workflow health** — Hello-world workflow completes successfully
 - [ ] **Graceful shutdown** — Worker completes in-progress steps before shutting down
 
@@ -111,7 +111,7 @@ This checklist must be completed before the Service is made available to product
   - [ ] Request latency (p50, p95, p99)
   - [ ] Error rate by endpoint
   - [ ] Active WebSocket connections
-  - [ ] Hatchet workflow success/failure rate
+  - [ ] GhostHands job success/failure rate
 
 ## 6. CI/CD Pipeline
 
@@ -164,21 +164,21 @@ This checklist must be completed before the Service is made available to product
 
 ## Sign-Off
 
-| Area | Engineer | Date | Status |
-|------|----------|------|--------|
-| Infrastructure | | | |
-| Security | | | |
-| API | | | |
-| Frontend | | | |
-| Worker | | | |
-| Database | | | |
-| Monitoring | | | |
-| CI/CD | | | |
-| Legal | | | |
-| Performance | | | |
+| Area           | Engineer | Date | Status |
+| -------------- | -------- | ---- | ------ |
+| Infrastructure |          |      |        |
+| Security       |          |      |        |
+| API            |          |      |        |
+| Frontend       |          |      |        |
+| Worker         |          |      |        |
+| Database       |          |      |        |
+| Monitoring     |          |      |        |
+| CI/CD          |          |      |        |
+| Legal          |          |      |        |
+| Performance    |          |      |        |
 
 **Launch approval:** All sections must be signed off before production launch.
 
 ---
 
-*This checklist is a living document. Update it as requirements evolve and new checks are identified.*
+_This checklist is a living document. Update it as requirements evolve and new checks are identified._

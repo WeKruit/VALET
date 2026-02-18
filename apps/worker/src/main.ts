@@ -10,9 +10,13 @@ import { Hatchet } from "@hatchet-dev/typescript-sdk";
 import Redis from "ioredis";
 import pino from "pino";
 import { createDatabase } from "@valet/db";
+import type { ISandboxProvider, SandboxProviderType } from "@valet/shared/types";
 import { EventLogger } from "./services/event-logger.js";
 import { registerJobApplicationWorkflow } from "./workflows/job-application.js";
+import { registerJobApplicationWorkflowV2 } from "./workflows/job-application-v2.js";
 import { registerResumeParseWorkflow } from "./workflows/resume-parse.js";
+import { AdsPowerEC2Provider } from "./providers/adspower-ec2.js";
+import { startHealthServer } from "./health-server.js";
 
 const logger = pino({
   name: "valet-worker",
@@ -33,6 +37,17 @@ async function main() {
     });
     logger.info("Sentry error tracking initialized");
   }
+
+  // Detect browser engine from env
+  const browserEngine = process.env.BROWSER_ENGINE ?? "adspower";
+  if (browserEngine !== "chromium" && browserEngine !== "adspower") {
+    logger.fatal(
+      { browserEngine },
+      "Invalid BROWSER_ENGINE value. Must be 'chromium' or 'adspower'.",
+    );
+    process.exit(1);
+  }
+  logger.info({ browserEngine }, "Browser engine configured");
 
   logger.info("Starting Valet worker...");
 
@@ -67,19 +82,88 @@ async function main() {
   const jobApplicationWorkflow = registerJobApplicationWorkflow(hatchet, redis, eventLogger, db);
   const resumeParseWorkflow = registerResumeParseWorkflow(hatchet, redis, eventLogger, db);
 
-  // Start the worker
+  // Build sandbox providers for v2 workflow
+  const maxConcurrentBrowsers = parseInt(
+    process.env.MAX_CONCURRENT_BROWSERS ?? "5",
+    10,
+  );
+  logger.info({ maxConcurrentBrowsers }, "Browser concurrency limit configured");
+
+  const providers = new Map<SandboxProviderType, ISandboxProvider>();
+
+  if (process.env.ADSPOWER_API_URL) {
+    try {
+      const adsPowerProvider = new AdsPowerEC2Provider({
+        maxConcurrent: maxConcurrentBrowsers,
+      });
+      providers.set("adspower-ec2", adsPowerProvider);
+
+      const health = await adsPowerProvider.healthCheck();
+      logger.info(
+        { healthy: health.healthy, message: health.message },
+        "AdsPower provider initialized",
+      );
+    } catch (err) {
+      logger.warn(
+        { error: String(err) },
+        "AdsPower provider failed to initialize (v2 workflows will not work)",
+      );
+    }
+  } else {
+    logger.info("ADSPOWER_API_URL not set, v2 workflows disabled");
+  }
+
+  // Register v2 workflow only if we have at least one provider
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const workflows: any[] = [jobApplicationWorkflow, resumeParseWorkflow];
+
+  if (providers.size > 0) {
+    const v2Workflow = registerJobApplicationWorkflowV2(
+      hatchet,
+      redis,
+      eventLogger,
+      db,
+      providers,
+    );
+    workflows.push(v2Workflow);
+    logger.info("job-application-v2 workflow registered");
+  }
+
+  // Start the worker — slot count should match max concurrent browser limit
   const worker = await hatchet.worker("valet-worker", {
-    slots: 5,
-    workflows: [jobApplicationWorkflow, resumeParseWorkflow],
+    slots: maxConcurrentBrowsers,
+    workflows,
   });
 
   await worker.start();
 
   logger.info("Valet worker started and listening for tasks");
 
+  // Start health HTTP server
+  let hatchetConnected = true;
+  const adsPowerProvider = providers.get("adspower-ec2") as AdsPowerEC2Provider | undefined;
+
+  const healthServer = startHealthServer({
+    port: Number(process.env.HEALTH_PORT ?? 8000),
+    logger,
+    getAdspowerStatus: async () => {
+      if (!adsPowerProvider) return { status: "not_configured" };
+      try {
+        const health = await adsPowerProvider.healthCheck();
+        return { status: health.healthy ? "ok" : "unhealthy" };
+      } catch {
+        return { status: "unreachable" };
+      }
+    },
+    getHatchetConnected: () => hatchetConnected,
+    getActiveProfiles: () => 0, // TODO: track active profiles in future
+  });
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down worker...`);
+    hatchetConnected = false;
+    healthServer.close();
     await worker.stop();
     await redis.quit();
     await sql.end();

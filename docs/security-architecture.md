@@ -22,6 +22,7 @@
 - No vertical privilege escalation: admin endpoints (future) will require a separate role claim verified server-side.
 
 **Implementation locations:**
+
 - `apps/api/src/common/middleware/auth.ts` — JWT validation
 - All `*.repository.ts` files — userId-scoped queries
 - `apps/api/src/modules/gdpr/gdpr.service.ts` — userId-scoped data export/deletion
@@ -51,6 +52,7 @@
 - **Zod validation:** All API request bodies, query parameters, and path parameters are validated using Zod schemas before reaching service logic. Invalid input is rejected with a 400 response.
 
 **Implementation locations:**
+
 - `packages/db/` — Drizzle ORM (parameterized queries)
 - `packages/shared/src/schemas/` — Zod validation schemas
 - ts-rest contract definitions enforce validation at the API boundary
@@ -87,6 +89,7 @@
 - **No default credentials:** Docker Compose development environment uses non-default passwords. Production credentials are managed via Infisical (secret management).
 
 **Implementation locations:**
+
 - `apps/api/src/plugins/security.ts` — Helmet + CORS configuration
 - `packages/shared/src/env.ts` — Environment validation
 
@@ -182,10 +185,10 @@ User                    Frontend (SPA)              API Server              Goog
 
 ### 2.2 Token Lifecycle
 
-| Token | Type | Storage | Expiry | Rotation |
-|-------|------|---------|--------|----------|
-| Access token | JWT RS256 | httpOnly cookie | 15 minutes | Automatic via refresh |
-| Refresh token | JWT RS256 | httpOnly cookie (Strict SameSite) | 7 days | One-time use (rotated on refresh) |
+| Token         | Type      | Storage                           | Expiry     | Rotation                          |
+| ------------- | --------- | --------------------------------- | ---------- | --------------------------------- |
+| Access token  | JWT RS256 | httpOnly cookie                   | 15 minutes | Automatic via refresh             |
+| Refresh token | JWT RS256 | httpOnly cookie (Strict SameSite) | 7 days     | One-time use (rotated on refresh) |
 
 ### 2.3 Token Claims
 
@@ -205,20 +208,20 @@ User                    Frontend (SPA)              API Server              Goog
 
 ## 3. PII Inventory
 
-| Data Element | Classification | Storage | Encrypted at Rest | Retention | GDPR Basis |
-|-------------|---------------|---------|-------------------|-----------|------------|
-| Email address | PII | PostgreSQL | Database-level | Account lifetime | Contract |
-| Full name | PII | PostgreSQL | Database-level | Account lifetime | Contract |
-| Phone number | PII | PostgreSQL | Database-level | Account lifetime | Contract |
-| Physical address | PII | PostgreSQL | Database-level | Account lifetime | Contract |
-| Resume content | Sensitive PII | S3 (SSE-S3) | AES-256 | Account lifetime | Contract |
-| Work history | PII | PostgreSQL (JSONB) | Database-level | Account lifetime | Contract |
-| Education history | PII | PostgreSQL (JSONB) | Database-level | Account lifetime | Contract |
-| Salary expectations | Sensitive PII | PostgreSQL | Database-level | Account lifetime | Consent |
-| EEO responses | Special category | PostgreSQL | Database-level | Account lifetime | Explicit consent |
-| Application screenshots | Contains PII | S3 (SSE-S3) | AES-256 | 30-90 days | Consent |
-| LLM prompts/responses | Contains PII | PostgreSQL (JSONB) | Database-level | 90 days | Consent |
-| IP address | PII | PostgreSQL | Database-level | Consent record lifetime | Legal obligation |
+| Data Element            | Classification   | Storage            | Encrypted at Rest | Retention               | GDPR Basis       |
+| ----------------------- | ---------------- | ------------------ | ----------------- | ----------------------- | ---------------- |
+| Email address           | PII              | PostgreSQL         | Database-level    | Account lifetime        | Contract         |
+| Full name               | PII              | PostgreSQL         | Database-level    | Account lifetime        | Contract         |
+| Phone number            | PII              | PostgreSQL         | Database-level    | Account lifetime        | Contract         |
+| Physical address        | PII              | PostgreSQL         | Database-level    | Account lifetime        | Contract         |
+| Resume content          | Sensitive PII    | S3 (SSE-S3)        | AES-256           | Account lifetime        | Contract         |
+| Work history            | PII              | PostgreSQL (JSONB) | Database-level    | Account lifetime        | Contract         |
+| Education history       | PII              | PostgreSQL (JSONB) | Database-level    | Account lifetime        | Contract         |
+| Salary expectations     | Sensitive PII    | PostgreSQL         | Database-level    | Account lifetime        | Consent          |
+| EEO responses           | Special category | PostgreSQL         | Database-level    | Account lifetime        | Explicit consent |
+| Application screenshots | Contains PII     | S3 (SSE-S3)        | AES-256           | 30-90 days              | Consent          |
+| LLM prompts/responses   | Contains PII     | PostgreSQL (JSONB) | Database-level    | 90 days                 | Consent          |
+| IP address              | PII              | PostgreSQL         | Database-level    | Consent record lifetime | Legal obligation |
 
 ---
 
@@ -246,7 +249,7 @@ User Browser
 [User reviews fields, approves submission]
     |
     v
-[Fastify API] --> [Hatchet Worker] --> [AdsPower Browser]
+[Fastify API] --> [GhostHands API] --> [AdsPower Browser]
                                           |
                                           v
                                     [Platform ATS]
@@ -259,7 +262,7 @@ User Browser
 [User starts session with parameters]
     |
     v
-[Fastify API] --> [Hatchet Worker] --> [Quality Gate Check (9 gates)]
+[Fastify API] --> [GhostHands API] --> [Quality Gate Check (9 gates)]
                       |                       |
                       |              [PASS]    |    [FAIL]
                       |                |       |      |
@@ -282,19 +285,20 @@ User Browser
 
 ## 5. Rate Limiting Strategy
 
-| Scope | Limit | Window | Implementation |
-|-------|-------|--------|----------------|
-| API requests per user | 100 | 1 minute | Redis sliding window |
-| Login attempts per IP | 10 | 15 minutes | Redis fixed window |
-| Resume uploads per user | 10 | 1 hour | Redis sliding window |
-| Task creation per user | 30 | 1 hour | Redis sliding window |
-| WebSocket connections per user | 3 | Concurrent | In-memory counter |
-| Autopilot: LinkedIn per day | 10 | 24 hours | Redis + database |
-| Autopilot: Greenhouse per day | 15 | 24 hours | Redis + database |
-| Autopilot: All platforms per day | 25 | 24 hours | Redis + database |
-| GDPR export requests | 3 | 24 hours | Redis sliding window |
+| Scope                            | Limit | Window     | Implementation       |
+| -------------------------------- | ----- | ---------- | -------------------- |
+| API requests per user            | 100   | 1 minute   | Redis sliding window |
+| Login attempts per IP            | 10    | 15 minutes | Redis fixed window   |
+| Resume uploads per user          | 10    | 1 hour     | Redis sliding window |
+| Task creation per user           | 30    | 1 hour     | Redis sliding window |
+| WebSocket connections per user   | 3     | Concurrent | In-memory counter    |
+| Autopilot: LinkedIn per day      | 10    | 24 hours   | Redis + database     |
+| Autopilot: Greenhouse per day    | 15    | 24 hours   | Redis + database     |
+| Autopilot: All platforms per day | 25    | 24 hours   | Redis + database     |
+| GDPR export requests             | 3     | 24 hours   | Redis sliding window |
 
 Rate limit headers returned on every response:
+
 - `X-RateLimit-Remaining`: Remaining requests in current window
 - `Retry-After`: Seconds until rate limit resets (on 429 responses)
 
@@ -304,12 +308,12 @@ Rate limit headers returned on every response:
 
 ### 6.1 Security Incident Classification
 
-| Severity | Example | Response Time | Notification |
-|----------|---------|---------------|-------------|
-| Critical | Data breach, unauthorized data access | Immediate (< 1 hour) | Phone call to on-call, email to all stakeholders |
-| High | Authentication bypass, privilege escalation | < 4 hours | SMS + email to engineering leads |
-| Medium | Rate limit bypass, XSS vulnerability found | < 24 hours | Email to engineering team |
-| Low | Minor CSP violation, dependency vulnerability | < 1 week | Ticket created in issue tracker |
+| Severity | Example                                       | Response Time        | Notification                                     |
+| -------- | --------------------------------------------- | -------------------- | ------------------------------------------------ |
+| Critical | Data breach, unauthorized data access         | Immediate (< 1 hour) | Phone call to on-call, email to all stakeholders |
+| High     | Authentication bypass, privilege escalation   | < 4 hours            | SMS + email to engineering leads                 |
+| Medium   | Rate limit bypass, XSS vulnerability found    | < 24 hours           | Email to engineering team                        |
+| Low      | Minor CSP violation, dependency vulnerability | < 1 week             | Ticket created in issue tracker                  |
 
 ### 6.2 Data Breach Response (GDPR Article 33/34)
 
@@ -341,13 +345,14 @@ Rate limit headers returned on every response:
 
 ### 7.2 Secret Management
 
-| Environment | Secret Storage | Rotation |
-|-------------|---------------|----------|
-| Development | `.env` file (gitignored) | Manual |
-| Staging | Coolify environment variables | Manual |
-| Production | Infisical (self-hosted) | Automated (90-day rotation for API keys) |
+| Environment | Secret Storage                | Rotation                                 |
+| ----------- | ----------------------------- | ---------------------------------------- |
+| Development | `.env` file (gitignored)      | Manual                                   |
+| Staging     | Coolify environment variables | Manual                                   |
+| Production  | Infisical (self-hosted)       | Automated (90-day rotation for API keys) |
 
 Secrets that must never appear in:
+
 - Git history
 - Frontend bundle
 - Application logs
@@ -356,4 +361,4 @@ Secrets that must never appear in:
 
 ---
 
-*This document is maintained by the engineering team and updated with each security-relevant architecture change. Last reviewed: 2026-02-12.*
+_This document is maintained by the engineering team and updated with each security-relevant architecture change. Last reviewed: 2026-02-12._

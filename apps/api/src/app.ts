@@ -2,13 +2,11 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import { initServer } from "@ts-rest/fastify";
+import { diContainer } from "@fastify/awilix";
 import { errorHandler } from "./common/middleware/error-handler.js";
 import { authMiddleware } from "./common/middleware/auth.js";
 import { requestLogger } from "./common/middleware/request-logger.js";
-import {
-  registerRateLimit,
-  registerRouteRateLimits,
-} from "./common/middleware/rate-limit.js";
+import { registerRateLimit, registerRouteRateLimits } from "./common/middleware/rate-limit.js";
 import sentryPlugin from "./plugins/sentry.js";
 import databasePlugin from "./plugins/database.js";
 import redisPlugin from "./plugins/redis.js";
@@ -25,17 +23,20 @@ import { qaBankRouter } from "./modules/qa-bank/qa-bank.routes.js";
 import { consentRouter } from "./modules/consent/consent.routes.js";
 import { gdprRouter } from "./modules/gdpr/gdpr.routes.js";
 import { billingRouter, billingWebhookRoute } from "./modules/billing/billing.routes.js";
+import { ghosthandsWebhookRoute } from "./modules/ghosthands/ghosthands.webhook.js";
+import { ghosthandsMonitoringRoutes } from "./modules/ghosthands/ghosthands.monitoring.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
+import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
+import { taskAdminRoutes } from "./modules/tasks/task.admin-routes.js";
+import { deployAdminRoutes } from "./modules/sandboxes/deploy.admin-routes.js";
+import { taskUserRoutes } from "./modules/tasks/task.user-routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
-      transport:
-        process.env.NODE_ENV === "development"
-          ? { target: "pino-pretty" }
-          : undefined,
+      transport: process.env.NODE_ENV === "development" ? { target: "pino-pretty" } : undefined,
     },
   });
 
@@ -92,15 +93,39 @@ export async function buildApp() {
   fastify.register(s.plugin(billingRouter));
   fastify.register(s.plugin(dashboardRouter));
   fastify.register(s.plugin(notificationRouter));
+  fastify.register(s.plugin(sandboxRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
 
-  // Standalone webhook route (outside ts-rest — needs raw body + no auth)
+  // Standalone webhook routes (outside ts-rest — needs raw body + no auth)
   await fastify.register(billingWebhookRoute);
+  await fastify.register(ghosthandsWebhookRoute);
+
+  // Admin routes (need auth via onRequest hook, so registered after auth middleware)
+  await fastify.register(taskAdminRoutes);
+  await fastify.register(ghosthandsMonitoringRoutes);
+  await fastify.register(deployAdminRoutes);
+
+  // User-facing standalone routes (outside ts-rest, needs auth)
+  await fastify.register(taskUserRoutes);
 
   // WebSocket
   await registerWebSocket(fastify);
+
+  // Start sandbox health monitor and auto-stop monitor after server is ready
+  fastify.addHook("onReady", async () => {
+    const { sandboxHealthMonitor, autoStopMonitor } = diContainer.cradle;
+    sandboxHealthMonitor.start();
+    autoStopMonitor.start();
+  });
+
+  // Stop monitors on close
+  fastify.addHook("onClose", async () => {
+    const { sandboxHealthMonitor, autoStopMonitor } = diContainer.cradle;
+    sandboxHealthMonitor.stop();
+    autoStopMonitor.stop();
+  });
 
   return fastify;
 }

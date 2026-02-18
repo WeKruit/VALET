@@ -1,9 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@valet/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Check, Circle, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceStrict } from "date-fns";
@@ -23,24 +18,36 @@ const steps = [
   { id: "done", label: "Done", description: "Application submitted" },
 ];
 
+function progressToStepIndex(progress: number): number {
+  if (progress >= 95) return 7;
+  if (progress >= 85) return 6;
+  if (progress >= 75) return 5;
+  if (progress >= 50) return 4;
+  if (progress >= 30) return 3;
+  if (progress >= 15) return 2;
+  if (progress >= 6) return 1;
+  return 0;
+}
+
 interface TaskProgressProps {
-  currentStep?: string;
+  progress?: number;
   status?: string;
   createdAt?: Date | string;
   completedAt?: Date | string | null;
 }
 
-export function TaskProgress({
-  currentStep = "queued",
-  status,
-  createdAt,
-  completedAt,
-}: TaskProgressProps) {
+export function TaskProgress({ progress = 0, status, createdAt, completedAt }: TaskProgressProps) {
   const isFailed = status === "failed";
   const isCancelled = status === "cancelled";
-  const currentIndex = isFailed || isCancelled
-    ? steps.findIndex((s) => s.id === currentStep)
-    : steps.findIndex((s) => s.id === currentStep);
+
+  let currentIndex: number;
+  if (status === "completed") {
+    currentIndex = steps.length;
+  } else if (status === "created" || status === "queued") {
+    currentIndex = 0;
+  } else {
+    currentIndex = progressToStepIndex(progress);
+  }
 
   return (
     <Card>
@@ -49,11 +56,7 @@ export function TaskProgress({
           <CardTitle className="text-lg">Progress</CardTitle>
           {createdAt && completedAt && (
             <span className="text-xs text-[var(--wk-text-secondary)]">
-              Total:{" "}
-              {formatDistanceStrict(
-                new Date(completedAt),
-                new Date(createdAt)
-              )}
+              Total: {formatDistanceStrict(new Date(completedAt), new Date(createdAt))}
             </span>
           )}
         </div>
@@ -82,7 +85,7 @@ export function TaskProgress({
                         "border-[var(--wk-status-error)] bg-[var(--wk-status-error)] text-white",
                       isPending &&
                         "border-[var(--wk-border-default)] bg-[var(--wk-surface-page)] text-[var(--wk-text-tertiary)]",
-                      isCurrent && !isErrorStep && "animate-pulse"
+                      isCurrent && !isErrorStep && "animate-pulse",
                     )}
                   >
                     {isComplete ? (
@@ -101,7 +104,7 @@ export function TaskProgress({
                         "h-8 w-0.5 transition-colors duration-300",
                         isComplete
                           ? "bg-[var(--wk-status-success)]"
-                          : "bg-[var(--wk-border-default)]"
+                          : "bg-[var(--wk-border-default)]",
                       )}
                     />
                   )}
@@ -114,14 +117,12 @@ export function TaskProgress({
                       className={cn(
                         "text-sm font-medium",
                         isPending && "text-[var(--wk-text-tertiary)]",
-                        isErrorStep && "text-[var(--wk-status-error)]"
+                        isErrorStep && "text-[var(--wk-status-error)]",
                       )}
                     >
                       {step.label}
                     </p>
-                    <p className="text-xs text-[var(--wk-text-secondary)]">
-                      {step.description}
-                    </p>
+                    <p className="text-xs text-[var(--wk-text-secondary)]">{step.description}</p>
                   </div>
                 </div>
               </div>

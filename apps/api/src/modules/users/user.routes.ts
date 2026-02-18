@@ -1,6 +1,11 @@
 import { initServer } from "@ts-rest/fastify";
 import { userContract } from "@valet/contracts";
-import type { WorkHistoryEntry, EducationEntry, JobPreferences, NotificationPreferences } from "@valet/shared/schemas";
+import type {
+  WorkHistoryEntry,
+  EducationEntry,
+  JobPreferences,
+  NotificationPreferences,
+} from "@valet/shared/schemas";
 import { AppError } from "../../common/errors.js";
 
 const s = initServer();
@@ -14,7 +19,8 @@ function toProfileResponse(user: Record<string, unknown>) {
     email: user.email as string,
     name: user.name as string,
     avatarUrl: (user.avatarUrl as string | null) ?? null,
-    subscriptionTier: (user.subscriptionTier as string) as "free" | "starter" | "pro" | "enterprise",
+    role: (user.role as string as "user" | "admin" | "superadmin") ?? "user",
+    subscriptionTier: user.subscriptionTier as string as "free" | "starter" | "pro" | "enterprise",
     createdAt: user.createdAt as Date,
     updatedAt: user.updatedAt as Date,
     phone: (user.phone as string | null) ?? null,
@@ -103,5 +109,47 @@ export const userRouter = s.router(userContract, {
     const { userService } = request.diScope.cradle;
     const prefs = await userService.updateNotificationPreferences(request.userId, body);
     return { status: 200, body: prefs };
+  },
+
+  listSessions: async ({ request }) => {
+    const { taskService } = request.diScope.cradle;
+    const ghResponse = await taskService.listSessions(request.userId);
+    return {
+      status: 200,
+      body: {
+        sessions: ghResponse.sessions.map((s) => ({
+          id: s.id,
+          userId: s.user_id,
+          domain: s.domain,
+          createdAt: new Date(s.created_at),
+          lastUsedAt: s.last_used_at ? new Date(s.last_used_at) : null,
+          expiresAt: s.expires_at ? new Date(s.expires_at) : null,
+        })),
+        count: ghResponse.total,
+      },
+    };
+  },
+
+  deleteSession: async ({ params, request }) => {
+    const { taskService } = request.diScope.cradle;
+    await taskService.clearSession(request.userId, params.domain);
+    return {
+      status: 200,
+      body: {
+        domain: params.domain,
+        deleted: true as const,
+      },
+    };
+  },
+
+  clearAllSessions: async ({ request }) => {
+    const { taskService } = request.diScope.cradle;
+    const ghResponse = await taskService.clearAllSessions(request.userId);
+    return {
+      status: 200,
+      body: {
+        deletedCount: ghResponse.deleted_count,
+      },
+    };
   },
 });

@@ -1,0 +1,228 @@
+#cloud-config
+# =============================================================================
+# Valet Browser Worker — Cloud-Init Configuration
+# =============================================================================
+# Runs on first boot to set up the full headless browser automation stack:
+#   Xvfb (virtual display) -> Fluxbox (window manager) -> x11vnc (VNC server)
+#   -> noVNC/websockify (web-based VNC viewer on port 6080)
+#   -> Caddy (HTTPS reverse proxy for noVNC via sslip.io + ZeroSSL)
+#   -> health-server.js (metrics endpoint on port 8000)
+#
+# After cloud-init completes:
+#   1. Connect via noVNC at https://<ip-dashed>.sslip.io
+#   2. Install AdsPower manually through VNC
+#   3. Deploy the Valet worker application to /opt/valet/app
+# =============================================================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  # --- Display server (for AdsPower GUI) ---
+  - xvfb
+  - x11vnc
+  - fluxbox
+  # --- noVNC (web-based VNC viewer) ---
+  - novnc
+  - websockify
+  # --- Chrome/Chromium dependencies (required by AdsPower browsers) ---
+  - libnss3
+  - libatk1.0-0
+  - libatk-bridge2.0-0
+  - libcups2
+  - libdrm2
+  - libxkbcommon0
+  - libxcomposite1
+  - libxdamage1
+  - libxfixes3
+  - libxrandr2
+  - libgbm1
+  - libpango-1.0-0
+  - libcairo2
+  - libasound2
+  - libatspi2.0-0
+  # --- Fonts (for proper text rendering in browser sessions) ---
+  - fonts-noto-cjk
+  - fonts-noto-color-emoji
+  - fonts-liberation
+  # --- Utilities ---
+  - curl
+  - unzip
+  - jq
+  - git
+
+write_files:
+  # --- Xvfb: virtual X11 framebuffer (1920x1080, 24-bit color) ---
+  - path: /etc/systemd/system/xvfb.service
+    content: |
+      [Unit]
+      Description=X Virtual Framebuffer
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # --- x11vnc: VNC server attached to the Xvfb display ---
+  - path: /etc/systemd/system/x11vnc.service
+    content: |
+      [Unit]
+      Description=x11vnc VNC Server
+      After=xvfb.service
+      Requires=xvfb.service
+
+      [Service]
+      Environment=DISPLAY=:99
+      ExecStart=/usr/bin/x11vnc -display :99 -forever -shared -rfbport 5900 -nopw
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # --- Fluxbox: lightweight window manager for managing browser windows ---
+  - path: /etc/systemd/system/fluxbox.service
+    content: |
+      [Unit]
+      Description=Fluxbox Window Manager
+      After=xvfb.service
+      Requires=xvfb.service
+
+      [Service]
+      Environment=DISPLAY=:99
+      ExecStart=/usr/bin/fluxbox
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # --- noVNC: web-based VNC viewer exposed on port 6080 ---
+  - path: /etc/systemd/system/novnc.service
+    content: |
+      [Unit]
+      Description=noVNC Web VNC Proxy
+      After=x11vnc.service
+      Requires=x11vnc.service
+
+      [Service]
+      ExecStart=/usr/bin/websockify --web=/usr/share/novnc/ 6080 localhost:5900
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # --- Caddy: HTTPS reverse proxy for noVNC (auto-certs via ZeroSSL) ---
+  - path: /etc/caddy/Caddyfile.template
+    content: |
+      {
+        email admin@wekruit.com
+        acme_ca https://acme.zerossl.com/v2/DV90
+      }
+
+      PUBLIC_IP_DASHED.sslip.io {
+        reverse_proxy localhost:6080
+      }
+
+  # --- Health server: metrics endpoint on port 8000 ---
+  - path: /etc/systemd/system/valet-health.service
+    content: |
+      [Unit]
+      Description=Valet Health Server
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/node /opt/valet/health-server.js
+      Restart=always
+      RestartSec=5
+      User=root
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # --- Environment template for the Valet worker process ---
+  - path: /opt/valet/.env.template
+    content: |
+      # GhostHands (local — runs on the same instance)
+      GHOSTHANDS_API_URL=http://127.0.0.1:3100
+
+      # Database (remote — fill in)
+      DATABASE_URL=
+
+      # Redis (remote — fill in)
+      REDIS_URL=
+
+      # Display
+      DISPLAY=:99
+
+      # Node
+      NODE_ENV=production
+      LOG_LEVEL=info
+
+  # --- First-boot setup script ---
+  - path: /opt/valet/setup.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      echo "=== Setting up Valet worker EC2 instance ==="
+
+      # Install Node.js 22 LTS
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y nodejs
+
+      # Install pnpm
+      npm install -g pnpm@10
+
+      # Create valet user (idempotent)
+      id -u valet &>/dev/null || useradd -m -s /bin/bash -d /opt/valet valet
+      usermod -aG sudo valet
+
+      # Create directories
+      mkdir -p /opt/valet/{app,data,logs}
+      mkdir -p /opt/adspower
+
+      # Set DISPLAY globally so all sessions inherit it
+      echo 'export DISPLAY=:99' >> /etc/environment
+
+      # Install Caddy (HTTPS reverse proxy)
+      apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+      apt-get update -qq
+      apt-get install -y caddy
+
+      # Configure Caddy with the instance's public IP
+      PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+      IP_DASHED=$(echo "$PUBLIC_IP" | tr '.' '-')
+      sed "s/PUBLIC_IP_DASHED/$IP_DASHED/g" /etc/caddy/Caddyfile.template > /etc/caddy/Caddyfile
+
+      # Copy health server
+      cp /opt/valet/health-server.js /opt/valet/health-server.js 2>/dev/null || true
+
+      # Enable and start display services
+      systemctl daemon-reload
+      systemctl enable --now xvfb
+      systemctl enable --now fluxbox
+      systemctl enable --now x11vnc
+      systemctl enable --now novnc
+      systemctl enable --now caddy
+      systemctl enable --now valet-health 2>/dev/null || true
+
+      # Set permissions
+      chown -R valet:valet /opt/valet
+      chown -R valet:valet /opt/adspower
+
+      echo "=== Setup complete ==="
+      echo "noVNC available at https://${IP_DASHED}.sslip.io"
+      echo "Health server at http://${PUBLIC_IP}:8000"
+      echo "AdsPower must be installed manually via VNC"
+
+runcmd:
+  - /opt/valet/setup.sh

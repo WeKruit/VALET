@@ -4,7 +4,6 @@ import { asClass, asFunction, Lifetime } from "awilix";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "@valet/db";
 import type Redis from "ioredis";
-import { Hatchet } from "@hatchet-dev/typescript-sdk";
 import { S3Client } from "@aws-sdk/client-s3";
 
 import { TaskRepository } from "../modules/tasks/task.repository.js";
@@ -26,12 +25,21 @@ import { BillingService } from "../modules/billing/billing.service.js";
 import { DashboardService } from "../modules/dashboard/dashboard.service.js";
 import { NotificationRepository } from "../modules/notifications/notification.repository.js";
 import { NotificationService } from "../modules/notifications/notification.service.js";
+import { SandboxRepository } from "../modules/sandboxes/sandbox.repository.js";
+import { SandboxService } from "../modules/sandboxes/sandbox.service.js";
+import { SandboxHealthMonitor } from "../modules/sandboxes/sandbox-health-monitor.js";
+import { EC2Service } from "../modules/sandboxes/ec2.service.js";
+import { AutoStopMonitor } from "../modules/sandboxes/auto-stop-monitor.js";
+import { GhostHandsClient } from "../modules/ghosthands/ghosthands.client.js";
+import { GhAutomationJobRepository } from "../modules/ghosthands/gh-automation-job.repository.js";
+import { GhBrowserSessionRepository } from "../modules/ghosthands/gh-browser-session.repository.js";
+import { GhJobEventRepository } from "../modules/ghosthands/gh-job-event.repository.js";
+import { DeployService } from "../modules/sandboxes/deploy.service.js";
 
 export interface AppCradle {
   db: Database;
   redis: Redis;
   logger: FastifyInstance["log"];
-  hatchet: Hatchet;
   s3: S3Client;
   taskRepo: TaskRepository;
   taskService: TaskService;
@@ -52,6 +60,16 @@ export interface AppCradle {
   dashboardService: DashboardService;
   notificationRepo: NotificationRepository;
   notificationService: NotificationService;
+  sandboxRepo: SandboxRepository;
+  sandboxService: SandboxService;
+  sandboxHealthMonitor: SandboxHealthMonitor;
+  ec2Service: EC2Service;
+  autoStopMonitor: AutoStopMonitor;
+  ghosthandsClient: GhostHandsClient;
+  ghJobRepo: GhAutomationJobRepository;
+  ghSessionRepo: GhBrowserSessionRepository;
+  ghJobEventRepo: GhJobEventRepository;
+  deployService: DeployService;
 }
 
 declare module "@fastify/awilix" {
@@ -69,20 +87,6 @@ export default fp(async (fastify: FastifyInstance) => {
     db: asFunction(() => fastify.db, { lifetime: Lifetime.SINGLETON }),
     redis: asFunction(() => fastify.redis, { lifetime: Lifetime.SINGLETON }),
     logger: asFunction(() => fastify.log, { lifetime: Lifetime.SINGLETON }),
-    hatchet: asFunction(
-      () =>
-        new Hatchet({
-          token: process.env.HATCHET_CLIENT_TOKEN,
-          tls_config: {
-            tls_strategy:
-              (process.env.HATCHET_CLIENT_TLS_STRATEGY as
-                | "none"
-                | "tls"
-                | "mtls") ?? "none",
-          },
-        }),
-      { lifetime: Lifetime.SINGLETON },
-    ),
     s3: asFunction(
       () =>
         new S3Client({
@@ -115,5 +119,23 @@ export default fp(async (fastify: FastifyInstance) => {
     dashboardService: asClass(DashboardService, { lifetime: Lifetime.SINGLETON }),
     notificationRepo: asClass(NotificationRepository, { lifetime: Lifetime.SINGLETON }),
     notificationService: asClass(NotificationService, { lifetime: Lifetime.SINGLETON }),
+    sandboxRepo: asClass(SandboxRepository, { lifetime: Lifetime.SINGLETON }),
+    sandboxService: asClass(SandboxService, { lifetime: Lifetime.SINGLETON }),
+    sandboxHealthMonitor: asClass(SandboxHealthMonitor, { lifetime: Lifetime.SINGLETON }),
+    ec2Service: asClass(EC2Service, { lifetime: Lifetime.SINGLETON }),
+    autoStopMonitor: asClass(AutoStopMonitor, { lifetime: Lifetime.SINGLETON }),
+    ghJobRepo: asClass(GhAutomationJobRepository, { lifetime: Lifetime.SINGLETON }),
+    ghSessionRepo: asClass(GhBrowserSessionRepository, { lifetime: Lifetime.SINGLETON }),
+    ghJobEventRepo: asClass(GhJobEventRepository, { lifetime: Lifetime.SINGLETON }),
+    deployService: asClass(DeployService, { lifetime: Lifetime.SINGLETON }),
+    ghosthandsClient: asFunction(
+      ({ logger }) =>
+        new GhostHandsClient({
+          ghosthandsApiUrl: process.env.GHOSTHANDS_API_URL ?? "http://localhost:3100",
+          ghosthandsServiceKey: process.env.GH_SERVICE_SECRET ?? "",
+          logger,
+        }),
+      { lifetime: Lifetime.SINGLETON },
+    ),
   });
 });

@@ -16,11 +16,18 @@ export class TaskAlreadyCancelledError extends AppError {
 
 export class TaskNotCancellableError extends AppError {
   constructor(taskId: string, status: string) {
+    super(409, "TASK_NOT_CANCELLABLE", `Task ${taskId} cannot be cancelled in status ${status}`);
+    this.name = "TaskNotCancellableError";
+  }
+}
+
+export class TaskNotResolvableError extends AppError {
+  constructor(taskId: string, status: string) {
     super(
       409,
-      "TASK_NOT_CANCELLABLE",
-      `Task ${taskId} cannot be cancelled in status ${status}`,
+      "TASK_NOT_RESOLVABLE",
+      `Task ${taskId} is not in waiting_human status (current: ${status})`,
     );
-    this.name = "TaskNotCancellableError";
+    this.name = "TaskNotResolvableError";
   }
 }

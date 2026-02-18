@@ -1,11 +1,24 @@
 import { Outlet } from "react-router-dom";
+import { useEffect } from "react";
 import { Sheet, SheetContent } from "@valet/ui/components/sheet";
 import { Sidebar, SidebarContent } from "./sidebar";
 import { Header } from "./header";
 import { useUIStore } from "@/stores/ui.store";
+import { useCurrentUser } from "@/features/auth/hooks/use-auth";
+import { useAuth } from "@/features/auth/hooks/use-auth";
 
 export function AppLayout() {
   const { mobileSidebarOpen, setMobileSidebarOpen } = useUIStore();
+  const { setUser } = useAuth();
+  const { data: freshUserData } = useCurrentUser();
+
+  // Sync user data from API to Zustand store on mount
+  // This ensures localStorage has the latest user data (including new fields like 'role')
+  useEffect(() => {
+    if (freshUserData?.body) {
+      setUser(freshUserData.body);
+    }
+  }, [freshUserData, setUser]);
 
   return (
     <div className="flex h-screen overflow-hidden">

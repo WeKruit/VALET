@@ -1,10 +1,5 @@
 import { Link } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@valet/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
 import {
@@ -16,21 +11,19 @@ import {
 } from "@valet/ui/components/select";
 import { TaskProgress } from "./task-progress";
 import { FieldReview } from "./field-review";
+import { HitlBlockerCard } from "./hitl-blocker-card";
+import { GhJobCard } from "./gh-job-card";
+import { ActivityFeed } from "./activity-feed";
 import { useTask } from "../hooks/use-tasks";
 import { useTaskWebSocket } from "../hooks/use-task-websocket";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { toast } from "sonner";
-import {
-  ExternalLink,
-  RefreshCw,
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
-import { useState } from "react";
+import { ExternalLink, RefreshCw, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useMemo } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
+import { LiveView } from "./live-view";
 
 interface TaskDetailProps {
   taskId: string;
@@ -71,7 +64,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
   const { data, isLoading, isError } = useTask(taskId);
   const { status: wsStatus } = useTaskWebSocket(taskId);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [showLiveView, setShowLiveView] = useState(true);
   const queryClient = useQueryClient();
+  const noVncUrl = useMemo(() => import.meta.env.VITE_NOVNC_URL ?? "", []);
 
   const cancelTask = api.tasks.cancel.useMutation({
     onSuccess: () => {
@@ -79,6 +74,16 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     },
     onError: () => {
       toast.error("Failed to cancel task. Please try again.");
+    },
+  });
+
+  const retryTask = api.tasks.retry.useMutation({
+    onSuccess: () => {
+      toast.success("Task retry submitted to GhostHands.");
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+    onError: () => {
+      toast.error("Failed to retry task.");
     },
   });
 
@@ -115,21 +120,19 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
 
   const isFailed = task.status === "failed";
   const isWaitingReview = task.status === "waiting_human";
+  const hasHitlBlocker = isWaitingReview && task.interaction != null;
+  const needsFieldReview = isWaitingReview && !task.interaction;
   const isTerminal =
-    task.status === "completed" ||
-    task.status === "cancelled" ||
-    task.status === "failed";
+    task.status === "completed" || task.status === "cancelled" || task.status === "failed";
 
   return (
     <div className="space-y-6">
-      {/* Status banner for waiting_human */}
-      {isWaitingReview && (
+      {/* Status banner for field review (copilot mode) */}
+      {needsFieldReview && (
         <div className="rounded-[var(--wk-radius-lg)] border-2 border-[var(--wk-status-warning)] bg-amber-50/50 dark:bg-amber-950/10 p-4 flex items-center gap-3">
           <AlertTriangle className="h-5 w-5 text-[var(--wk-status-warning)] shrink-0" />
           <div>
-            <p className="text-sm font-medium">
-              This application needs your review
-            </p>
+            <p className="text-sm font-medium">This application needs your review</p>
             <p className="text-xs text-[var(--wk-text-secondary)] mt-0.5">
               Review the auto-filled fields below and approve to submit.
             </p>
@@ -158,15 +161,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                   {wsStatus === "connected" ? "Live" : wsStatus}
                 </span>
               </div>
-              <Badge
-                variant={task.mode === "copilot" ? "copilot" : "autopilot"}
-              >
-                {task.mode}
-              </Badge>
-              <Badge
-                variant={statusBadgeVariant[task.status] ?? "default"}
-                className="capitalize"
-              >
+              <Badge variant={task.mode === "copilot" ? "copilot" : "autopilot"}>{task.mode}</Badge>
+              <Badge variant={statusBadgeVariant[task.status] ?? "default"} className="capitalize">
                 {task.status.replace("_", " ")}
               </Badge>
             </div>
@@ -249,8 +245,47 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         </CardContent>
       </Card>
 
-      {/* Field Review Panel - only for waiting_human */}
-      {isWaitingReview && (
+      {/* Live View - only for active tasks */}
+      {!isTerminal && noVncUrl && (
+        <LiveView
+          url={noVncUrl}
+          isVisible={showLiveView}
+          onToggle={() => setShowLiveView(!showLiveView)}
+        />
+      )}
+
+      {/* HITL Blocker Card - browser automation blocked */}
+      {hasHitlBlocker && task.interaction && (
+        <HitlBlockerCard
+          taskId={taskId}
+          interaction={{
+            type: task.interaction.type,
+            screenshotUrl: task.interaction.screenshotUrl,
+            pageUrl: task.interaction.pageUrl,
+            timeoutSeconds: task.interaction.timeoutSeconds,
+            message: task.interaction.message,
+            pausedAt:
+              task.interaction.pausedAt instanceof Date
+                ? task.interaction.pausedAt.toISOString()
+                : String(task.interaction.pausedAt),
+          }}
+          onCancel={() =>
+            cancelTask.mutate({
+              params: { id: taskId },
+              body: {},
+            })
+          }
+        />
+      )}
+
+      {/* GhostHands Job Status */}
+      {task.ghJob && <GhJobCard ghJob={task.ghJob} />}
+
+      {/* Activity Feed - real GH job events timeline */}
+      {task.ghJob && <ActivityFeed taskId={taskId} isTerminal={isTerminal} />}
+
+      {/* Field Review Panel - copilot field review */}
+      {needsFieldReview && (
         <FieldReview
           taskId={taskId}
           task={{
@@ -272,9 +307,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-[var(--wk-status-error)]" />
-                <CardTitle className="text-lg text-[var(--wk-status-error)]">
-                  Task Failed
-                </CardTitle>
+                <CardTitle className="text-lg text-[var(--wk-status-error)]">Task Failed</CardTitle>
               </div>
               <Button
                 variant="ghost"
@@ -291,7 +324,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-[var(--wk-text-secondary)]">
-              {task.errorMessage ?? "An unexpected error occurred while processing this application."}
+              {task.errorMessage ??
+                "An unexpected error occurred while processing this application."}
             </p>
             {showErrorDetails && task.errorCode && (
               <div className="rounded-[var(--wk-radius-md)] bg-[var(--wk-surface-sunken)] p-3">
@@ -305,19 +339,31 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 )}
               </div>
             )}
-            <Button asChild variant="secondary" size="sm" className="mt-2">
-              <Link to={`/apply?url=${encodeURIComponent(task.jobUrl)}`}>
-                <RefreshCw className="h-3.5 w-3.5" />
-                Retry Application
-              </Link>
-            </Button>
+            <div className="flex gap-2 mt-2">
+              {task.workflowRunId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={retryTask.isPending}
+                  onClick={() => retryTask.mutate({ params: { id: taskId }, body: {} })}
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${retryTask.isPending ? "animate-spin" : ""}`}
+                  />
+                  {retryTask.isPending ? "Retrying..." : "Retry via GhostHands"}
+                </Button>
+              )}
+              <Button asChild variant="ghost" size="sm">
+                <Link to={`/apply?url=${encodeURIComponent(task.jobUrl)}`}>New Application</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* Progress Timeline */}
       <TaskProgress
-        currentStep={task.currentStep ?? "queued"}
+        progress={task.progress}
         status={task.status}
         createdAt={task.createdAt}
         completedAt={task.completedAt}

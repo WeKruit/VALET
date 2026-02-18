@@ -1,4 +1,6 @@
 import { api } from "@/lib/api-client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export interface UseTasksParams {
   page?: number;
@@ -34,5 +36,19 @@ export function useTask(taskId: string) {
       params: { id: taskId },
     },
     enabled: Boolean(taskId),
+  });
+}
+
+export function useResolveBlocker() {
+  const qc = useQueryClient();
+  return api.tasks.resolveBlocker.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success("Blocker resolved. Task will resume shortly.");
+      qc.invalidateQueries({ queryKey: ["tasks", variables.params.id] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+    onError: () => {
+      toast.error("Failed to resolve blocker. Please try again.");
+    },
   });
 }

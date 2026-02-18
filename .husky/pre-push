@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Validate CI setup before pushing
+if [ -f "./scripts/validate-ci-setup.sh" ]; then
+  bash ./scripts/validate-ci-setup.sh
+else
+  echo "⚠️  Warning: scripts/validate-ci-setup.sh not found, skipping CI validation"
+fi
+
+echo "✅ Pre-push checks passed"

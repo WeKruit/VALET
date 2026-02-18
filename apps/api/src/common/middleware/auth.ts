@@ -1,12 +1,16 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import * as jose from "jose";
 import { AppError } from "../errors.js";
-import { SECURITY_EVENT_TYPES, type SecurityEventType } from "../../services/security-logger.service.js";
+import {
+  SECURITY_EVENT_TYPES,
+  type SecurityEventType,
+} from "../../services/security-logger.service.js";
 
 declare module "fastify" {
   interface FastifyRequest {
     userId: string;
     userEmail: string;
+    userRole: string;
   }
 }
 
@@ -21,14 +25,13 @@ const PUBLIC_EXACT_PATHS = [
   "/api/v1/auth/reset-password",
   "/api/v1/health",
   "/api/v1/billing/webhook",
+  "/api/v1/webhooks/ghosthands",
+  "/api/v1/webhooks/ghosthands/deploy",
 ];
 
 const PUBLIC_PREFIX_PATHS = ["/api/v1/ws", "/docs"];
 
-export async function authMiddleware(
-  request: FastifyRequest,
-  _reply: FastifyReply,
-) {
+export async function authMiddleware(request: FastifyRequest, _reply: FastifyReply) {
   const path = request.url.split("?")[0];
   if (!path) return;
 
@@ -76,6 +79,7 @@ export async function authMiddleware(
 
     request.userId = payload.sub;
     request.userEmail = payload.email as string;
+    request.userRole = (payload.role as string) ?? "user";
   } catch (err) {
     if (err instanceof AppError) throw err;
     logSecurityEvent(request, SECURITY_EVENT_TYPES.AUTH_FAILURE, {

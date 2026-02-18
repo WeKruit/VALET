@@ -13,6 +13,7 @@ import {
 import { users } from "./users.js";
 import { resumes } from "./resumes.js";
 import { browserProfiles } from "./browser-profiles.js";
+import { sandboxes } from "./sandboxes.js";
 
 export const taskStatusEnum = pgEnum("task_status", [
   "created",
@@ -32,10 +33,7 @@ export const platformEnum = pgEnum("platform", [
   "unknown",
 ]);
 
-export const applicationModeEnum = pgEnum("application_mode", [
-  "copilot",
-  "autopilot",
-]);
+export const applicationModeEnum = pgEnum("application_mode", ["copilot", "autopilot"]);
 
 export const externalStatusEnum = pgEnum("external_status", [
   "applied",
@@ -72,10 +70,15 @@ export const tasks = pgTable(
     errorMessage: text("error_message"),
     retryCount: integer("retry_count").default(0).notNull(),
     workflowRunId: varchar("workflow_run_id", { length: 255 }),
-    browserProfileId: uuid("browser_profile_id").references(() => browserProfiles.id, { onDelete: "set null" }),
+    browserProfileId: uuid("browser_profile_id").references(() => browserProfiles.id, {
+      onDelete: "set null",
+    }),
     screenshots: jsonb("screenshots").default({}),
     llmUsage: jsonb("llm_usage").default({}),
     notes: text("notes"),
+    sandboxId: uuid("sandbox_id").references(() => sandboxes.id, { onDelete: "set null" }),
+    interactionType: varchar("interaction_type", { length: 50 }),
+    interactionData: jsonb("interaction_data"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -85,5 +88,8 @@ export const tasks = pgTable(
     index("idx_tasks_user_status").on(table.userId, table.status),
     index("idx_tasks_user_created").on(table.userId, table.createdAt),
     index("idx_tasks_status").on(table.status),
+    index("idx_tasks_interaction_type").on(table.interactionType),
+    index("idx_tasks_sandbox_id").on(table.sandboxId),
+    index("idx_tasks_sandbox_status").on(table.sandboxId, table.status),
   ],
 );
