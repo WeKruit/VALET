@@ -1,8 +1,18 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { SandboxCreateRequest, SandboxUpdateRequest, SandboxHealthStatus } from "@valet/shared/schemas";
+import type {
+  SandboxCreateRequest,
+  SandboxUpdateRequest,
+  SandboxHealthStatus,
+} from "@valet/shared/schemas";
 import type { SandboxRepository } from "./sandbox.repository.js";
 import type { EC2Service } from "./ec2.service.js";
-import { SandboxNotFoundError, SandboxDuplicateInstanceError, SandboxUnreachableError } from "./sandbox.errors.js";
+import type { TaskRepository } from "../tasks/task.repository.js";
+import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
+import {
+  SandboxNotFoundError,
+  SandboxDuplicateInstanceError,
+  SandboxUnreachableError,
+} from "./sandbox.errors.js";
 import { AppError } from "../../common/errors.js";
 
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
@@ -11,19 +21,27 @@ export class SandboxService {
   private sandboxRepo: SandboxRepository;
   private logger: FastifyBaseLogger;
   private ec2Service: EC2Service;
+  private taskRepo: TaskRepository;
+  private ghosthandsClient: GhostHandsClient;
 
   constructor({
     sandboxRepo,
     logger,
     ec2Service,
+    taskRepo,
+    ghosthandsClient,
   }: {
     sandboxRepo: SandboxRepository;
     logger: FastifyBaseLogger;
     ec2Service: EC2Service;
+    taskRepo: TaskRepository;
+    ghosthandsClient: GhostHandsClient;
   }) {
     this.sandboxRepo = sandboxRepo;
     this.logger = logger;
     this.ec2Service = ec2Service;
+    this.taskRepo = taskRepo;
+    this.ghosthandsClient = ghosthandsClient;
   }
 
   async getById(id: string) {
@@ -71,9 +89,46 @@ export class SandboxService {
     return updated;
   }
 
-  async terminate(id: string) {
+  async terminate(id: string, userId?: string) {
     const existing = await this.sandboxRepo.findById(id);
     if (!existing) throw new SandboxNotFoundError(id);
+
+    // Cancel active tasks associated with this sandbox before terminating
+    if (userId) {
+      try {
+        const activeTasks = await this.taskRepo.findActiveBySandbox(userId, id);
+        for (const task of activeTasks) {
+          this.logger.info(
+            { taskId: task.id, sandboxId: id },
+            "Cancelling task due to sandbox termination",
+          );
+          await this.taskRepo.updateStatus(task.id, "cancelled");
+
+          // Cancel the GH job if it has one
+          if (task.workflowRunId) {
+            try {
+              await this.ghosthandsClient.cancelJob(task.workflowRunId);
+            } catch (err) {
+              this.logger.warn(
+                { err, taskId: task.id, jobId: task.workflowRunId },
+                "Failed to cancel GH job during sandbox termination (non-critical)",
+              );
+            }
+          }
+        }
+        if (activeTasks.length > 0) {
+          this.logger.info(
+            { sandboxId: id, cancelledCount: activeTasks.length },
+            "Cancelled active tasks for terminated sandbox",
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          { err, sandboxId: id },
+          "Failed to cancel tasks during sandbox termination",
+        );
+      }
+    }
 
     const terminated = await this.sandboxRepo.terminate(id);
     if (!terminated) throw new SandboxNotFoundError(id);
@@ -84,7 +139,11 @@ export class SandboxService {
     if (!sandbox) throw new SandboxNotFoundError(id);
 
     // Skip health check for stopped/terminated EC2 instances — they can't respond
-    if (sandbox.ec2Status === "stopped" || sandbox.ec2Status === "terminated" || sandbox.ec2Status === "stopping") {
+    if (
+      sandbox.ec2Status === "stopped" ||
+      sandbox.ec2Status === "terminated" ||
+      sandbox.ec2Status === "stopping"
+    ) {
       this.logger.debug(
         { sandboxId: id, ec2Status: sandbox.ec2Status },
         "Skipping health check for non-running instance",
@@ -120,7 +179,7 @@ export class SandboxService {
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        const body = await response.json() as Record<string, unknown>;
+        const body = (await response.json()) as Record<string, unknown>;
         healthStatus = "healthy";
         details = body;
 
@@ -135,10 +194,7 @@ export class SandboxService {
     } catch (err) {
       healthStatus = "unhealthy";
       details = { error: err instanceof Error ? err.message : "Unknown error" };
-      this.logger.warn(
-        { sandboxId: id, url: healthUrl, err },
-        "Health check failed for sandbox",
-      );
+      this.logger.warn({ sandboxId: id, url: healthUrl, err }, "Health check failed for sandbox");
     }
 
     await this.sandboxRepo.updateHealthStatus(id, healthStatus);
@@ -163,10 +219,9 @@ export class SandboxService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
 
-      const response = await fetch(
-        `http://${sandbox.publicIp}:8000/health`,
-        { signal: controller.signal },
-      );
+      const response = await fetch(`http://${sandbox.publicIp}:8000/health`, {
+        signal: controller.signal,
+      });
 
       clearTimeout(timeoutId);
 
@@ -174,7 +229,7 @@ export class SandboxService {
         throw new SandboxUnreachableError(id);
       }
 
-      const body = await response.json() as Record<string, unknown>;
+      const body = (await response.json()) as Record<string, unknown>;
 
       return {
         sandboxId: id,
@@ -206,10 +261,10 @@ export class SandboxService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
-      const response = await fetch(
-        `http://${sandbox.publicIp}:8000/restart-adspower`,
-        { method: "POST", signal: controller.signal },
-      );
+      const response = await fetch(`http://${sandbox.publicIp}:8000/restart-adspower`, {
+        method: "POST",
+        signal: controller.signal,
+      });
 
       clearTimeout(timeoutId);
 
@@ -229,7 +284,11 @@ export class SandboxService {
     if (!sandbox) throw new SandboxNotFoundError(id);
 
     if (sandbox.ec2Status === "running" || sandbox.ec2Status === "pending") {
-      throw new AppError(409, "SANDBOX_ALREADY_RUNNING", `Sandbox ${id} is already ${sandbox.ec2Status}`);
+      throw new AppError(
+        409,
+        "SANDBOX_ALREADY_RUNNING",
+        `Sandbox ${id} is already ${sandbox.ec2Status}`,
+      );
     }
 
     await this.ec2Service.startInstance(sandbox.instanceId);
@@ -250,7 +309,11 @@ export class SandboxService {
     if (!sandbox) throw new SandboxNotFoundError(id);
 
     if (sandbox.ec2Status === "stopped" || sandbox.ec2Status === "stopping") {
-      throw new AppError(409, "SANDBOX_ALREADY_STOPPED", `Sandbox ${id} is already ${sandbox.ec2Status}`);
+      throw new AppError(
+        409,
+        "SANDBOX_ALREADY_STOPPED",
+        `Sandbox ${id} is already ${sandbox.ec2Status}`,
+      );
     }
 
     await this.ec2Service.stopInstance(sandbox.instanceId);
@@ -272,7 +335,10 @@ export class SandboxService {
     const liveStatus = await this.ec2Service.getInstanceStatus(sandbox.instanceId);
 
     // Map AWS statuses to our enum
-    const mappedStatus = liveStatus === "shutting-down" ? "stopping" as const : liveStatus as "pending" | "running" | "stopping" | "stopped" | "terminated";
+    const mappedStatus =
+      liveStatus === "shutting-down"
+        ? ("stopping" as const)
+        : (liveStatus as "pending" | "running" | "stopping" | "stopped" | "terminated");
 
     // Sync DB if different
     if (mappedStatus !== sandbox.ec2Status) {
@@ -294,7 +360,10 @@ export class SandboxService {
     targetStatus: "running" | "stopped",
   ) {
     const finalStatus = await this.ec2Service.waitForStatus(instanceId, targetStatus);
-    const mappedStatus = finalStatus === "shutting-down" ? "stopping" as const : finalStatus as "pending" | "running" | "stopping" | "stopped" | "terminated";
+    const mappedStatus =
+      finalStatus === "shutting-down"
+        ? ("stopping" as const)
+        : (finalStatus as "pending" | "running" | "stopping" | "stopped" | "terminated");
     await this.sandboxRepo.updateEc2Status(sandboxId, mappedStatus);
 
     this.logger.info(

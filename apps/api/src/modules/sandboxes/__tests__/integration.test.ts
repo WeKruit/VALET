@@ -16,12 +16,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { FastifyBaseLogger, FastifyRequest } from "fastify";
 import type { SandboxRepository } from "../sandbox.repository.js";
 import type { EC2Service } from "../ec2.service.js";
+import type { TaskRepository } from "../../tasks/task.repository.js";
+import type { GhostHandsClient } from "../../ghosthands/ghosthands.client.js";
 import type { SandboxRecord } from "../sandbox.repository.js";
 import { SandboxService } from "../sandbox.service.js";
-import {
-  SandboxNotFoundError,
-  SandboxDuplicateInstanceError,
-} from "../sandbox.errors.js";
+import { SandboxNotFoundError, SandboxDuplicateInstanceError } from "../sandbox.errors.js";
 
 // ---------------------------------------------------------------------------
 // Mocked repository
@@ -31,7 +30,10 @@ function makeMockRepo() {
   return {
     findById: vi.fn<(id: string) => Promise<SandboxRecord | null>>(),
     findByInstanceId: vi.fn<(instanceId: string) => Promise<SandboxRecord | null>>(),
-    findMany: vi.fn<(query: Record<string, unknown>) => Promise<{ data: SandboxRecord[]; total: number }>>(),
+    findMany:
+      vi.fn<
+        (query: Record<string, unknown>) => Promise<{ data: SandboxRecord[]; total: number }>
+      >(),
     findAllActive: vi.fn<() => Promise<SandboxRecord[]>>(),
     create: vi.fn<(data: Record<string, unknown>) => Promise<SandboxRecord>>(),
     update: vi.fn<(id: string, data: Record<string, unknown>) => Promise<SandboxRecord | null>>(),
@@ -60,6 +62,20 @@ function makeMockEc2Service() {
     stopInstance: vi.fn<(instanceId: string) => Promise<void>>(),
     getInstanceStatus: vi.fn<(instanceId: string) => Promise<string>>(),
     waitForStatus: vi.fn<(instanceId: string, target: string) => Promise<string>>(),
+  };
+}
+
+function makeMockTaskRepo() {
+  return {
+    findActiveBySandbox: vi.fn().mockResolvedValue([]),
+    findRecentBySandbox: vi.fn().mockResolvedValue([]),
+    updateStatus: vi.fn().mockResolvedValue(null),
+  };
+}
+
+function makeMockGhosthandsClient() {
+  return {
+    cancelJob: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -100,15 +116,21 @@ describe("SandboxService", () => {
   let repo: ReturnType<typeof makeMockRepo>;
   let logger: ReturnType<typeof makeMockLogger>;
   let ec2Service: ReturnType<typeof makeMockEc2Service>;
+  let taskRepo: ReturnType<typeof makeMockTaskRepo>;
+  let ghosthandsClient: ReturnType<typeof makeMockGhosthandsClient>;
 
   beforeEach(() => {
     repo = makeMockRepo();
     logger = makeMockLogger();
     ec2Service = makeMockEc2Service();
+    taskRepo = makeMockTaskRepo();
+    ghosthandsClient = makeMockGhosthandsClient();
     service = new SandboxService({
       sandboxRepo: repo as unknown as SandboxRepository,
       logger: logger as unknown as FastifyBaseLogger,
       ec2Service: ec2Service as unknown as EC2Service,
+      taskRepo: taskRepo as unknown as TaskRepository,
+      ghosthandsClient: ghosthandsClient as unknown as GhostHandsClient,
     });
   });
 
@@ -127,9 +149,9 @@ describe("SandboxService", () => {
     it("throws SandboxNotFoundError when not found", async () => {
       repo.findById.mockResolvedValue(null);
 
-      await expect(
-        service.getById("00000000-0000-0000-0000-000000000000"),
-      ).rejects.toThrow(SandboxNotFoundError);
+      await expect(service.getById("00000000-0000-0000-0000-000000000000")).rejects.toThrow(
+        SandboxNotFoundError,
+      );
     });
   });
 
@@ -258,18 +280,18 @@ describe("SandboxService", () => {
     it("throws SandboxNotFoundError when sandbox does not exist", async () => {
       repo.findById.mockResolvedValue(null);
 
-      await expect(
-        service.update("nonexistent-id", { name: "x" }),
-      ).rejects.toThrow(SandboxNotFoundError);
+      await expect(service.update("nonexistent-id", { name: "x" })).rejects.toThrow(
+        SandboxNotFoundError,
+      );
     });
 
     it("throws SandboxNotFoundError when update returns null", async () => {
       repo.findById.mockResolvedValue(SANDBOX_FIXTURE);
       repo.update.mockResolvedValue(null);
 
-      await expect(
-        service.update(SANDBOX_FIXTURE.id, { name: "x" }),
-      ).rejects.toThrow(SandboxNotFoundError);
+      await expect(service.update(SANDBOX_FIXTURE.id, { name: "x" })).rejects.toThrow(
+        SandboxNotFoundError,
+      );
     });
   });
 
@@ -283,17 +305,13 @@ describe("SandboxService", () => {
         status: "terminated",
       });
 
-      await expect(
-        service.terminate(SANDBOX_FIXTURE.id),
-      ).resolves.toBeUndefined();
+      await expect(service.terminate(SANDBOX_FIXTURE.id)).resolves.toBeUndefined();
     });
 
     it("throws SandboxNotFoundError when sandbox does not exist", async () => {
       repo.findById.mockResolvedValue(null);
 
-      await expect(
-        service.terminate("nonexistent-id"),
-      ).rejects.toThrow(SandboxNotFoundError);
+      await expect(service.terminate("nonexistent-id")).rejects.toThrow(SandboxNotFoundError);
     });
   });
 
@@ -314,9 +332,7 @@ describe("SandboxService", () => {
     it("throws SandboxNotFoundError when sandbox does not exist", async () => {
       repo.findById.mockResolvedValue(null);
 
-      await expect(
-        service.healthCheck("nonexistent-id"),
-      ).rejects.toThrow(SandboxNotFoundError);
+      await expect(service.healthCheck("nonexistent-id")).rejects.toThrow(SandboxNotFoundError);
     });
 
     it("handles fetch failure gracefully", async () => {
@@ -355,10 +371,7 @@ describe("SandboxService", () => {
         const result = await service.healthCheck(SANDBOX_FIXTURE.id);
 
         expect(result.healthStatus).toBe("healthy");
-        expect(repo.updateHealthStatus).toHaveBeenCalledWith(
-          SANDBOX_FIXTURE.id,
-          "healthy",
-        );
+        expect(repo.updateHealthStatus).toHaveBeenCalledWith(SANDBOX_FIXTURE.id, "healthy");
       } finally {
         globalThis.fetch = originalFetch;
       }
@@ -398,9 +411,7 @@ describe("SandboxService", () => {
         publicIp: null,
       };
       repo.findAllActive.mockResolvedValue([SANDBOX_FIXTURE, sandbox2]);
-      repo.findById
-        .mockResolvedValueOnce(SANDBOX_FIXTURE)
-        .mockResolvedValueOnce(sandbox2);
+      repo.findById.mockResolvedValueOnce(SANDBOX_FIXTURE).mockResolvedValueOnce(sandbox2);
       repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
 
       const originalFetch = globalThis.fetch;
@@ -422,9 +433,7 @@ describe("SandboxService", () => {
 
 describe("adminOnly middleware", () => {
   it("allows admin role", async () => {
-    const { adminOnly } = await import(
-      "../../../common/middleware/admin.js"
-    );
+    const { adminOnly } = await import("../../../common/middleware/admin.js");
 
     const request = { userRole: "admin" } as FastifyRequest;
 
@@ -432,9 +441,7 @@ describe("adminOnly middleware", () => {
   });
 
   it("allows superadmin role", async () => {
-    const { adminOnly } = await import(
-      "../../../common/middleware/admin.js"
-    );
+    const { adminOnly } = await import("../../../common/middleware/admin.js");
 
     const request = { userRole: "superadmin" } as FastifyRequest;
 
@@ -442,9 +449,7 @@ describe("adminOnly middleware", () => {
   });
 
   it("rejects regular user role", async () => {
-    const { adminOnly } = await import(
-      "../../../common/middleware/admin.js"
-    );
+    const { adminOnly } = await import("../../../common/middleware/admin.js");
 
     const request = { userRole: "user" } as FastifyRequest;
 
@@ -452,9 +457,7 @@ describe("adminOnly middleware", () => {
   });
 
   it("rejects undefined role", async () => {
-    const { adminOnly } = await import(
-      "../../../common/middleware/admin.js"
-    );
+    const { adminOnly } = await import("../../../common/middleware/admin.js");
 
     const request = { userRole: undefined } as unknown as FastifyRequest;
 

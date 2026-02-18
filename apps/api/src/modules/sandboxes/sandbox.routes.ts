@@ -38,7 +38,7 @@ export const sandboxRouter = s.router(sandboxContract, {
   delete: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
-    await sandboxService.terminate(params.id);
+    await sandboxService.terminate(params.id, request.userId);
     return { status: 204, body: undefined };
   },
 
