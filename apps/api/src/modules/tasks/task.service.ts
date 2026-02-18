@@ -307,6 +307,7 @@ export class TaskService {
       mode: body.mode,
       resumeId: body.resumeId,
       notes,
+      sandboxId: body.targetWorkerId,
     });
 
     // Fetch resume data for the GhostHands profile
@@ -445,6 +446,7 @@ export class TaskService {
       mode: "autopilot",
       resumeId: "", // no resume needed for test
       notes: `Integration test: "${body.searchQuery}" [sandbox:${body.targetWorkerId}]`,
+      sandboxId: body.targetWorkerId,
     });
 
     const callbackUrl = buildCallbackUrl();

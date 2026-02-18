@@ -28,6 +28,7 @@ export interface TaskRecord {
   screenshots: Record<string, unknown> | null;
   llmUsage: Record<string, unknown> | null;
   notes: string | null;
+  sandboxId: string | null;
   interactionType: string | null;
   interactionData: Record<string, unknown> | null;
   createdAt: Date;
@@ -154,6 +155,7 @@ export class TaskRepository {
     mode: ApplicationMode;
     resumeId?: string;
     notes?: string;
+    sandboxId?: string;
   }): Promise<TaskRecord> {
     const rows = await this.db
       .insert(tasks)
@@ -163,6 +165,7 @@ export class TaskRepository {
         mode: data.mode,
         resumeId: data.resumeId || null,
         notes: data.notes ?? null,
+        sandboxId: data.sandboxId ?? null,
       })
       .returning();
     return toTaskRecord(rows[0] as Record<string, unknown>);
@@ -257,7 +260,6 @@ export class TaskRepository {
   }
 
   async findActiveBySandbox(userId: string, sandboxId: string): Promise<TaskRecord[]> {
-    const pattern = `%[sandbox:${sandboxId}]%`;
     const rows = await this.db
       .select()
       .from(tasks)
@@ -265,7 +267,7 @@ export class TaskRepository {
         and(
           eq(tasks.userId, userId),
           inArray(tasks.status, ["created", "queued", "in_progress", "waiting_human"]),
-          ilike(tasks.notes, pattern),
+          eq(tasks.sandboxId, sandboxId),
         ),
       )
       .orderBy(desc(tasks.createdAt))
@@ -274,7 +276,6 @@ export class TaskRepository {
   }
 
   async findRecentBySandbox(userId: string, sandboxId: string): Promise<TaskRecord[]> {
-    const pattern = `%[sandbox:${sandboxId}]%`;
     const rows = await this.db
       .select()
       .from(tasks)
@@ -282,7 +283,7 @@ export class TaskRepository {
         and(
           eq(tasks.userId, userId),
           inArray(tasks.status, ["completed", "failed", "cancelled"]),
-          ilike(tasks.notes, pattern),
+          eq(tasks.sandboxId, sandboxId),
         ),
       )
       .orderBy(desc(tasks.completedAt))
