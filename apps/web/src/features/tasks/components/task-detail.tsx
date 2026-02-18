@@ -264,6 +264,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             pageUrl: task.interaction.pageUrl,
             timeoutSeconds: task.interaction.timeoutSeconds,
             message: task.interaction.message,
+            description: task.interaction.description,
+            metadata: task.interaction.metadata,
             pausedAt:
               task.interaction.pausedAt instanceof Date
                 ? task.interaction.pausedAt.toISOString()

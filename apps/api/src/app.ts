@@ -80,6 +80,14 @@ export async function buildApp() {
     version: process.env.npm_package_version ?? "0.0.1",
   }));
 
+  // Version endpoint — returns build metadata baked in at deploy time
+  fastify.get("/api/v1/health/version", async () => ({
+    commit_sha: process.env.COMMIT_SHA ?? "unknown",
+    build_time: process.env.BUILD_TIME ?? "unknown",
+    node_version: process.version,
+    app: "valet-api",
+  }));
+
   // Register ts-rest routers
   const s = initServer();
   fastify.register(s.plugin(authRouter));

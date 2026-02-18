@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useRealtimeStore } from "@/stores/realtime.store";
 
 const WS_BASE_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000/api/v1/ws";
@@ -45,6 +46,17 @@ export function useTaskWebSocket(taskId: string) {
         ) {
           queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
           queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        }
+
+        if (message.type === "task_needs_human") {
+          const blockerType = message.interaction?.type ?? "unknown";
+          toast.warning("Task needs your attention", {
+            description: `${blockerType.replace("_", " ")} blocker detected`,
+          });
+        }
+
+        if (message.type === "task_resumed") {
+          toast.success("Task resumed successfully");
         }
       } catch {
         // Ignore malformed messages

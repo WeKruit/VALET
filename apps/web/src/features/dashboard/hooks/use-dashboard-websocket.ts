@@ -57,6 +57,10 @@ export function useDashboardWebSocket() {
           });
           queryClient.invalidateQueries({ queryKey: ["tasks"] });
         }
+
+        if (message.type === "task_resumed") {
+          toast.success("Task resumed successfully");
+        }
       } catch {
         // Ignore malformed messages
       }
