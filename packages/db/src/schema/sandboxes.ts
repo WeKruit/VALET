@@ -26,16 +26,9 @@ export const sandboxHealthStatusEnum = pgEnum("sandbox_health_status", [
   "unhealthy",
 ]);
 
-export const sandboxEnvironmentEnum = pgEnum("sandbox_environment", [
-  "dev",
-  "staging",
-  "prod",
-]);
+export const sandboxEnvironmentEnum = pgEnum("sandbox_environment", ["dev", "staging", "prod"]);
 
-export const browserEngineEnum = pgEnum("browser_engine", [
-  "chromium",
-  "adspower",
-]);
+export const browserEngineEnum = pgEnum("browser_engine", ["chromium", "adspower"]);
 
 export const ec2StatusEnum = pgEnum("ec2_status", [
   "pending",
@@ -71,6 +64,12 @@ export const sandboxes = pgTable(
     lastStoppedAt: timestamp("last_stopped_at", { withTimezone: true }),
     autoStopEnabled: boolean("auto_stop_enabled").default(false).notNull(),
     idleMinutesBeforeStop: integer("idle_minutes_before_stop").default(30).notNull(),
+    machineType: varchar("machine_type", { length: 20 }).notNull().default("ec2"),
+    agentVersion: varchar("agent_version", { length: 50 }),
+    agentLastSeenAt: timestamp("agent_last_seen_at", { withTimezone: true }),
+    ghImageTag: varchar("gh_image_tag", { length: 255 }),
+    ghImageUpdatedAt: timestamp("gh_image_updated_at", { withTimezone: true }),
+    deployedCommitSha: varchar("deployed_commit_sha", { length: 40 }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

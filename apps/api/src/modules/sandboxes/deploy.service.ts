@@ -5,6 +5,7 @@ import type { NotificationService } from "../notifications/notification.service.
 import type { UserRepository } from "../users/user.repository.js";
 import type { DeployStatus, DeploySandboxStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
+import type { SandboxAgentClient } from "./agent/sandbox-agent.client.js";
 
 const DEPLOY_PREFIX = "deploy:";
 const DEPLOY_LIST_KEY = "deploys:recent";
@@ -33,14 +34,13 @@ interface DeploySandboxProgressRecord {
   message?: string | null;
 }
 
-const DEPLOY_ENDPOINT_TIMEOUT_MS = 60_000;
-
 export class DeployService {
   private redis: Redis;
   private sandboxRepo: SandboxRepository;
   private notificationService: NotificationService;
   private userRepo: UserRepository;
   private logger: FastifyBaseLogger;
+  private sandboxAgentClient: SandboxAgentClient;
 
   constructor({
     redis,
@@ -48,18 +48,21 @@ export class DeployService {
     notificationService,
     userRepo,
     logger,
+    sandboxAgentClient,
   }: {
     redis: Redis;
     sandboxRepo: SandboxRepository;
     notificationService: NotificationService;
     userRepo: UserRepository;
     logger: FastifyBaseLogger;
+    sandboxAgentClient: SandboxAgentClient;
   }) {
     this.redis = redis;
     this.sandboxRepo = sandboxRepo;
     this.notificationService = notificationService;
     this.userRepo = userRepo;
     this.logger = logger;
+    this.sandboxAgentClient = sandboxAgentClient;
   }
 
   /**
@@ -321,25 +324,8 @@ export class DeployService {
     publicIp: string,
     imageTag: string,
   ): Promise<{ success: boolean; message: string }> {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    const deploySecret = process.env.GH_DEPLOY_SECRET;
-    if (deploySecret) {
-      headers["X-Deploy-Secret"] = deploySecret;
-    }
-
-    const resp = await fetch(`http://${publicIp}:8000/deploy`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ image_tag: imageTag }),
-      signal: AbortSignal.timeout(DEPLOY_ENDPOINT_TIMEOUT_MS),
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`Deploy endpoint returned ${resp.status}: ${text}`);
-    }
-
-    return (await resp.json()) as { success: boolean; message: string };
+    const agentUrl = `http://${publicIp}:8000`;
+    return this.sandboxAgentClient.deploy(agentUrl, imageTag);
   }
 
   private async notifyAdmins(record: DeployRecord): Promise<void> {

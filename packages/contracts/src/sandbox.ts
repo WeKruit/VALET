@@ -18,6 +18,12 @@ import {
   triggerDeployResponse,
   deployStatusResponse,
   errorResponse,
+  agentStatusResponse,
+  agentVersionResponse,
+  containerListResponse,
+  workerListResponse,
+  auditLogListResponse,
+  deployHistoryListResponse,
 } from "@valet/shared/schemas";
 
 const c = initContract();
@@ -181,6 +187,85 @@ export const sandboxContract = c.router({
       404: errorResponse,
     },
     summary: "Get GhostHands worker, task, and API status for this sandbox",
+  },
+
+  // ─── Agent Operations ───
+
+  getAgentStatus: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/agent-status",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: agentStatusResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Get full agent status including containers and workers",
+  },
+  getAgentVersion: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/agent-version",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: agentVersionResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Get agent and GhostHands version info",
+  },
+  listContainers: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/containers",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: containerListResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "List Docker containers on the sandbox agent",
+  },
+  listWorkers: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/workers",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: workerListResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "List GhostHands workers on the sandbox agent",
+  },
+
+  // ─── Audit & History ───
+
+  getAuditLog: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/audit-log",
+    pathParams: z.object({ id: z.string().uuid() }),
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      action: z.string().optional(),
+    }),
+    responses: {
+      200: auditLogListResponse,
+      404: errorResponse,
+    },
+    summary: "Get audit log entries for a sandbox",
+  },
+  getDeployHistory: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/deploy-history",
+    pathParams: z.object({ id: z.string().uuid() }),
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    }),
+    responses: {
+      200: deployHistoryListResponse,
+      404: errorResponse,
+    },
+    summary: "Get deploy history for a sandbox",
   },
 
   // ─── Deploy Management ───

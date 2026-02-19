@@ -13,6 +13,8 @@ export * from "./notifications.js";
 export * from "./action-manuals.js";
 export * from "./sandboxes.js";
 export * from "./sandbox-secrets.js";
+export * from "./sandbox-audit-logs.js";
+export * from "./sandbox-deploy-history.js";
 export * from "./gh-automation-jobs.js";
 export * from "./gh-browser-sessions.js";
 export * from "./gh-job-events.js";

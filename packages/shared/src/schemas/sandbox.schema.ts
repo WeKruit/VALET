@@ -233,6 +233,127 @@ export const workerStatusResponse = z.object({
   ),
 });
 
+// ─── Agent Status / Version ───
+
+export const agentContainerInfo = z.object({
+  id: z.string(),
+  name: z.string(),
+  image: z.string(),
+  status: z.string(),
+  state: z.enum(["running", "exited", "created", "restarting"]),
+  ports: z.array(z.string()),
+  createdAt: z.string(),
+  labels: z.record(z.string()),
+});
+
+export const agentWorkerInfo = z.object({
+  workerId: z.string(),
+  containerId: z.string(),
+  containerName: z.string(),
+  status: z.enum(["running", "idle", "busy", "draining", "stopped"]),
+  activeJobs: z.number(),
+  statusPort: z.number(),
+  uptime: z.number(),
+  image: z.string(),
+});
+
+export const agentStatusResponse = z.object({
+  agentVersion: z.string(),
+  machineType: z.string(),
+  hostname: z.string(),
+  os: z.object({
+    platform: z.string(),
+    release: z.string(),
+    arch: z.string(),
+  }),
+  docker: z.object({
+    version: z.string(),
+    containers: z.array(agentContainerInfo),
+  }),
+  workers: z.array(agentWorkerInfo),
+  uptime: z.number(),
+});
+
+export const agentVersionResponse = z.object({
+  agentVersion: z.string(),
+  ghosthandsVersion: z.string().nullable(),
+  dockerVersion: z.string(),
+  os: z.string(),
+  arch: z.string(),
+});
+
+export const containerListResponse = z.object({
+  data: z.array(agentContainerInfo),
+});
+
+export const workerListResponse = z.object({
+  data: z.array(agentWorkerInfo),
+});
+
+// ─── Audit Log ───
+
+export const auditLogEntry = z.object({
+  id: z.string().uuid(),
+  sandboxId: z.string().uuid(),
+  userId: z.string().uuid().nullable(),
+  action: z.string(),
+  details: z.record(z.unknown()).nullable(),
+  ipAddress: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  result: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  durationMs: z.number().nullable(),
+  createdAt: z.coerce.date(),
+});
+
+export const paginationMeta = z.object({
+  page: z.number(),
+  pageSize: z.number(),
+  total: z.number(),
+  totalPages: z.number(),
+});
+
+export const auditLogListResponse = z.object({
+  data: z.array(auditLogEntry),
+  pagination: paginationMeta,
+});
+
+// ─── Deploy History ───
+
+export const deployHistoryEntry = z.object({
+  id: z.string().uuid(),
+  sandboxId: z.string().uuid().nullable(),
+  imageTag: z.string(),
+  commitSha: z.string().nullable(),
+  commitMessage: z.string().nullable(),
+  branch: z.string().nullable(),
+  environment: z.string(),
+  status: z.string(),
+  triggeredBy: z.string().uuid().nullable(),
+  deployStartedAt: z.coerce.date().nullable(),
+  deployCompletedAt: z.coerce.date().nullable(),
+  deployDurationMs: z.number().nullable(),
+  errorMessage: z.string().nullable(),
+  createdAt: z.coerce.date(),
+});
+
+export const deployHistoryListResponse = z.object({
+  data: z.array(deployHistoryEntry),
+  pagination: paginationMeta,
+});
+
+// ─── Agent Health (for 502 responses) ───
+
+export const agentHealthResponse = z.object({
+  status: z.enum(["ok", "degraded", "error"]),
+  activeWorkers: z.number(),
+  deploySafe: z.boolean(),
+  apiHealthy: z.boolean(),
+  workerStatus: z.string(),
+  currentDeploy: z.object({ imageTag: z.string(), elapsedMs: z.number() }).nullable(),
+  uptimeMs: z.number(),
+});
+
 // ─── Deploy (GhostHands rolling update) ───
 
 export const deployStatus = z.enum([
@@ -333,3 +454,15 @@ export type DeployListResponse = z.infer<typeof deployListResponse>;
 export type TriggerDeployRequest = z.infer<typeof triggerDeployRequest>;
 export type TriggerDeployResponse = z.infer<typeof triggerDeployResponse>;
 export type DeployStatusResponse = z.infer<typeof deployStatusResponse>;
+export type AgentContainerInfo = z.infer<typeof agentContainerInfo>;
+export type AgentWorkerInfo = z.infer<typeof agentWorkerInfo>;
+export type AgentStatusResponseType = z.infer<typeof agentStatusResponse>;
+export type AgentVersionResponseType = z.infer<typeof agentVersionResponse>;
+export type ContainerListResponse = z.infer<typeof containerListResponse>;
+export type WorkerListResponse = z.infer<typeof workerListResponse>;
+export type AuditLogEntry = z.infer<typeof auditLogEntry>;
+export type AuditLogListResponse = z.infer<typeof auditLogListResponse>;
+export type DeployHistoryEntry = z.infer<typeof deployHistoryEntry>;
+export type DeployHistoryListResponse = z.infer<typeof deployHistoryListResponse>;
+export type AgentHealthResponseType = z.infer<typeof agentHealthResponse>;
+export type PaginationMeta = z.infer<typeof paginationMeta>;

@@ -18,6 +18,8 @@ import type { SandboxRepository } from "../sandbox.repository.js";
 import type { EC2Service } from "../ec2.service.js";
 import type { TaskRepository } from "../../tasks/task.repository.js";
 import type { GhostHandsClient } from "../../ghosthands/ghosthands.client.js";
+import type { SandboxProviderFactory } from "../providers/provider-factory.js";
+import type { SandboxAgentClient } from "../agent/sandbox-agent.client.js";
 import type { SandboxRecord } from "../sandbox.repository.js";
 import { SandboxService } from "../sandbox.service.js";
 import { SandboxNotFoundError, SandboxDuplicateInstanceError } from "../sandbox.errors.js";
@@ -79,6 +81,43 @@ function makeMockGhosthandsClient() {
   };
 }
 
+function makeMockProviderFactory() {
+  return {
+    getProvider: vi.fn().mockReturnValue({
+      type: "ec2",
+      startMachine: vi.fn().mockResolvedValue({ success: true, message: "started" }),
+      stopMachine: vi.fn().mockResolvedValue({ success: true, message: "stopped" }),
+      getMachineStatus: vi.fn().mockResolvedValue({ state: "running" }),
+      getAgentUrl: vi.fn().mockReturnValue("http://34.197.248.80:8000"),
+      pingAgent: vi.fn().mockResolvedValue(true),
+    }),
+    getByType: vi.fn(),
+  };
+}
+
+function makeMockAgentClient() {
+  return {
+    getHealth: vi.fn().mockResolvedValue({ status: "ok" }),
+    getVersion: vi.fn().mockResolvedValue({ agentVersion: "1.0.0" }),
+    deploy: vi.fn().mockResolvedValue({ success: true }),
+    getLogs: vi.fn().mockResolvedValue({ lines: [], service: "worker", truncated: false }),
+    getEnvVars: vi.fn().mockResolvedValue({ vars: {}, redactedKeys: [] }),
+    setEnvVars: vi.fn().mockResolvedValue(undefined),
+    deleteEnvVar: vi.fn().mockResolvedValue(undefined),
+    getContainers: vi.fn().mockResolvedValue([]),
+    listWorkers: vi.fn().mockResolvedValue([]),
+    startWorker: vi.fn().mockResolvedValue({ success: true }),
+    stopWorker: vi.fn().mockResolvedValue({ success: true }),
+    drainWorker: vi.fn().mockResolvedValue({ success: true }),
+    getStatus: vi.fn().mockResolvedValue({}),
+    getMetrics: vi.fn().mockResolvedValue({}),
+    getScreenshot: vi.fn().mockResolvedValue(Buffer.from("")),
+    executeCommand: vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" }),
+    buildImage: vi.fn().mockResolvedValue({ success: true }),
+    getTakeoverInfo: vi.fn().mockResolvedValue({}),
+  };
+}
+
 const SANDBOX_FIXTURE: SandboxRecord = {
   id: "11111111-1111-1111-1111-111111111111",
   name: "staging-sandbox-1",
@@ -103,6 +142,12 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   lastStoppedAt: null,
   autoStopEnabled: false,
   idleMinutesBeforeStop: 60,
+  machineType: "ec2",
+  agentVersion: null,
+  agentLastSeenAt: null,
+  ghImageTag: null,
+  ghImageUpdatedAt: null,
+  deployedCommitSha: null,
   createdAt: new Date("2026-02-10T00:00:00Z"),
   updatedAt: new Date("2026-02-14T00:00:00Z"),
 };
@@ -118,6 +163,7 @@ describe("SandboxService", () => {
   let ec2Service: ReturnType<typeof makeMockEc2Service>;
   let taskRepo: ReturnType<typeof makeMockTaskRepo>;
   let ghosthandsClient: ReturnType<typeof makeMockGhosthandsClient>;
+  let agentClient: ReturnType<typeof makeMockAgentClient>;
 
   beforeEach(() => {
     repo = makeMockRepo();
@@ -125,12 +171,15 @@ describe("SandboxService", () => {
     ec2Service = makeMockEc2Service();
     taskRepo = makeMockTaskRepo();
     ghosthandsClient = makeMockGhosthandsClient();
+    agentClient = makeMockAgentClient();
     service = new SandboxService({
       sandboxRepo: repo as unknown as SandboxRepository,
       logger: logger as unknown as FastifyBaseLogger,
       ec2Service: ec2Service as unknown as EC2Service,
       taskRepo: taskRepo as unknown as TaskRepository,
       ghosthandsClient: ghosthandsClient as unknown as GhostHandsClient,
+      sandboxProviderFactory: makeMockProviderFactory() as unknown as SandboxProviderFactory,
+      sandboxAgentClient: agentClient as unknown as SandboxAgentClient,
     });
   });
 
@@ -335,66 +384,56 @@ describe("SandboxService", () => {
       await expect(service.healthCheck("nonexistent-id")).rejects.toThrow(SandboxNotFoundError);
     });
 
-    it("handles fetch failure gracefully", async () => {
+    it("handles agent client failure gracefully", async () => {
       repo.findById.mockResolvedValue(SANDBOX_FIXTURE);
       repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
 
-      // Mock global fetch to simulate network error
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+      agentClient.getHealth.mockRejectedValue(new Error("ECONNREFUSED"));
 
-      try {
-        const result = await service.healthCheck(SANDBOX_FIXTURE.id);
+      const result = await service.healthCheck(SANDBOX_FIXTURE.id);
 
-        expect(result.healthStatus).toBe("unhealthy");
-        expect(result.details).toEqual({ error: "ECONNREFUSED" });
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      expect(result.healthStatus).toBe("unhealthy");
+      expect(result.details).toEqual({ error: "ECONNREFUSED" });
     });
 
     it("returns healthy when worker responds ok", async () => {
       repo.findById.mockResolvedValue(SANDBOX_FIXTURE);
       repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          status: "ok",
-          adspowerStatus: "ok",
-        }),
+      agentClient.getHealth.mockResolvedValue({
+        status: "ok",
+        adspowerStatus: "ok",
+        activeWorkers: 1,
+        deploySafe: true,
+        apiHealthy: true,
+        workerStatus: "running",
+        currentDeploy: null,
+        uptimeMs: 3600000,
       });
 
-      try {
-        const result = await service.healthCheck(SANDBOX_FIXTURE.id);
+      const result = await service.healthCheck(SANDBOX_FIXTURE.id);
 
-        expect(result.healthStatus).toBe("healthy");
-        expect(repo.updateHealthStatus).toHaveBeenCalledWith(SANDBOX_FIXTURE.id, "healthy");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      expect(result.healthStatus).toBe("healthy");
+      expect(repo.updateHealthStatus).toHaveBeenCalledWith(SANDBOX_FIXTURE.id, "healthy");
     });
 
     it("returns degraded when adspower is down", async () => {
       repo.findById.mockResolvedValue(SANDBOX_FIXTURE);
       repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          status: "ok",
-          adspowerStatus: "unreachable",
-        }),
+      agentClient.getHealth.mockResolvedValue({
+        status: "ok",
+        adspowerStatus: "unreachable",
+        activeWorkers: 1,
+        deploySafe: true,
+        apiHealthy: true,
+        workerStatus: "running",
+        currentDeploy: null,
+        uptimeMs: 3600000,
       });
 
-      try {
-        const result = await service.healthCheck(SANDBOX_FIXTURE.id);
-        expect(result.healthStatus).toBe("degraded");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      const result = await service.healthCheck(SANDBOX_FIXTURE.id);
+      expect(result.healthStatus).toBe("degraded");
     });
   });
 
@@ -412,15 +451,10 @@ describe("SandboxService", () => {
       repo.findById.mockResolvedValueOnce(SANDBOX_FIXTURE).mockResolvedValueOnce(sandbox2);
       repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error("timeout"));
+      agentClient.getHealth.mockRejectedValue(new Error("timeout"));
 
-      try {
-        const results = await service.checkAllSandboxes();
-        expect(results).toHaveLength(2);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      const results = await service.checkAllSandboxes();
+      expect(results).toHaveLength(2);
     });
   });
 });

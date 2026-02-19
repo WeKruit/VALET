@@ -35,6 +35,13 @@ import { GhAutomationJobRepository } from "../modules/ghosthands/gh-automation-j
 import { GhBrowserSessionRepository } from "../modules/ghosthands/gh-browser-session.repository.js";
 import { GhJobEventRepository } from "../modules/ghosthands/gh-job-event.repository.js";
 import { DeployService } from "../modules/sandboxes/deploy.service.js";
+import { Ec2SandboxProvider } from "../modules/sandboxes/providers/ec2-sandbox.provider.js";
+import { MacOsSandboxProvider } from "../modules/sandboxes/providers/macos-sandbox.provider.js";
+import { SandboxProviderFactory } from "../modules/sandboxes/providers/provider-factory.js";
+import { AuditLogRepository } from "../modules/sandboxes/audit-log.repository.js";
+import { AuditLogService } from "../modules/sandboxes/audit-log.service.js";
+import { SandboxAgentClient } from "../modules/sandboxes/agent/sandbox-agent.client.js";
+import { DeployHistoryRepository } from "../modules/sandboxes/deploy-history.repository.js";
 
 export interface AppCradle {
   db: Database;
@@ -70,6 +77,13 @@ export interface AppCradle {
   ghSessionRepo: GhBrowserSessionRepository;
   ghJobEventRepo: GhJobEventRepository;
   deployService: DeployService;
+  ec2SandboxProvider: Ec2SandboxProvider;
+  macosSandboxProvider: MacOsSandboxProvider;
+  sandboxProviderFactory: SandboxProviderFactory;
+  auditLogRepo: AuditLogRepository;
+  auditLogService: AuditLogService;
+  sandboxAgentClient: SandboxAgentClient;
+  deployHistoryRepo: DeployHistoryRepository;
 }
 
 declare module "@fastify/awilix" {
@@ -128,6 +142,20 @@ export default fp(async (fastify: FastifyInstance) => {
     ghSessionRepo: asClass(GhBrowserSessionRepository, { lifetime: Lifetime.SINGLETON }),
     ghJobEventRepo: asClass(GhJobEventRepository, { lifetime: Lifetime.SINGLETON }),
     deployService: asClass(DeployService, { lifetime: Lifetime.SINGLETON }),
+    ec2SandboxProvider: asClass(Ec2SandboxProvider, { lifetime: Lifetime.SINGLETON }),
+    macosSandboxProvider: asClass(MacOsSandboxProvider, { lifetime: Lifetime.SINGLETON }),
+    sandboxProviderFactory: asFunction(
+      ({ ec2SandboxProvider, macosSandboxProvider }) =>
+        new SandboxProviderFactory([ec2SandboxProvider, macosSandboxProvider]),
+      { lifetime: Lifetime.SINGLETON },
+    ),
+    deployHistoryRepo: asClass(DeployHistoryRepository, { lifetime: Lifetime.SINGLETON }),
+    auditLogRepo: asClass(AuditLogRepository, { lifetime: Lifetime.SINGLETON }),
+    auditLogService: asClass(AuditLogService, { lifetime: Lifetime.SINGLETON }),
+    sandboxAgentClient: asFunction(
+      () => new SandboxAgentClient(process.env.GH_DEPLOY_SECRET ?? ""),
+      { lifetime: Lifetime.SINGLETON },
+    ),
     ghosthandsClient: asFunction(
       ({ logger }) =>
         new GhostHandsClient({

@@ -148,6 +148,270 @@ export const sandboxRouter = s.router(sandboxContract, {
     };
   },
 
+  // ─── Agent Operations ───
+
+  getAgentStatus: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient, auditLogService } =
+      request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const health = await sandboxAgentClient.getHealth(agentUrl);
+
+      await auditLogService.log({
+        sandboxId: sandbox.id,
+        userId: request.userId,
+        action: "agent_status",
+        details: { endpoint: "agent-status" },
+        ipAddress: request.ip,
+        result: "success",
+      });
+
+      // Build full status from health + containers + workers
+      const [containers, workers, version] = await Promise.all([
+        sandboxAgentClient.getContainers(agentUrl),
+        sandboxAgentClient.getWorkers(agentUrl),
+        sandboxAgentClient.getVersion(agentUrl).catch(() => null),
+      ]);
+
+      return {
+        status: 200 as const,
+        body: {
+          agentVersion: version?.agentVersion ?? "unknown",
+          machineType: sandbox.machineType ?? "ec2",
+          hostname: sandbox.name,
+          os: {
+            platform: version?.os ?? "linux",
+            release: version?.agentVersion ?? "unknown",
+            arch: version?.arch ?? "x64",
+          },
+          docker: {
+            version: version?.dockerVersion ?? "unknown",
+            containers: containers.map((c) => ({
+              id: c.id,
+              name: c.name,
+              image: c.image,
+              status: c.status,
+              state: c.state,
+              ports: c.ports,
+              createdAt: c.createdAt,
+              labels: c.labels,
+            })),
+          },
+          workers: workers.map((w) => ({
+            workerId: w.workerId,
+            containerId: w.containerId,
+            containerName: w.containerName,
+            status: w.status,
+            activeJobs: w.activeJobs,
+            statusPort: w.statusPort,
+            uptime: w.uptime,
+            image: w.image,
+          })),
+          uptime: health.uptimeMs / 1000,
+        },
+      };
+    } catch (err) {
+      await auditLogService.log({
+        sandboxId: sandbox.id,
+        userId: request.userId,
+        action: "agent_status",
+        details: { endpoint: "agent-status" },
+        ipAddress: request.ip,
+        result: "failure",
+        errorMessage: err instanceof Error ? err.message : "Agent unreachable",
+      });
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  getAgentVersion: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient, auditLogService } =
+      request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const version = await sandboxAgentClient.getVersion(agentUrl);
+
+      await auditLogService.log({
+        sandboxId: sandbox.id,
+        userId: request.userId,
+        action: "agent_version",
+        details: { endpoint: "agent-version" },
+        ipAddress: request.ip,
+        result: "success",
+      });
+
+      return { status: 200 as const, body: version };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  listContainers: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient, auditLogService } =
+      request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const containers = await sandboxAgentClient.getContainers(agentUrl);
+
+      await auditLogService.log({
+        sandboxId: sandbox.id,
+        userId: request.userId,
+        action: "list_containers",
+        details: { count: containers.length },
+        ipAddress: request.ip,
+        result: "success",
+      });
+
+      return { status: 200 as const, body: { data: containers } };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  listWorkers: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient, auditLogService } =
+      request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const workers = await sandboxAgentClient.getWorkers(agentUrl);
+
+      await auditLogService.log({
+        sandboxId: sandbox.id,
+        userId: request.userId,
+        action: "list_workers",
+        details: { count: workers.length },
+        ipAddress: request.ip,
+        result: "success",
+      });
+
+      return { status: 200 as const, body: { data: workers } };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  // ─── Audit & History ───
+
+  getAuditLog: async ({ params, query, request }) => {
+    await adminOnly(request);
+    const { sandboxService, auditLogService } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const result = await auditLogService.findBySandbox(sandbox.id, {
+      page: query.page,
+      pageSize: query.pageSize,
+      action: query.action,
+    });
+
+    return {
+      status: 200 as const,
+      body: {
+        data: result.data.map((entry) => ({
+          id: entry.id,
+          sandboxId: entry.sandboxId,
+          userId: entry.userId,
+          action: entry.action,
+          details: entry.details,
+          ipAddress: entry.ipAddress,
+          userAgent: entry.userAgent,
+          result: entry.result,
+          errorMessage: entry.errorMessage,
+          durationMs: entry.durationMs,
+          createdAt: entry.createdAt,
+        })),
+        pagination: {
+          page: query.page,
+          pageSize: query.pageSize,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.pageSize),
+        },
+      },
+    };
+  },
+
+  getDeployHistory: async ({ params, query, request }) => {
+    await adminOnly(request);
+    const { sandboxService, deployHistoryRepo } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const result = await deployHistoryRepo.findBySandbox(sandbox.id, {
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+
+    return {
+      status: 200 as const,
+      body: {
+        data: result.data.map((entry) => ({
+          id: entry.id,
+          sandboxId: entry.sandboxId,
+          imageTag: entry.imageTag,
+          commitSha: entry.commitSha,
+          commitMessage: entry.commitMessage,
+          branch: entry.branch,
+          environment: entry.environment,
+          status: entry.status,
+          triggeredBy: entry.triggeredBy,
+          deployStartedAt: entry.deployStartedAt,
+          deployCompletedAt: entry.deployCompletedAt,
+          deployDurationMs: entry.deployDurationMs,
+          errorMessage: entry.errorMessage,
+          createdAt: entry.createdAt,
+        })),
+        pagination: {
+          page: query.page,
+          pageSize: query.pageSize,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.pageSize),
+        },
+      },
+    };
+  },
+
   // ─── Deploy Management ───
 
   listDeploys: async ({ request }) => {

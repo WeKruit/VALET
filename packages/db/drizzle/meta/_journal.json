@@ -85,6 +85,27 @@
       "when": 1742515200000,
       "tag": "0011_add_task_sandbox_id",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1742688000000,
+      "tag": "0012_add_sandbox_machine_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1742774400000,
+      "tag": "0013_add_sandbox_audit_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1742860800000,
+      "tag": "0014_add_sandbox_deploy_history",
+      "breakpoints": true
     }
   ]
 }

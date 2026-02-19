@@ -32,6 +32,12 @@ export interface SandboxRecord {
   lastStoppedAt: Date | null;
   autoStopEnabled: boolean;
   idleMinutesBeforeStop: number;
+  machineType: string;
+  agentVersion: string | null;
+  agentLastSeenAt: Date | null;
+  ghImageTag: string | null;
+  ghImageUpdatedAt: Date | null;
+  deployedCommitSha: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +48,7 @@ function toSandboxRecord(row: Record<string, unknown>): SandboxRecord {
     browserEngine: (row.browserEngine as BrowserEngine) ?? "adspower",
     browserConfig: (row.browserConfig as Record<string, unknown>) ?? null,
     tags: (row.tags as Record<string, unknown>) ?? null,
+    machineType: (row.machineType as string) ?? "ec2",
   } as SandboxRecord;
 }
 
@@ -53,11 +60,7 @@ export class SandboxRepository {
   }
 
   async findById(id: string): Promise<SandboxRecord | null> {
-    const rows = await this.db
-      .select()
-      .from(sandboxes)
-      .where(eq(sandboxes.id, id))
-      .limit(1);
+    const rows = await this.db.select().from(sandboxes).where(eq(sandboxes.id, id)).limit(1);
     const row = rows[0];
     return row ? toSandboxRecord(row as Record<string, unknown>) : null;
   }
@@ -117,7 +120,8 @@ export class SandboxRepository {
       healthStatus: sandboxes.healthStatus,
       createdAt: sandboxes.createdAt,
     } as const;
-    const sortColumn = sortColumnMap[query.sortBy as keyof typeof sortColumnMap] ?? sandboxes.createdAt;
+    const sortColumn =
+      sortColumnMap[query.sortBy as keyof typeof sortColumnMap] ?? sandboxes.createdAt;
     const orderFn = query.sortOrder === "asc" ? asc : desc;
 
     const [data, totalResult] = await Promise.all([
@@ -128,10 +132,7 @@ export class SandboxRepository {
         .orderBy(orderFn(sortColumn))
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
-      this.db
-        .select({ count: count() })
-        .from(sandboxes)
-        .where(whereClause),
+      this.db.select({ count: count() }).from(sandboxes).where(whereClause),
     ]);
 
     return {
@@ -141,10 +142,7 @@ export class SandboxRepository {
   }
 
   async findAllActive(): Promise<SandboxRecord[]> {
-    const data = await this.db
-      .select()
-      .from(sandboxes)
-      .where(eq(sandboxes.status, "active"));
+    const data = await this.db.select().from(sandboxes).where(eq(sandboxes.status, "active"));
     return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
   }
 
@@ -184,10 +182,7 @@ export class SandboxRepository {
     return toSandboxRecord(rows[0] as Record<string, unknown>);
   }
 
-  async update(
-    id: string,
-    data: Record<string, unknown>,
-  ): Promise<SandboxRecord | null> {
+  async update(id: string, data: Record<string, unknown>): Promise<SandboxRecord | null> {
     const rows = await this.db
       .update(sandboxes)
       .set({ ...data, updatedAt: new Date() })
