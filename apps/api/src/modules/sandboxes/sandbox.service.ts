@@ -230,19 +230,18 @@ export class SandboxService {
     const agentUrl = `http://${sandbox.publicIp}:8000`;
 
     try {
-      const body = await this.sandboxAgentClient.getHealth(agentUrl);
-      const rawBody = body as unknown as Record<string, unknown>;
+      const metrics = await this.sandboxAgentClient.getMetrics(agentUrl);
 
       return {
         sandboxId: id,
-        cpu: (rawBody.cpu as number) ?? null,
-        memoryUsedMb: (rawBody.memoryUsedMb as number) ?? null,
-        memoryTotalMb: (rawBody.memoryTotalMb as number) ?? null,
-        diskUsedGb: (rawBody.diskUsedGb as number) ?? null,
-        diskTotalGb: (rawBody.diskTotalGb as number) ?? null,
-        activeProfiles: (rawBody.activeProfiles as number) ?? 0,
-        adspowerStatus: (rawBody.adspowerStatus as string) ?? "unknown",
-        uptime: (rawBody.uptime as number) ?? null,
+        cpu: metrics?.cpu?.usagePercent ?? null,
+        memoryUsedMb: metrics?.memory?.usedMb ?? null,
+        memoryTotalMb: metrics?.memory?.totalMb ?? null,
+        diskUsedGb: metrics?.disk?.usedGb ?? null,
+        diskTotalGb: metrics?.disk?.totalGb ?? null,
+        activeProfiles: 0,
+        adspowerStatus: "unknown",
+        uptime: null,
       };
     } catch (err) {
       if (err instanceof SandboxUnreachableError) throw err;
