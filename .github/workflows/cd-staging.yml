@@ -25,10 +25,14 @@ jobs:
       any-deploy: ${{ steps.targets.outputs.any-deploy }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dorny/paths-filter@v3
         id: changes
         with:
+          # Compare against the previous staging commit (not default shallow-clone behavior)
+          base: ${{ github.event.before }}
           filters: |
             shared:
               - 'packages/shared/**'
@@ -65,6 +69,10 @@ jobs:
             exit 0
           fi
 
+          # Staging is our integration branch — if paths-filter detected NO changes
+          # (e.g. due to main:staging push), deploy everything to be safe
+          CHANGES_DETECTED=false
+
           # API depends on: shared, contracts, db, llm
           if [[ "${{ steps.changes.outputs.api }}" == "true" \
              || "${{ steps.changes.outputs.shared }}" == "true" \
@@ -73,6 +81,7 @@ jobs:
              || "${{ steps.changes.outputs.llm }}" == "true" \
              || "${{ steps.changes.outputs.infra }}" == "true" ]]; then
             DEPLOY_API=true
+            CHANGES_DETECTED=true
           else
             DEPLOY_API=false
           fi
@@ -85,6 +94,7 @@ jobs:
              || "${{ steps.changes.outputs.llm }}" == "true" \
              || "${{ steps.changes.outputs.infra }}" == "true" ]]; then
             DEPLOY_WORKER=true
+            CHANGES_DETECTED=true
           else
             DEPLOY_WORKER=false
           fi
@@ -96,20 +106,25 @@ jobs:
              || "${{ steps.changes.outputs.ui }}" == "true" \
              || "${{ steps.changes.outputs.infra }}" == "true" ]]; then
             DEPLOY_WEB=true
+            CHANGES_DETECTED=true
           else
             DEPLOY_WEB=false
           fi
 
-          if [[ "$DEPLOY_API" == "true" || "$DEPLOY_WORKER" == "true" || "$DEPLOY_WEB" == "true" ]]; then
-            ANY_DEPLOY=true
-          else
-            ANY_DEPLOY=false
+          # Safety net: if paths-filter detected nothing, deploy everything.
+          # This handles cross-branch pushes (git push origin main:staging)
+          # where dorny/paths-filter can't resolve the diff properly.
+          if [[ "$CHANGES_DETECTED" == "false" ]]; then
+            echo "⚠️ No path changes detected — deploying all as safety fallback"
+            DEPLOY_API=true
+            DEPLOY_WORKER=true
+            DEPLOY_WEB=true
           fi
 
           echo "deploy-api=$DEPLOY_API" >> $GITHUB_OUTPUT
           echo "deploy-worker=$DEPLOY_WORKER" >> $GITHUB_OUTPUT
           echo "deploy-web=$DEPLOY_WEB" >> $GITHUB_OUTPUT
-          echo "any-deploy=$ANY_DEPLOY" >> $GITHUB_OUTPUT
+          echo "any-deploy=true" >> $GITHUB_OUTPUT
 
           echo "### Deploy Targets" >> $GITHUB_STEP_SUMMARY
           echo "| Target | Deploy? |" >> $GITHUB_STEP_SUMMARY
