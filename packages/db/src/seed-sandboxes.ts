@@ -26,7 +26,7 @@ try {
   const [stagingSandbox] = await db
     .insert(sandboxes)
     .values({
-      name: "staging-sandbox-1",
+      name: "gh-worker-stg-1",
       environment: "staging",
       instanceId: "i-0428f12557f075129",
       instanceType: "t3.large",
@@ -47,8 +47,9 @@ try {
     .onConflictDoUpdate({
       target: sandboxes.instanceId,
       set: {
-        name: "staging-sandbox-1",
+        name: "gh-worker-stg-1",
         environment: "staging",
+        instanceType: "t3.large",
         publicIp: "34.197.248.80",
         status: "active",
         healthStatus: "healthy",
