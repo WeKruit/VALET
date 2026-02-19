@@ -45,6 +45,8 @@ import { SandboxHealthIndicator } from "../components/sandbox-health-indicator";
 import { SandboxMetrics } from "../components/sandbox-metrics";
 import { SandboxForm } from "../components/sandbox-form";
 import { Ec2StatusBadge } from "../components/ec2-status-badge";
+import { MachineTypeBadge } from "../components/machine-type-badge";
+import { SummaryCards } from "../components/summary-cards";
 import { DeployBanner } from "../components/deploy-banner";
 import {
   useSandboxes,
@@ -77,6 +79,7 @@ export function SandboxesPage() {
   const [statusFilter, setStatusFilter] = useState(ALL);
   const [healthFilter, setHealthFilter] = useState(ALL);
   const [ec2StatusFilter, setEc2StatusFilter] = useState(ALL);
+  const [machineTypeFilter, setMachineTypeFilter] = useState(ALL);
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Sandbox | null>(null);
@@ -98,7 +101,11 @@ export function SandboxesPage() {
   const stopMutation = useStopSandbox();
 
   const listBody = query.data?.status === 200 ? query.data.body : null;
-  const sandboxes = listBody?.data ?? [];
+  const allSandboxes = listBody?.data ?? [];
+  const sandboxes =
+    machineTypeFilter !== ALL
+      ? allSandboxes.filter((s) => (s.machineType ?? "ec2") === machineTypeFilter)
+      : allSandboxes;
   const total = listBody?.pagination?.total ?? 0;
   const totalPages = listBody?.pagination?.totalPages ?? 1;
 
@@ -160,7 +167,7 @@ export function SandboxesPage() {
             Sandbox Fleet
           </h1>
           <p className="mt-1 text-sm text-[var(--wk-text-secondary)]">
-            Manage EC2 browser automation instances
+            Manage browser automation instances
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
@@ -171,6 +178,9 @@ export function SandboxesPage() {
 
       {/* Deploy Notifications */}
       <DeployBanner />
+
+      {/* Summary Cards */}
+      {sandboxes.length > 0 && <SummaryCards sandboxes={sandboxes} />}
 
       {/* Filters */}
       <Card>
@@ -260,6 +270,23 @@ export function SandboxesPage() {
                 <SelectItem value="stopping">Stopping</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={machineTypeFilter}
+              onValueChange={(v) => {
+                setMachineTypeFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Machine Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All Types</SelectItem>
+                <SelectItem value="ec2">EC2</SelectItem>
+                <SelectItem value="macos">macOS</SelectItem>
+                <SelectItem value="local_docker">Local Docker</SelectItem>
+              </SelectContent>
+            </Select>
             <Button variant="ghost" size="icon" onClick={() => query.refetch()} title="Refresh">
               <RefreshCw className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
             </Button>
@@ -313,6 +340,9 @@ export function SandboxesPage() {
                         Name
                       </th>
                       <th className="pb-3 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
+                        Type
+                      </th>
+                      <th className="pb-3 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
                         Environment
                       </th>
                       <th className="pb-3 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
@@ -351,6 +381,9 @@ export function SandboxesPage() {
                           >
                             {sb.name}
                           </Link>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <MachineTypeBadge machineType={sb.machineType} />
                         </td>
                         <td className="py-3 pr-4 text-[var(--wk-text-secondary)]">
                           {envLabels[sb.environment] ?? sb.environment}

@@ -16,12 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@valet/ui/components/select";
-import type {
-  Sandbox,
-  SandboxCreateRequest,
-  SandboxEnvironment,
-  BrowserEngine,
-} from "../types";
+import type { Sandbox, SandboxCreateRequest, SandboxEnvironment, BrowserEngine } from "../types";
 
 const ENVIRONMENTS: { value: SandboxEnvironment; label: string }[] = [
   { value: "dev", label: "Development" },
@@ -35,6 +30,14 @@ const INSTANCE_TYPES = [
   { value: "t3.xlarge", label: "t3.xlarge (4 vCPU / 16 GB)" },
   { value: "m5.large", label: "m5.large (2 vCPU / 8 GB)" },
   { value: "m5.xlarge", label: "m5.xlarge (4 vCPU / 16 GB)" },
+];
+
+type MachineType = "ec2" | "macos" | "local_docker";
+
+const MACHINE_TYPES: { value: MachineType; label: string }[] = [
+  { value: "ec2", label: "EC2" },
+  { value: "macos", label: "macOS" },
+  { value: "local_docker", label: "Local Docker" },
 ];
 
 interface SandboxFormProps {
@@ -58,14 +61,13 @@ export function SandboxForm({
   const [environment, setEnvironment] = useState<SandboxEnvironment>(
     sandbox?.environment ?? "staging",
   );
-  const [instanceType, setInstanceType] = useState(
-    sandbox?.instanceType ?? "t3.medium",
-  );
+  const [instanceType, setInstanceType] = useState(sandbox?.instanceType ?? "t3.medium");
   const [instanceId, setInstanceId] = useState(sandbox?.instanceId ?? "");
   const [capacity, setCapacity] = useState(String(sandbox?.capacity ?? 5));
   const [novncUrl, setNovncUrl] = useState(sandbox?.novncUrl ?? "");
-  const [browserEng, setBrowserEng] = useState<BrowserEngine>(
-    sandbox?.browserEngine ?? "adspower",
+  const [browserEng, setBrowserEng] = useState<BrowserEngine>(sandbox?.browserEngine ?? "adspower");
+  const [machineType, setMachineType] = useState<MachineType>(
+    (sandbox?.machineType as MachineType | undefined) ?? "ec2",
   );
 
   function handleSubmit(e: React.FormEvent) {
@@ -77,22 +79,18 @@ export function SandboxForm({
       instanceType,
       capacity: Number(capacity),
       browserEngine: browserEng,
+      machineType,
       ...(novncUrl.trim() ? { novncUrl: novncUrl.trim() } : {}),
     });
   }
 
-  const isValid =
-    name.trim().length > 0 &&
-    instanceId.trim().length > 0 &&
-    Number(capacity) > 0;
+  const isValid = name.trim().length > 0 && instanceId.trim().length > 0 && Number(capacity) > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {isEdit ? "Edit Sandbox" : "Register Sandbox"}
-          </DialogTitle>
+          <DialogTitle>{isEdit ? "Edit Sandbox" : "Register Sandbox"}</DialogTitle>
           <DialogDescription>
             {isEdit
               ? "Update sandbox configuration."
@@ -161,6 +159,29 @@ export function SandboxForm({
           {!isEdit && (
             <div className="space-y-1.5">
               <label
+                htmlFor="sandbox-machine-type"
+                className="text-sm font-medium text-[var(--wk-text-primary)]"
+              >
+                Machine Type
+              </label>
+              <Select value={machineType} onValueChange={(v) => setMachineType(v as MachineType)}>
+                <SelectTrigger id="sandbox-machine-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MACHINE_TYPES.map((mt) => (
+                    <SelectItem key={mt.value} value={mt.value}>
+                      {mt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {!isEdit && (
+            <div className="space-y-1.5">
+              <label
                 htmlFor="sandbox-instance-type"
                 className="text-sm font-medium text-[var(--wk-text-primary)]"
               >
@@ -206,10 +227,7 @@ export function SandboxForm({
             >
               Browser Engine
             </label>
-            <Select
-              value={browserEng}
-              onValueChange={(v) => setBrowserEng(v as BrowserEngine)}
-            >
+            <Select value={browserEng} onValueChange={(v) => setBrowserEng(v as BrowserEngine)}>
               <SelectTrigger id="sandbox-browser-engine">
                 <SelectValue />
               </SelectTrigger>
@@ -236,11 +254,7 @@ export function SandboxForm({
           </div>
 
           <DialogFooter>
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!isValid || isPending}>

@@ -57,6 +57,7 @@ export const sandboxSchema = z.object({
   lastStoppedAt: z.coerce.date().nullable().optional(),
   autoStopEnabled: z.boolean().optional(),
   idleMinutesBeforeStop: z.number().int().optional(),
+  machineType: z.string().default("ec2").optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -80,6 +81,7 @@ export const sandboxCreateSchema = z.object({
   browserEngine: browserEngine.default("adspower"),
   browserConfig: z.record(z.unknown()).optional(),
   tags: z.record(z.unknown()).optional(),
+  machineType: z.enum(["ec2", "macos", "local_docker"]).default("ec2").optional(),
 });
 
 export const sandboxUpdateSchema = z.object({

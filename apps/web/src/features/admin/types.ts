@@ -18,4 +18,9 @@ export type {
   AdminTriggerTestRequest,
   AdminTriggerTestResponse,
   WorkerStatusResponse,
+  AgentContainerInfo,
+  AgentWorkerInfo,
+  AuditLogEntry,
+  DeployHistoryEntry,
+  PaginationMeta,
 } from "@valet/shared/schemas";

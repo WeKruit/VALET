@@ -255,6 +255,68 @@ export function useStopSandbox() {
   });
 }
 
+// ─── Agent Queries (Workers, Containers, Audit, Deploy History) ───
+
+export function useAgentWorkers(id: string, enabled = true) {
+  return api.sandboxes.listWorkers.useQuery({
+    queryKey: ["admin", "sandboxes", id, "agent-workers"],
+    queryData: {
+      params: { id },
+    },
+    enabled: Boolean(id) && enabled,
+    staleTime: 1000 * 10,
+    refetchInterval: 1000 * 15,
+    retry: false,
+  });
+}
+
+export function useAgentContainers(id: string, enabled = true) {
+  return api.sandboxes.listContainers.useQuery({
+    queryKey: ["admin", "sandboxes", id, "agent-containers"],
+    queryData: {
+      params: { id },
+    },
+    enabled: Boolean(id) && enabled,
+    staleTime: 1000 * 10,
+    refetchInterval: 1000 * 15,
+    retry: false,
+  });
+}
+
+export function useAuditLog(
+  id: string,
+  params?: { page?: number; pageSize?: number; action?: string },
+) {
+  return api.sandboxes.getAuditLog.useQuery({
+    queryKey: ["admin", "sandboxes", id, "audit-log", params],
+    queryData: {
+      params: { id },
+      query: {
+        page: params?.page ?? 1,
+        pageSize: params?.pageSize ?? 20,
+        ...(params?.action ? { action: params.action } : {}),
+      },
+    },
+    enabled: Boolean(id),
+    staleTime: 1000 * 15,
+  });
+}
+
+export function useDeployHistory(id: string, params?: { page?: number; pageSize?: number }) {
+  return api.sandboxes.getDeployHistory.useQuery({
+    queryKey: ["admin", "sandboxes", id, "deploy-history", params],
+    queryData: {
+      params: { id },
+      query: {
+        page: params?.page ?? 1,
+        pageSize: params?.pageSize ?? 20,
+      },
+    },
+    enabled: Boolean(id),
+    staleTime: 1000 * 15,
+  });
+}
+
 // ─── Auto-deploy Config ───
 
 interface AutoDeployConfig {

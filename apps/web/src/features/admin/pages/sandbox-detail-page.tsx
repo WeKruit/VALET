@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@valet/ui/components/tooltip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@valet/ui/components/tabs";
 import {
   ArrowLeft,
   Server,
@@ -39,6 +40,10 @@ import {
   Square,
   Power,
   Zap,
+  Users,
+  Container,
+  ScrollText,
+  Rocket,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatRelativeTime } from "@/lib/utils";
@@ -51,6 +56,11 @@ import { SandboxConnectionInfo } from "../components/sandbox-connection-info";
 import { LiveView } from "@/features/tasks/components/live-view";
 import { TriggerTaskDialog } from "../components/trigger-task-dialog";
 import { WorkerStatusCard } from "../components/worker-status-card";
+import { MachineTypeBadge } from "../components/machine-type-badge";
+import { SandboxWorkersTab } from "../components/sandbox-workers-tab";
+import { SandboxContainersTab } from "../components/sandbox-containers-tab";
+import { SandboxAuditLogTab } from "../components/sandbox-audit-log-tab";
+import { SandboxDeployHistoryTab } from "../components/sandbox-deploy-history-tab";
 import { DeployBanner } from "../components/deploy-banner";
 import {
   useSandbox,
@@ -324,6 +334,9 @@ export function SandboxDetailPage() {
             <InfoField label="Instance Type">
               <span className="font-mono text-sm">{sandbox.instanceType}</span>
             </InfoField>
+            <InfoField label="Machine Type">
+              <MachineTypeBadge machineType={sandbox.machineType} />
+            </InfoField>
             <InfoField label="Status">
               <SandboxStatusBadge status={sandbox.status} />
             </InfoField>
@@ -475,6 +488,47 @@ export function SandboxDetailPage() {
 
       {/* Worker Status */}
       <WorkerStatusCard sandboxId={id!} ec2Running={ec2Status === "running"} />
+
+      {/* Management Tabs */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Management</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="workers">
+            <TabsList>
+              <TabsTrigger value="workers" className="gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Workers
+              </TabsTrigger>
+              <TabsTrigger value="containers" className="gap-1.5">
+                <Container className="h-3.5 w-3.5" />
+                Containers
+              </TabsTrigger>
+              <TabsTrigger value="audit-log" className="gap-1.5">
+                <ScrollText className="h-3.5 w-3.5" />
+                Audit Log
+              </TabsTrigger>
+              <TabsTrigger value="deploy-history" className="gap-1.5">
+                <Rocket className="h-3.5 w-3.5" />
+                Deploy History
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="workers">
+              <SandboxWorkersTab sandboxId={id!} />
+            </TabsContent>
+            <TabsContent value="containers">
+              <SandboxContainersTab sandboxId={id!} />
+            </TabsContent>
+            <TabsContent value="audit-log">
+              <SandboxAuditLogTab sandboxId={id!} />
+            </TabsContent>
+            <TabsContent value="deploy-history">
+              <SandboxDeployHistoryTab sandboxId={id!} />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       {/* Connection Info */}
       <SandboxConnectionInfo publicIp={sandbox.publicIp} sshKeyName={sandbox.sshKeyName} />
