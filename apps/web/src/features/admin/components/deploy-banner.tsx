@@ -20,14 +20,18 @@ import {
   useCancelDeploy,
 } from "../hooks/use-sandboxes";
 
-export function DeployBanner() {
+export function DeployBanner({ environment }: { environment?: string } = {}) {
   const deploysQuery = useDeploys();
   const [selectedDeployId, setSelectedDeployId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const deploys = deploysQuery.data?.status === 200 ? deploysQuery.data.body.data : [];
-  const pendingDeploys = deploys.filter((d) => d.status === "pending");
-  const activeDeploys = deploys.filter((d) => d.status === "deploying" || d.status === "draining");
+  // When environment is provided, only show deploys matching that environment
+  const envFiltered = environment ? deploys.filter((d) => d.environment === environment) : deploys;
+  const pendingDeploys = envFiltered.filter((d) => d.status === "pending");
+  const activeDeploys = envFiltered.filter(
+    (d) => d.status === "deploying" || d.status === "draining",
+  );
 
   if (pendingDeploys.length === 0 && activeDeploys.length === 0) return null;
 

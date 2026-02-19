@@ -315,8 +315,8 @@ export function SandboxDetailPage() {
         </div>
       </div>
 
-      {/* Deploy Notifications */}
-      <DeployBanner />
+      {/* Deploy Notifications — only show deploys matching this sandbox's environment */}
+      <DeployBanner environment={sandbox.environment} />
 
       {/* Overview */}
       <Card>
