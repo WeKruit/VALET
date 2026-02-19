@@ -241,7 +241,7 @@ export const sandboxRouter = s.router(sandboxContract, {
 
     const sandbox = await sandboxService.getById(params.id);
 
-    // Get Docker container count from EC2 health-server
+    // Get Docker container count from EC2 deploy-server health
     let dockerContainers: number | null = null;
     if (sandbox.publicIp) {
       try {
@@ -250,10 +250,14 @@ export const sandboxRouter = s.router(sandboxContract, {
         });
         if (ec2Resp.ok) {
           const ec2Body = (await ec2Resp.json()) as Record<string, unknown>;
-          dockerContainers = (ec2Body.activeWorkers as number) ?? null;
+          // Count running containers: API (if healthy) + worker (if status known) + deploy-server (always 1 if we got here)
+          let count = 1; // deploy-server is running (we got a response)
+          if (ec2Body.apiHealthy) count++;
+          if (ec2Body.workerStatus && ec2Body.workerStatus !== "unknown") count++;
+          dockerContainers = count;
         }
       } catch {
-        logger.debug({ sandboxId: params.id }, "EC2 health-server unreachable for container count");
+        logger.debug({ sandboxId: params.id }, "EC2 deploy-server unreachable for container count");
       }
     }
 
