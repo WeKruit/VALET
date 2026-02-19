@@ -1,16 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
-import {
-  Activity,
-  Server,
-  Clock,
-  CheckCircle,
-  XCircle,
-  Container,
-  Zap,
-  Inbox,
-  BarChart3,
-} from "lucide-react";
+import { Activity, Server, Clock, CheckCircle, XCircle, Container, Zap, Inbox } from "lucide-react";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useWorkerStatus } from "../hooks/use-sandboxes";
 
@@ -130,8 +120,10 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
   const containerCount = ws?.dockerContainers ?? 0;
   const containersHealthy = containerCount > 0;
   const activeJobs = ws?.worker.activeJobs ?? 0;
+  const maxConcurrent = ws?.worker.maxConcurrent ?? 0;
   const queueDepth = ws?.worker.queueDepth ?? 0;
   const totalProcessed = ws?.worker.totalProcessed ?? 0;
+  const hasActiveJobs = activeJobs > 0;
 
   return (
     <Card>
@@ -154,60 +146,94 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
             Infrastructure
           </h4>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* Docker Containers — hero number */}
-            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-4 flex items-center gap-4">
+          <div className="grid grid-cols-4 gap-3">
+            {/* Docker Containers */}
+            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-3 text-center">
               <div
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--wk-radius-md)] ${
+                className={`mx-auto flex h-8 w-8 items-center justify-center rounded-[var(--wk-radius-md)] mb-1.5 ${
                   containersHealthy
                     ? "bg-[color-mix(in_srgb,var(--wk-status-success)_12%,transparent)]"
                     : "bg-[var(--wk-surface-sunken)]"
                 }`}
               >
                 <Container
-                  className={`h-5 w-5 ${containersHealthy ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
+                  className={`h-4 w-4 ${containersHealthy ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
                 />
               </div>
-              <div>
-                <p
-                  className={`text-2xl font-semibold ${containersHealthy ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
-                >
-                  {containerCount}
-                </p>
-                <p className="text-xs text-[var(--wk-text-secondary)]">Containers Running</p>
+              <p
+                className={`text-xl font-semibold ${containersHealthy ? "text-[var(--wk-text-primary)]" : "text-[var(--wk-text-tertiary)]"}`}
+              >
+                {containerCount}
+              </p>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">Containers</p>
+            </div>
+
+            {/* Active Jobs */}
+            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-3 text-center">
+              <div
+                className={`mx-auto flex h-8 w-8 items-center justify-center rounded-[var(--wk-radius-md)] mb-1.5 ${
+                  hasActiveJobs
+                    ? "bg-[color-mix(in_srgb,var(--wk-copilot)_12%,transparent)]"
+                    : "bg-[var(--wk-surface-sunken)]"
+                }`}
+              >
+                <Zap
+                  className={`h-4 w-4 ${hasActiveJobs ? "text-[var(--wk-copilot)]" : "text-[var(--wk-text-tertiary)]"}`}
+                />
               </div>
+              <p
+                className={`text-xl font-semibold ${hasActiveJobs ? "text-[var(--wk-copilot)]" : "text-[var(--wk-text-primary)]"}`}
+              >
+                {activeJobs}
+                {maxConcurrent > 0 && (
+                  <span className="text-sm font-normal text-[var(--wk-text-tertiary)]">
+                    /{maxConcurrent}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">Active Jobs</p>
             </div>
 
             {/* GhostHands API */}
-            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-4 flex items-center gap-4">
+            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-3 text-center">
               <div
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--wk-radius-md)] ${
+                className={`mx-auto flex h-8 w-8 items-center justify-center rounded-[var(--wk-radius-md)] mb-1.5 ${
                   ws?.ghosthandsApi.status === "healthy"
                     ? "bg-[color-mix(in_srgb,var(--wk-status-success)_12%,transparent)]"
                     : "bg-[var(--wk-surface-sunken)]"
                 }`}
               >
                 <Server
-                  className={`h-5 w-5 ${ws?.ghosthandsApi.status === "healthy" ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
+                  className={`h-4 w-4 ${ws?.ghosthandsApi.status === "healthy" ? "text-[var(--wk-status-success)]" : "text-[var(--wk-text-tertiary)]"}`}
                 />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <StatusDot status={ws?.ghosthandsApi.status ?? "unreachable"} />
-                  <span className="text-sm font-medium capitalize">
-                    {ws?.ghosthandsApi.status ?? "unknown"}
-                  </span>
-                </div>
-                <p className="text-xs text-[var(--wk-text-secondary)]">
-                  GhostHands API
-                  {ws?.ghosthandsApi.version && (
-                    <span className="text-[var(--wk-text-tertiary)]">
-                      {" "}
-                      v{ws.ghosthandsApi.version}
-                    </span>
-                  )}
-                </p>
+              <div className="flex items-center justify-center gap-1.5">
+                <StatusDot status={ws?.ghosthandsApi.status ?? "unreachable"} />
+                <span className="text-sm font-medium capitalize">
+                  {ws?.ghosthandsApi.status ?? "N/A"}
+                </span>
               </div>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">
+                GH API
+                {ws?.ghosthandsApi.version && <span> v{ws.ghosthandsApi.version}</span>}
+              </p>
+            </div>
+
+            {/* Queue Depth */}
+            <div className="rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] p-3 text-center">
+              <div
+                className={`mx-auto flex h-8 w-8 items-center justify-center rounded-[var(--wk-radius-md)] mb-1.5 ${
+                  queueDepth > 0
+                    ? "bg-[color-mix(in_srgb,var(--wk-status-warning)_12%,transparent)]"
+                    : "bg-[var(--wk-surface-sunken)]"
+                }`}
+              >
+                <Inbox
+                  className={`h-4 w-4 ${queueDepth > 0 ? "text-[var(--wk-status-warning)]" : "text-[var(--wk-text-tertiary)]"}`}
+                />
+              </div>
+              <p className="text-xl font-semibold text-[var(--wk-text-primary)]">{queueDepth}</p>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">In Queue</p>
             </div>
           </div>
 
@@ -256,59 +282,38 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
             </div>
           )}
 
-          {/* Stats grid */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 text-center">
-              <div className="flex items-center justify-center gap-1.5 mb-1">
-                <Inbox className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
-              </div>
-              <p className="text-lg font-semibold text-[var(--wk-text-primary)]">{queueDepth}</p>
-              <p className="text-xs text-[var(--wk-text-tertiary)]">Queue</p>
-            </div>
-            <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 text-center">
-              <div className="flex items-center justify-center gap-1.5 mb-1">
-                <BarChart3 className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
-              </div>
-              <p className="text-lg font-semibold text-[var(--wk-text-primary)]">
-                {totalProcessed}
-              </p>
-              <p className="text-xs text-[var(--wk-text-tertiary)]">Processed</p>
-            </div>
-            <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-subtle)] p-3 text-center">
-              <div className="flex items-center justify-center gap-1.5 mb-1">
-                <XCircle className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
-              </div>
-              <p className="text-lg font-semibold text-[var(--wk-text-primary)]">
-                {ws?.jobStats.failed ?? 0}
-              </p>
-              <p className="text-xs text-[var(--wk-text-tertiary)]">Failed</p>
-            </div>
-          </div>
-
-          {/* Job Stats detail - only if there's been activity */}
-          {ws &&
-            (ws.jobStats.created > 0 || ws.jobStats.completed > 0 || ws.jobStats.failed > 0) && (
-              <div className="flex gap-4 text-xs text-[var(--wk-text-tertiary)]">
-                <span>
-                  Created:{" "}
-                  <span className="font-medium text-[var(--wk-text-secondary)]">
-                    {ws.jobStats.created}
-                  </span>
+          {/* Job stats summary */}
+          <div className="flex items-center justify-between text-xs text-[var(--wk-text-tertiary)]">
+            <div className="flex gap-4">
+              <span>
+                Processed:{" "}
+                <span className="font-medium text-[var(--wk-text-secondary)]">
+                  {totalProcessed}
                 </span>
+              </span>
+              {ws && ws.jobStats.completed > 0 && (
                 <span>
                   Completed:{" "}
                   <span className="font-medium text-[var(--wk-status-success)]">
                     {ws.jobStats.completed}
                   </span>
                 </span>
+              )}
+              {ws && ws.jobStats.failed > 0 && (
                 <span>
                   Failed:{" "}
                   <span className="font-medium text-[var(--wk-status-error)]">
                     {ws.jobStats.failed}
                   </span>
                 </span>
-              </div>
+              )}
+            </div>
+            {maxConcurrent > 0 && (
+              <span>
+                Capacity: {activeJobs}/{maxConcurrent}
+              </span>
             )}
+          </div>
         </div>
 
         {/* ── Active Tasks ── */}
