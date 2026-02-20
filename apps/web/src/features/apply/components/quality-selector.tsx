@@ -1,7 +1,6 @@
 import { Zap, Scale, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type QualityPreset = "speed" | "balanced" | "quality";
+import type { QualityPreset } from "@valet/shared/schemas";
 
 interface QualitySelectorProps {
   value: QualityPreset;

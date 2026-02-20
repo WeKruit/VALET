@@ -22,8 +22,17 @@ describe("GhostHandsClient.getModels", () => {
 
   it("calls GET /api/v1/gh/models with service key", async () => {
     const mockCatalog = {
-      models: [{ id: "claude-3", name: "Claude 3", provider: "anthropic", purpose: "reasoning" }],
-      default_reasoning_model: "claude-3",
+      models: [
+        { alias: "claude-3", model: "Claude 3", provider: "anthropic", provider_name: "Anthropic", vision: false },
+        { alias: "gpt-4o", model: "GPT-4o", provider: "openai", provider_name: "OpenAI", vision: true },
+      ],
+      presets: [
+        { name: "quality", description: "Most thorough. Uses top models for complex applications.", model: "claude-3" },
+        { name: "balanced", description: "Best mix of speed and accuracy for most jobs.", model: "gpt-4o" },
+        { name: "speed", description: "Fastest. Uses lighter models for quick applications.", model: "claude-3" },
+      ],
+      default: "claude-3",
+      total: 30,
     };
 
     (globalThis.fetch as any).mockResolvedValueOnce({

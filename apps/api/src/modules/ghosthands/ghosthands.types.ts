@@ -346,3 +346,32 @@ export interface GHDeregisterWorkerResponse {
   cancelled_jobs: string[];
   reason: string;
 }
+
+// ─── Model Catalog ───
+
+export interface GHModelInfo {
+  alias?: string;
+  model: string;
+  provider: string;
+  provider_name?: string;
+  vision?: boolean;
+  cost?: {
+    input?: number;
+    output?: number;
+    unit?: string;
+  };
+  note?: string;
+}
+
+export interface GHPreset {
+  name: string;
+  description: string;
+  model: string;
+}
+
+export interface GHModelCatalog {
+  models: GHModelInfo[];
+  presets?: GHPreset[];
+  default?: string;
+  total?: number;
+}
