@@ -48,6 +48,7 @@ import { DeployHistoryRepository } from "../modules/sandboxes/deploy-history.rep
 import { PgBossService } from "../services/pgboss.service.js";
 import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
 import { AutoScaleService } from "../services/auto-scale.service.js";
+import { StaleTaskReconciliationMonitor } from "../modules/tasks/stale-task-reconciliation.js";
 
 export interface AppCradle {
   db: Database;
@@ -96,6 +97,7 @@ export interface AppCradle {
   pgBossService: PgBossService;
   taskQueueService: TaskQueueService;
   autoScaleService: AutoScaleService;
+  staleTaskReconciliation: StaleTaskReconciliationMonitor;
 }
 
 declare module "@fastify/awilix" {
@@ -192,5 +194,8 @@ export default fp(async (fastify: FastifyInstance) => {
     pgBossService: asClass(PgBossService, { lifetime: Lifetime.SINGLETON }),
     taskQueueService: asClass(TaskQueueService, { lifetime: Lifetime.SINGLETON }),
     autoScaleService: asClass(AutoScaleService, { lifetime: Lifetime.SINGLETON }),
+    staleTaskReconciliation: asClass(StaleTaskReconciliationMonitor, {
+      lifetime: Lifetime.SINGLETON,
+    }),
   });
 });
