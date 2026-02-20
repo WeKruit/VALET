@@ -356,7 +356,7 @@ export class TaskService {
         profile,
         qa_answers: Object.keys(qaAnswers).length > 0 ? qaAnswers : undefined,
         callback_url: callbackUrl,
-        quality: body.mode === "autopilot" ? "fast" : "thorough",
+        quality: body.mode === "autopilot" ? "speed" : "quality",
         max_retries: 1,
         ...(body.targetWorkerId
           ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }
