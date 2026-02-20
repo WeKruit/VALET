@@ -639,6 +639,13 @@ function toDeployResponse(d: DeployRecord) {
     repository: d.repository,
     runUrl: d.runUrl,
     status: d.status,
+    sandboxes: (d.sandboxes ?? []).map((s) => ({
+      sandboxId: s.sandboxId,
+      sandboxName: s.sandboxName,
+      status: s.status,
+      activeTaskCount: s.activeTaskCount,
+      message: s.message ?? null,
+    })),
     createdAt: new Date(d.createdAt),
     updatedAt: new Date(d.updatedAt),
   };

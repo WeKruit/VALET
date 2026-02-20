@@ -376,6 +376,14 @@ export const deploySandboxStatus = z.enum([
   "skipped",
 ]);
 
+export const deploySandboxProgress = z.object({
+  sandboxId: z.string().uuid(),
+  sandboxName: z.string(),
+  status: deploySandboxStatus,
+  activeTaskCount: z.number().int(),
+  message: z.string().nullable().optional(),
+});
+
 export const deployNotification = z.object({
   id: z.string().uuid(),
   imageTag: z.string(),
@@ -386,16 +394,9 @@ export const deployNotification = z.object({
   repository: z.string(),
   runUrl: z.string(),
   status: deployStatus,
+  sandboxes: z.array(deploySandboxProgress).default([]),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
-});
-
-export const deploySandboxProgress = z.object({
-  sandboxId: z.string().uuid(),
-  sandboxName: z.string(),
-  status: deploySandboxStatus,
-  activeTaskCount: z.number().int(),
-  message: z.string().nullable().optional(),
 });
 
 export const deployListResponse = z.object({

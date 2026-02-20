@@ -23,6 +23,7 @@ import {
   Container,
   GitBranch,
   GitCommitHorizontal,
+  AlertTriangle,
 } from "lucide-react";
 import { Switch } from "@valet/ui/components/switch";
 import { toast } from "sonner";
@@ -322,6 +323,24 @@ function DeployCard({
         </div>
       </CardHeader>
 
+      {/* Deploy-level failure with no sandbox details */}
+      {status === "failed" && (!deploy.sandboxes || deploy.sandboxes.length === 0) && (
+        <CardContent className="pt-0 pb-4">
+          <div className="border-t border-[var(--wk-border-subtle)] pt-3">
+            <div className="rounded-md border border-[var(--wk-status-error)]/20 bg-[var(--wk-status-error)]/5 px-3 py-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-[var(--wk-status-error)] mt-0.5 shrink-0" />
+                <p className="text-xs text-[var(--wk-status-error)]">
+                  Deploy failed before reaching any sandboxes. This usually means no running
+                  sandboxes were found for the{" "}
+                  <span className="font-medium">{deploy.environment}</span> environment.
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      )}
+
       {/* Per-sandbox progress */}
       {deploy.sandboxes && deploy.sandboxes.length > 0 && (
         <CardContent className="pt-0 pb-4">
@@ -329,17 +348,35 @@ function DeployCard({
             <p className="text-xs font-medium text-[var(--wk-text-secondary)] uppercase tracking-wider">
               Sandbox Progress
             </p>
-            {deploy.sandboxes.map((sb) => (
-              <div key={sb.sandboxId} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <SandboxStatusIcon status={sb.status as SandboxStatusValue} />
-                  <span className="font-medium">{sb.sandboxName}</span>
+            {deploy.sandboxes.map((sb) => {
+              const sbStatus = sb.status as SandboxStatusValue;
+              const isFailed = sbStatus === "failed";
+              return (
+                <div key={sb.sandboxId} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <SandboxStatusIcon status={sbStatus} />
+                      <span className="font-medium">{sb.sandboxName}</span>
+                    </div>
+                    <span
+                      className={`text-xs ${isFailed ? "text-[var(--wk-status-error)] font-medium" : "text-[var(--wk-text-tertiary)]"}`}
+                    >
+                      {isFailed ? "Failed" : (sb.message ?? sb.status)}
+                    </span>
+                  </div>
+                  {isFailed && sb.message && (
+                    <div className="ml-6 rounded-md border border-[var(--wk-status-error)]/20 bg-[var(--wk-status-error)]/5 px-3 py-2">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--wk-status-error)] mt-0.5 shrink-0" />
+                        <p className="text-xs text-[var(--wk-status-error)] font-mono break-all whitespace-pre-wrap">
+                          {formatAgentError(sb.message)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <span className="text-xs text-[var(--wk-text-tertiary)]">
-                  {sb.message ?? sb.status}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       )}
@@ -361,6 +398,27 @@ function SandboxStatusIcon({ status }: { status: SandboxStatusValue }) {
     default:
       return <Clock className="h-4 w-4 text-[var(--wk-text-tertiary)]" />;
   }
+}
+
+/**
+ * Parse AgentError messages into human-readable format.
+ * Input:  "Agent 401: {"success":false,"message":"Unauthorized: invalid or missing X-Deploy-Secret"}"
+ * Output: "HTTP 401: Unauthorized: invalid or missing X-Deploy-Secret"
+ */
+function formatAgentError(message: string): string {
+  const match = message.match(/^Agent (\d+): (.+)$/s);
+  if (match) {
+    const statusCode = match[1] ?? "???";
+    const body = match[2] ?? "";
+    try {
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      if (typeof parsed.message === "string") return `HTTP ${statusCode}: ${parsed.message}`;
+    } catch {
+      // body isn't JSON, use as-is
+    }
+    return `HTTP ${statusCode}: ${body}`;
+  }
+  return message;
 }
 
 function DeployConfirmDialog({
