@@ -104,6 +104,10 @@ function createService() {
     qaBankRepo: mockQaBankRepo as any,
     ghosthandsClient: mockGhosthandsClient as any,
     ghJobRepo: mockGhJobRepo as any,
+    ghJobEventRepo: {
+      findLatestProgressEvent: vi.fn().mockResolvedValue(null),
+      findByJobId: vi.fn().mockResolvedValue([]),
+    } as any,
     ghSessionRepo: mockGhSessionRepo as any,
     redis: mockRedis,
     logger: mockLogger,

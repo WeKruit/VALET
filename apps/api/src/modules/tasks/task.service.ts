@@ -13,6 +13,7 @@ import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
+import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -46,6 +47,7 @@ export class TaskService {
   private qaBankRepo: QaBankRepository;
   private ghosthandsClient: GhostHandsClient;
   private ghJobRepo: GhAutomationJobRepository;
+  private ghJobEventRepo: GhJobEventRepository;
   private ghSessionRepo: GhBrowserSessionRepository;
   private redis: Redis;
   private logger: FastifyBaseLogger;
@@ -56,6 +58,7 @@ export class TaskService {
     qaBankRepo,
     ghosthandsClient,
     ghJobRepo,
+    ghJobEventRepo,
     ghSessionRepo,
     redis,
     logger,
@@ -65,6 +68,7 @@ export class TaskService {
     qaBankRepo: QaBankRepository;
     ghosthandsClient: GhostHandsClient;
     ghJobRepo: GhAutomationJobRepository;
+    ghJobEventRepo: GhJobEventRepository;
     ghSessionRepo: GhBrowserSessionRepository;
     redis: Redis;
     logger: FastifyBaseLogger;
@@ -74,6 +78,7 @@ export class TaskService {
     this.qaBankRepo = qaBankRepo;
     this.ghosthandsClient = ghosthandsClient;
     this.ghJobRepo = ghJobRepo;
+    this.ghJobEventRepo = ghJobEventRepo;
     this.ghSessionRepo = ghSessionRepo;
     this.redis = redis;
     this.logger = logger;
@@ -131,7 +136,17 @@ export class TaskService {
 
     // Enrich with GhostHands job data if a GH job exists (self-healing reconciliation)
     const ghJob = await this.fetchGhJobData(task.workflowRunId, task.status as TaskStatus);
-    return { ...task, interaction, ghJob };
+
+    // WEK-71: Compute progress from gh_job_events (single source of truth)
+    // instead of relying on the stale tasks.progress column
+    const liveProgress = await this.computeProgressFromEvents(task.workflowRunId);
+    const enrichedTask = { ...task };
+    if (liveProgress) {
+      enrichedTask.progress = liveProgress.progress;
+      enrichedTask.currentStep = liveProgress.currentStep;
+    }
+
+    return { ...enrichedTask, interaction, ghJob };
   }
 
   private async fetchGhJobData(workflowRunId: string | null, taskStatus?: TaskStatus) {
@@ -239,6 +254,41 @@ export class TaskService {
       };
     } catch (err) {
       this.logger.debug({ err, workflowRunId }, "Failed to fetch GH job status (non-critical)");
+      return null;
+    }
+  }
+
+  /**
+   * WEK-71: Compute current progress from gh_job_events instead of the stale
+   * tasks.progress column. gh_job_events is the single source of truth for
+   * progress data, written by GH ProgressTracker every ~2 seconds.
+   *
+   * Returns null if no progress events exist (task hasn't started yet).
+   */
+  private async computeProgressFromEvents(
+    workflowRunId: string | null,
+  ): Promise<{ progress: number; currentStep: string } | null> {
+    if (!workflowRunId) return null;
+
+    try {
+      const latestEvent = await this.ghJobEventRepo.findLatestProgressEvent(workflowRunId);
+      if (!latestEvent?.metadata) return null;
+
+      const meta = latestEvent.metadata as {
+        progress_pct?: number;
+        description?: string;
+        step?: string;
+      };
+
+      return {
+        progress: Math.round(meta.progress_pct ?? 0),
+        currentStep: meta.description ?? meta.step ?? "Processing",
+      };
+    } catch (err) {
+      this.logger.debug(
+        { err, workflowRunId },
+        "Failed to compute progress from gh_job_events (non-critical)",
+      );
       return null;
     }
   }
@@ -372,8 +422,6 @@ export class TaskService {
         type: "task_update",
         taskId: task.id,
         status: "queued",
-        progress: 0,
-        currentStep: "Submitted to GhostHands",
       });
     } catch (err) {
       this.logger.error({ err, taskId: task.id }, "Failed to submit application to GhostHands");
@@ -485,8 +533,6 @@ export class TaskService {
         type: "task_update",
         taskId: task.id,
         status: "queued",
-        progress: 0,
-        currentStep: "Integration test submitted to GhostHands",
       });
     } catch (err) {
       this.logger.error({ err, taskId: task.id }, "Failed to submit test task to GhostHands");
@@ -527,14 +573,12 @@ export class TaskService {
     }
 
     await this.taskRepo.updateStatus(id, "queued");
-    await this.taskRepo.updateProgress(id, { progress: 0, currentStep: "Retry submitted" });
+    // WEK-71: No longer write progress to tasks table. GH events are the source of truth.
 
     await publishToUser(this.redis, userId, {
       type: "task_update",
       taskId: id,
       status: "queued",
-      progress: 0,
-      currentStep: "Retry submitted to GhostHands",
     });
 
     const updated = await this.taskRepo.findById(id, userId);
