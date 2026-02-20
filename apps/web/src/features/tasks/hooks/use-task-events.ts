@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE_URL, getAccessToken } from "@/lib/api-client";
 
-interface GhJobEvent {
+export interface GhJobEvent {
   id: string;
   eventType: string | null;
   fromStatus: string | null;
@@ -17,7 +17,7 @@ export function useTaskEvents(taskId: string, enabled: boolean) {
     queryKey: ["tasks", taskId, "gh-events"],
     queryFn: async () => {
       const token = getAccessToken();
-      const res = await fetch(`${API_BASE_URL}/api/v1/tasks/${taskId}/gh-events?limit=200`, {
+      const res = await fetch(`${API_BASE_URL}/api/v1/tasks/${taskId}/gh-events?limit=200&milestones=true`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error("Failed to fetch events");
