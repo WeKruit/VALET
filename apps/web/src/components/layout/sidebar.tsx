@@ -14,6 +14,7 @@ import {
   Globe,
   Rocket,
   Activity,
+  Cpu,
 } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
 import { useUIStore } from "@/stores/ui.store";
@@ -34,6 +35,7 @@ const adminNavItems = [
   { path: "/admin/deploys", label: "Deploys", icon: Rocket },
   { path: "/admin/monitoring", label: "Monitoring", icon: Activity },
   { path: "/admin/sessions", label: "Sessions", icon: Globe },
+  { path: "/admin/workers", label: "Workers", icon: Cpu },
 ];
 
 interface SidebarContentProps {

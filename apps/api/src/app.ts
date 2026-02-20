@@ -25,6 +25,7 @@ import { gdprRouter } from "./modules/gdpr/gdpr.routes.js";
 import { billingRouter, billingWebhookRoute } from "./modules/billing/billing.routes.js";
 import { ghosthandsWebhookRoute } from "./modules/ghosthands/ghosthands.webhook.js";
 import { ghosthandsMonitoringRoutes } from "./modules/ghosthands/ghosthands.monitoring.js";
+import { workerAdminRoutes } from "./modules/ghosthands/worker.admin-routes.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
 import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
@@ -114,7 +115,7 @@ export async function buildApp() {
   // Admin routes (need auth via onRequest hook, so registered after auth middleware)
   await fastify.register(taskAdminRoutes);
   await fastify.register(ghosthandsMonitoringRoutes);
-  await fastify.register(deployAdminRoutes);
+  await fastify.register(workerAdminRoutes);  await fastify.register(deployAdminRoutes);
 
   // User-facing standalone routes (outside ts-rest, needs auth)
   await fastify.register(taskUserRoutes);
