@@ -9,7 +9,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@valet/ui/components/select";
-import { TaskTimeline } from "./task-timeline";
+import { TaskTimeline, resolveSteps } from "./task-timeline";
 import { FieldReview } from "./field-review";
 import { HitlBlockerCard } from "./hitl-blocker-card";
 import { GhJobCard } from "./gh-job-card";
@@ -121,6 +121,17 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
   const task = data?.status === 200 ? data.body : null;
   if (!task) return null;
 
+  // WEK-71: derive progress from gh_job_events instead of tasks.progress column
+  const derivedProgress = useMemo(() => {
+    const steps = resolveSteps(taskEvents, {
+      status: task.status,
+      createdAt: task.createdAt,
+      completedAt: task.completedAt,
+    });
+    const completed = steps.filter((s) => s.status === "complete").length;
+    return Math.round((completed / steps.length) * 100);
+  }, [taskEvents, task.status, task.createdAt, task.completedAt]);
+
   const isFailed = task.status === "failed";
   const isWaitingReview = task.status === "waiting_human";
   const hasHitlBlocker = isWaitingReview && task.interaction != null;
@@ -203,10 +214,10 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 <div className="h-2 w-24 rounded-full bg-[var(--wk-surface-sunken)] overflow-hidden">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-[var(--wk-copilot)] to-[var(--wk-accent-teal)] transition-all duration-500"
-                    style={{ width: `${task.progress}%` }}
+                    style={{ width: `${derivedProgress}%` }}
                   />
                 </div>
-                <span className="text-sm font-medium">{task.progress}%</span>
+                <span className="text-sm font-medium">{derivedProgress}%</span>
               </div>
             </div>
             <div>
@@ -371,7 +382,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         events={taskEvents}
         task={{
           status: task.status,
-          progress: task.progress,
+          progress: derivedProgress,
           createdAt: task.createdAt,
           completedAt: task.completedAt,
         }}

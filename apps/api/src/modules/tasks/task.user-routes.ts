@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { deriveProgressFromEvents } from "./progress-derivation.js";
 
 /**
  * User-facing standalone Fastify routes for task features that sit outside ts-rest.
@@ -85,6 +86,44 @@ export async function taskUserRoutes(fastify: FastifyInstance) {
         events = events.slice(-limit);
 
         return reply.status(200).send({ events });
+      } catch {
+        return reply.status(404).send({ error: "Task not found" });
+      }
+    },
+  );
+
+  // ── Derive progress from gh_job_events ──────────────────────
+  // WEK-71: Single source of truth for task progress
+  fastify.get(
+    "/api/v1/tasks/:taskId/progress",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.userId;
+      if (!userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
+      const { taskService, ghJobEventRepo } = request.diScope.cradle;
+      const { taskId } = request.params as { taskId: string };
+
+      try {
+        const task = await taskService.getById(taskId, userId);
+        if (!task?.ghJob?.jobId) {
+          return reply.status(200).send({
+            progress: 0,
+            currentStep: "Queued",
+            stepIndex: 0,
+            totalSteps: 9,
+          });
+        }
+
+        const rawEvents = await ghJobEventRepo.findByJobId(task.ghJob.jobId);
+        const events = rawEvents.map((e: { eventType: string | null; createdAt: Date }) => ({
+          eventType: e.eventType,
+          createdAt: e.createdAt.toISOString(),
+        }));
+
+        const derived = deriveProgressFromEvents(events);
+        return reply.status(200).send(derived);
       } catch {
         return reply.status(404).send({ error: "Task not found" });
       }

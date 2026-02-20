@@ -289,7 +289,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       // WebSocket publishes cancelled status
       const wsPayload = JSON.parse(redis.publish.mock.calls[0]?.[1] as string);
       expect(wsPayload.status).toBe("cancelled");
-      expect(wsPayload.currentStep).toBe("Cancelled");
+      // WEK-71: currentStep no longer sent in WS event (derived from gh_job_events)
     });
 
     it("should handle user-initiated cancel via TaskService", async () => {
@@ -384,10 +384,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
 
       expect(mockGhClient.retryJob).toHaveBeenCalledWith(ghJobId);
       expect(mockTaskRepo.updateStatus).toHaveBeenCalledWith(taskId, "queued");
-      expect(mockTaskRepo.updateProgress).toHaveBeenCalledWith(taskId, {
-        progress: 0,
-        currentStep: "Retry submitted",
-      });
+      // WEK-71: updateProgress no longer called (derived from gh_job_events)
 
       // WebSocket event published for retry
       expect(mockRedis.publish).toHaveBeenCalledWith(
@@ -464,8 +461,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       expect(parsed.type).toBe("task_update");
       expect(parsed.taskId).toBe(taskId);
       expect(parsed.status).toBe("in_progress");
-      expect(parsed.progress).toBe(50);
-      expect(parsed.currentStep).toBe("Filling form fields");
+      // WEK-71: progress/currentStep no longer in WS event (derived from gh_job_events)
     });
 
     it("should publish task_needs_human event for needs_human callback", async () => {
@@ -560,7 +556,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const parsed = JSON.parse(redis.publish.mock.calls[0]![1] as string);
       expect(parsed.type).toBe("task_update");
       expect(parsed.status).toBe("completed");
-      expect(parsed.progress).toBe(100);
+      // WEK-71: progress no longer in WS event (derived from gh_job_events)
       expect(parsed.result).toBeDefined();
       expect(parsed.result.confirmation_id).toBe("ABC-123");
     });
