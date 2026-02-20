@@ -322,6 +322,10 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         qaBankRepo: createMockQaBankRepo() as any,
         ghosthandsClient: mockGhClient as any,
         ghJobRepo: createMockGhJobRepo() as any,
+        ghJobEventRepo: {
+          findLatestProgressEvent: vi.fn().mockResolvedValue(null),
+          findByJobId: vi.fn().mockResolvedValue([]),
+        } as any,
         ghSessionRepo: createMockGhSessionRepo() as any,
         redis: mockRedis as any,
         logger: mockLogger as any,
@@ -375,6 +379,10 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         qaBankRepo: createMockQaBankRepo() as any,
         ghosthandsClient: mockGhClient as any,
         ghJobRepo: createMockGhJobRepo() as any,
+        ghJobEventRepo: {
+          findLatestProgressEvent: vi.fn().mockResolvedValue(null),
+          findByJobId: vi.fn().mockResolvedValue([]),
+        } as any,
         ghSessionRepo: createMockGhSessionRepo() as any,
         redis: mockRedis as any,
         logger: mockLogger as any,
@@ -384,10 +392,8 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
 
       expect(mockGhClient.retryJob).toHaveBeenCalledWith(ghJobId);
       expect(mockTaskRepo.updateStatus).toHaveBeenCalledWith(taskId, "queued");
-      expect(mockTaskRepo.updateProgress).toHaveBeenCalledWith(taskId, {
-        progress: 0,
-        currentStep: "Retry submitted",
-      });
+      // WEK-71: Progress is no longer written to tasks table on retry.
+      expect(mockTaskRepo.updateProgress).not.toHaveBeenCalled();
 
       // WebSocket event published for retry
       expect(mockRedis.publish).toHaveBeenCalledWith(
@@ -417,6 +423,10 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         qaBankRepo: createMockQaBankRepo() as any,
         ghosthandsClient: mockGhClient as any,
         ghJobRepo: createMockGhJobRepo() as any,
+        ghJobEventRepo: {
+          findLatestProgressEvent: vi.fn().mockResolvedValue(null),
+          findByJobId: vi.fn().mockResolvedValue([]),
+        } as any,
         ghSessionRepo: createMockGhSessionRepo() as any,
         redis: createMockRedis() as any,
         logger: mockLogger as any,
@@ -464,8 +474,10 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       expect(parsed.type).toBe("task_update");
       expect(parsed.taskId).toBe(taskId);
       expect(parsed.status).toBe("in_progress");
-      expect(parsed.progress).toBe(50);
-      expect(parsed.currentStep).toBe("Filling form fields");
+      // WEK-71: Progress is no longer sent in WS events for running callbacks.
+      // It's computed from gh_job_events at read time.
+      expect(parsed.progress).toBeUndefined();
+      expect(parsed.currentStep).toBeUndefined();
     });
 
     it("should publish task_needs_human event for needs_human callback", async () => {
@@ -825,6 +837,10 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         qaBankRepo: createMockQaBankRepo() as any,
         ghosthandsClient: createMockGhClient() as any,
         ghJobRepo: createMockGhJobRepo() as any,
+        ghJobEventRepo: {
+          findLatestProgressEvent: vi.fn().mockResolvedValue(null),
+          findByJobId: vi.fn().mockResolvedValue([]),
+        } as any,
         ghSessionRepo: createMockGhSessionRepo() as any,
         redis: createMockRedis() as any,
         logger: mockLogger as any,
@@ -854,6 +870,10 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         qaBankRepo: createMockQaBankRepo() as any,
         ghosthandsClient: createMockGhClient() as any,
         ghJobRepo: createMockGhJobRepo() as any,
+        ghJobEventRepo: {
+          findLatestProgressEvent: vi.fn().mockResolvedValue(null),
+          findByJobId: vi.fn().mockResolvedValue([]),
+        } as any,
         ghSessionRepo: createMockGhSessionRepo() as any,
         redis: createMockRedis() as any,
         logger: mockLogger as any,
@@ -887,6 +907,10 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         qaBankRepo: createMockQaBankRepo() as any,
         ghosthandsClient: mockGhClient as any,
         ghJobRepo: createMockGhJobRepo() as any,
+        ghJobEventRepo: {
+          findLatestProgressEvent: vi.fn().mockResolvedValue(null),
+          findByJobId: vi.fn().mockResolvedValue([]),
+        } as any,
         ghSessionRepo: createMockGhSessionRepo() as any,
         redis: createMockRedis() as any,
         logger: mockLogger as any,
