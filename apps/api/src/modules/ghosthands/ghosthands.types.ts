@@ -245,21 +245,6 @@ export interface GHClearAllSessionsResponse {
   user_id: string;
 }
 
-export interface GHModelInfo {
-  id: string;
-  name: string;
-  provider: string;
-  purpose: "reasoning" | "vision" | "general";
-  context_window?: number;
-  supports_vision?: boolean;
-}
-
-export interface GHModelCatalog {
-  models: GHModelInfo[];
-  default_reasoning_model?: string;
-  default_vision_model?: string;
-}
-
 // ─── Monitoring Endpoints ───
 
 export interface GHHealthCheck {
