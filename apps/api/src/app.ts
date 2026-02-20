@@ -28,6 +28,7 @@ import { ghosthandsMonitoringRoutes } from "./modules/ghosthands/ghosthands.moni
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
 import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
+import { modelRouter } from "./modules/models/model.routes.js";
 import { taskAdminRoutes } from "./modules/tasks/task.admin-routes.js";
 import { deployAdminRoutes } from "./modules/sandboxes/deploy.admin-routes.js";
 import { taskUserRoutes } from "./modules/tasks/task.user-routes.js";
@@ -103,6 +104,7 @@ export async function buildApp() {
   fastify.register(s.plugin(dashboardRouter));
   fastify.register(s.plugin(notificationRouter));
   fastify.register(s.plugin(sandboxRouter));
+  fastify.register(s.plugin(modelRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);

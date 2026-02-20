@@ -164,6 +164,7 @@ export const adminTriggerTaskRequest = z.object({
   resumeId: z.string().uuid(),
   mode: z.enum(["copilot", "autopilot"]).optional().default("autopilot"),
   notes: z.string().max(2000).optional(),
+  quality: z.enum(["speed", "balanced", "quality"]).optional(),
 });
 
 export const adminTriggerTaskResponse = z.object({

@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useTriggerTask, useTriggerTest } from "../hooks/use-sandboxes";
+import { QualitySelector } from "../../apply/components/quality-selector";
 
 interface TriggerTaskDialogProps {
   sandboxId: string;
@@ -48,6 +49,7 @@ export function TriggerTaskDialog({
   const [resumeId, setResumeId] = useState("");
   const [mode, setMode] = useState<"autopilot" | "copilot">("autopilot");
   const [notes, setNotes] = useState("");
+  const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
 
   const triggerTask = useTriggerTask();
   const triggerTest = useTriggerTest();
@@ -94,6 +96,7 @@ export function TriggerTaskDialog({
           jobUrl: jobUrl.trim(),
           resumeId: activeResumeId,
           mode,
+          quality,
           ...(notes.trim() ? { notes: notes.trim() } : {}),
         },
       },
@@ -224,6 +227,11 @@ export function TriggerTaskDialog({
                     <SelectItem value="copilot">Copilot</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[var(--wk-text-primary)]">Quality</label>
+                <QualitySelector value={quality} onChange={setQuality} compact />
               </div>
 
               <div className="space-y-1.5">

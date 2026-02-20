@@ -368,6 +368,7 @@ export class TaskService {
       mode: ApplicationMode;
       resumeId: string;
       notes?: string;
+      quality?: "speed" | "balanced" | "quality";
       targetWorkerId?: string;
     },
     userId: string,
@@ -426,7 +427,7 @@ export class TaskService {
           maxRetries: 1,
           tags: ["valet", "apply"],
           metadata: {
-            quality_preset: body.mode === "autopilot" ? "speed" : "quality",
+            quality_preset: body.quality ?? (body.mode === "autopilot" ? "speed" : "quality"),
           },
           targetWorkerId: body.targetWorkerId,
           callbackUrl,
@@ -497,7 +498,7 @@ export class TaskService {
           profile,
           qa_answers: Object.keys(qaAnswers).length > 0 ? qaAnswers : undefined,
           callback_url: callbackUrl,
-          quality: body.mode === "autopilot" ? "speed" : "quality",
+          quality: body.quality ?? (body.mode === "autopilot" ? "speed" : "quality"),
           max_retries: 1,
           ...(body.targetWorkerId
             ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }

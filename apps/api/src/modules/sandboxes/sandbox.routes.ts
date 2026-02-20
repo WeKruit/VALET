@@ -103,6 +103,7 @@ export const sandboxRouter = s.router(sandboxContract, {
         resumeId: body.resumeId,
         mode: body.mode ?? "autopilot",
         notes: body.notes,
+        quality: body.quality,
         targetWorkerId: sandbox.id,
       },
       request.userId,
