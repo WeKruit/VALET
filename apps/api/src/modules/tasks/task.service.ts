@@ -527,14 +527,12 @@ export class TaskService {
     }
 
     await this.taskRepo.updateStatus(id, "queued");
-    await this.taskRepo.updateProgress(id, { progress: 0, currentStep: "Retry submitted" });
+    // WEK-71: progress derived from gh_job_events, no longer written to tasks table
 
     await publishToUser(this.redis, userId, {
       type: "task_update",
       taskId: id,
       status: "queued",
-      progress: 0,
-      currentStep: "Retry submitted to GhostHands",
     });
 
     const updated = await this.taskRepo.findById(id, userId);

@@ -9,13 +9,14 @@ import {
   SelectContent,
   SelectItem,
 } from "@valet/ui/components/select";
-import { TaskProgress } from "./task-progress";
+import { TaskTimeline } from "./task-timeline";
 import { FieldReview } from "./field-review";
 import { HitlBlockerCard } from "./hitl-blocker-card";
 import { GhJobCard } from "./gh-job-card";
 import { ActivityFeed } from "./activity-feed";
 import { useTask } from "../hooks/use-tasks";
 import { useTaskWebSocket } from "../hooks/use-task-websocket";
+import { useTaskEvents } from "../hooks/use-task-events";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { toast } from "sonner";
@@ -67,6 +68,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
   const [showLiveView, setShowLiveView] = useState(true);
   const queryClient = useQueryClient();
   const noVncUrl = useMemo(() => import.meta.env.VITE_NOVNC_URL ?? "", []);
+  const { data: eventsData } = useTaskEvents(taskId, true);
+  const taskEvents = eventsData?.events ?? [];
 
   const cancelTask = api.tasks.cancel.useMutation({
     onSuccess: () => {
@@ -363,12 +366,15 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         </Card>
       )}
 
-      {/* Progress Timeline */}
-      <TaskProgress
-        progress={task.progress}
-        status={task.status}
-        createdAt={task.createdAt}
-        completedAt={task.completedAt}
+      {/* Timeline - driven by gh_job_events */}
+      <TaskTimeline
+        events={taskEvents}
+        task={{
+          status: task.status,
+          progress: task.progress,
+          createdAt: task.createdAt,
+          completedAt: task.completedAt,
+        }}
       />
 
       {/* Action buttons */}

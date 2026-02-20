@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE_URL, getAccessToken } from "@/lib/api-client";
 
-interface GhJobEvent {
+export interface GhJobEvent {
   id: string;
   eventType: string | null;
   fromStatus: string | null;
