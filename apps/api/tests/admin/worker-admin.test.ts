@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
 type RouteHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
-vi.mock("../../apps/api/src/common/middleware/admin.js", () => ({ adminOnly: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../../src/common/middleware/admin.js", () => ({ adminOnly: vi.fn().mockResolvedValue(undefined) }));
 
 const mockFleet = { workers: [
   { worker_id: "sandbox-uuid-1", status: "active" as const, target_worker_id: null, ec2_instance_id: "i-abc", ec2_ip: "1.2.3.4", current_job_id: "job-1", registered_at: "2026-02-01T00:00:00Z", last_heartbeat: "2026-02-19T12:00:00Z", jobs_completed: 10, jobs_failed: 2, uptime_seconds: 86400 },
@@ -21,7 +21,7 @@ let routes: Map<string, RouteHandler>;
 async function setup() {
   routes = new Map();
   const f = { get: vi.fn((p: string, h: RouteHandler) => routes.set("GET:" + p, h)), post: vi.fn((p: string, h: RouteHandler) => routes.set("POST:" + p, h)) } as unknown as FastifyInstance;
-  const { workerAdminRoutes } = await import("../../apps/api/src/modules/ghosthands/worker.admin-routes.js");
+  const { workerAdminRoutes } = await import("../../src/modules/ghosthands/worker.admin-routes.js");
   await workerAdminRoutes(f);
 }
 

@@ -115,7 +115,8 @@ export async function buildApp() {
   // Admin routes (need auth via onRequest hook, so registered after auth middleware)
   await fastify.register(taskAdminRoutes);
   await fastify.register(ghosthandsMonitoringRoutes);
-  await fastify.register(workerAdminRoutes);  await fastify.register(deployAdminRoutes);
+  await fastify.register(workerAdminRoutes);
+  await fastify.register(deployAdminRoutes);
 
   // User-facing standalone routes (outside ts-rest, needs auth)
   await fastify.register(taskUserRoutes);
