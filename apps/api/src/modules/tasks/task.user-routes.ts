@@ -20,6 +20,7 @@ export async function taskUserRoutes(fastify: FastifyInstance) {
       const q = request.query as Record<string, string>;
       const limit = Math.min(Number(q.limit) || 100, 500);
       const since = q.since || undefined;
+      const milestonesOnly = q.milestones === "true";
 
       // Verify the task belongs to this user
       try {
@@ -52,6 +53,28 @@ export async function taskUserRoutes(fastify: FastifyInstance) {
             createdAt: e.createdAt.toISOString(),
           }),
         );
+
+        // Filter to milestone-relevant event types if requested
+        if (milestonesOnly) {
+          const MILESTONE_TYPES = new Set([
+            "job_started",
+            "browser_launched",
+            "page_navigated",
+            "form_detected",
+            "step_started",
+            "step_completed",
+            "cookbook_step_started",
+            "cookbook_step_completed",
+            "observation_started",
+            "mode_switched",
+            "job_completed",
+            "job_failed",
+            "blocker_detected",
+            "hitl_paused",
+            "hitl_resumed",
+          ]);
+          events = events.filter((e) => e.eventType && MILESTONE_TYPES.has(e.eventType));
+        }
 
         if (since) {
           const sinceDate = new Date(since);
