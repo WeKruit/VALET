@@ -15,7 +15,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { FastifyBaseLogger, FastifyRequest } from "fastify";
 import type { SandboxRepository } from "../sandbox.repository.js";
-import type { EC2Service } from "../ec2.service.js";
 import type { TaskRepository } from "../../tasks/task.repository.js";
 import type { GhostHandsClient } from "../../ghosthands/ghosthands.client.js";
 import type { SandboxProviderFactory } from "../providers/provider-factory.js";
@@ -55,15 +54,6 @@ function makeMockLogger() {
     child: vi.fn().mockReturnThis(),
     level: "info",
     silent: vi.fn(),
-  };
-}
-
-function makeMockEc2Service() {
-  return {
-    startInstance: vi.fn<(instanceId: string) => Promise<void>>(),
-    stopInstance: vi.fn<(instanceId: string) => Promise<void>>(),
-    getInstanceStatus: vi.fn<(instanceId: string) => Promise<string>>(),
-    waitForStatus: vi.fn<(instanceId: string, target: string) => Promise<string>>(),
   };
 }
 
@@ -160,25 +150,24 @@ describe("SandboxService", () => {
   let service: SandboxService;
   let repo: ReturnType<typeof makeMockRepo>;
   let logger: ReturnType<typeof makeMockLogger>;
-  let ec2Service: ReturnType<typeof makeMockEc2Service>;
   let taskRepo: ReturnType<typeof makeMockTaskRepo>;
   let ghosthandsClient: ReturnType<typeof makeMockGhosthandsClient>;
   let agentClient: ReturnType<typeof makeMockAgentClient>;
+  let providerFactory: ReturnType<typeof makeMockProviderFactory>;
 
   beforeEach(() => {
     repo = makeMockRepo();
     logger = makeMockLogger();
-    ec2Service = makeMockEc2Service();
     taskRepo = makeMockTaskRepo();
     ghosthandsClient = makeMockGhosthandsClient();
     agentClient = makeMockAgentClient();
+    providerFactory = makeMockProviderFactory();
     service = new SandboxService({
       sandboxRepo: repo as unknown as SandboxRepository,
       logger: logger as unknown as FastifyBaseLogger,
-      ec2Service: ec2Service as unknown as EC2Service,
       taskRepo: taskRepo as unknown as TaskRepository,
       ghosthandsClient: ghosthandsClient as unknown as GhostHandsClient,
-      sandboxProviderFactory: makeMockProviderFactory() as unknown as SandboxProviderFactory,
+      sandboxProviderFactory: providerFactory as unknown as SandboxProviderFactory,
       sandboxAgentClient: agentClient as unknown as SandboxAgentClient,
     });
   });
@@ -367,9 +356,15 @@ describe("SandboxService", () => {
   // ─── healthCheck ───
 
   describe("healthCheck", () => {
-    it("returns unhealthy when publicIp is null", async () => {
+    it("returns unhealthy when provider has no agent URL", async () => {
       const noPubIp = { ...SANDBOX_FIXTURE, publicIp: null };
       repo.findById.mockResolvedValue(noPubIp);
+
+      // Make provider throw when trying to get agent URL (no public IP)
+      const mockProvider = providerFactory.getProvider();
+      mockProvider.getAgentUrl.mockImplementation(() => {
+        throw new Error("Sandbox has no public IP");
+      });
 
       const result = await service.healthCheck(noPubIp.id);
 

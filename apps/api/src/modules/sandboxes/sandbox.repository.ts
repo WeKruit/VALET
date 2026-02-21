@@ -237,6 +237,14 @@ export class SandboxRepository {
     return row ? toSandboxRecord(row as Record<string, unknown>) : null;
   }
 
+  async findByMachineType(machineType: string): Promise<SandboxRecord[]> {
+    const data = await this.db
+      .select()
+      .from(sandboxes)
+      .where(and(eq(sandboxes.machineType, machineType), eq(sandboxes.status, "active")));
+    return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
+  }
+
   async findAutoStopCandidates(): Promise<SandboxRecord[]> {
     const data = await this.db
       .select()

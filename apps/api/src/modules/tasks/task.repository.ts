@@ -421,6 +421,14 @@ export class TaskRepository {
     };
   }
 
+  async countQueued(): Promise<number> {
+    const rows = await this.db
+      .select({ count: count() })
+      .from(tasks)
+      .where(inArray(tasks.status, ["created", "queued"]));
+    return rows[0]?.count ?? 0;
+  }
+
   async clearInteractionData(id: string) {
     await this.db
       .update(tasks)

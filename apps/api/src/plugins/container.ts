@@ -30,6 +30,7 @@ import { SandboxService } from "../modules/sandboxes/sandbox.service.js";
 import { SandboxHealthMonitor } from "../modules/sandboxes/sandbox-health-monitor.js";
 import { EC2Service } from "../modules/sandboxes/ec2.service.js";
 import { AutoStopMonitor } from "../modules/sandboxes/auto-stop-monitor.js";
+import { AutoScaleMonitor } from "../modules/sandboxes/auto-scale-monitor.js";
 import { GhostHandsClient } from "../modules/ghosthands/ghosthands.client.js";
 import { GhAutomationJobRepository } from "../modules/ghosthands/gh-automation-job.repository.js";
 import { GhBrowserSessionRepository } from "../modules/ghosthands/gh-browser-session.repository.js";
@@ -37,7 +38,9 @@ import { GhJobEventRepository } from "../modules/ghosthands/gh-job-event.reposit
 import { DeployService } from "../modules/sandboxes/deploy.service.js";
 import { Ec2SandboxProvider } from "../modules/sandboxes/providers/ec2-sandbox.provider.js";
 import { MacOsSandboxProvider } from "../modules/sandboxes/providers/macos-sandbox.provider.js";
+import { KasmSandboxProvider } from "../modules/sandboxes/providers/kasm-sandbox.provider.js";
 import { SandboxProviderFactory } from "../modules/sandboxes/providers/provider-factory.js";
+import { KasmClient } from "../modules/sandboxes/kasm/kasm.client.js";
 import { AuditLogRepository } from "../modules/sandboxes/audit-log.repository.js";
 import { AuditLogService } from "../modules/sandboxes/audit-log.service.js";
 import { SandboxAgentClient } from "../modules/sandboxes/agent/sandbox-agent.client.js";
@@ -72,6 +75,7 @@ export interface AppCradle {
   sandboxHealthMonitor: SandboxHealthMonitor;
   ec2Service: EC2Service;
   autoStopMonitor: AutoStopMonitor;
+  autoScaleMonitor: AutoScaleMonitor;
   ghosthandsClient: GhostHandsClient;
   ghJobRepo: GhAutomationJobRepository;
   ghSessionRepo: GhBrowserSessionRepository;
@@ -79,6 +83,8 @@ export interface AppCradle {
   deployService: DeployService;
   ec2SandboxProvider: Ec2SandboxProvider;
   macosSandboxProvider: MacOsSandboxProvider;
+  kasmSandboxProvider: KasmSandboxProvider;
+  kasmClient: KasmClient;
   sandboxProviderFactory: SandboxProviderFactory;
   auditLogRepo: AuditLogRepository;
   auditLogService: AuditLogService;
@@ -138,15 +144,27 @@ export default fp(async (fastify: FastifyInstance) => {
     sandboxHealthMonitor: asClass(SandboxHealthMonitor, { lifetime: Lifetime.SINGLETON }),
     ec2Service: asClass(EC2Service, { lifetime: Lifetime.SINGLETON }),
     autoStopMonitor: asClass(AutoStopMonitor, { lifetime: Lifetime.SINGLETON }),
+    autoScaleMonitor: asClass(AutoScaleMonitor, { lifetime: Lifetime.SINGLETON }),
     ghJobRepo: asClass(GhAutomationJobRepository, { lifetime: Lifetime.SINGLETON }),
     ghSessionRepo: asClass(GhBrowserSessionRepository, { lifetime: Lifetime.SINGLETON }),
     ghJobEventRepo: asClass(GhJobEventRepository, { lifetime: Lifetime.SINGLETON }),
     deployService: asClass(DeployService, { lifetime: Lifetime.SINGLETON }),
     ec2SandboxProvider: asClass(Ec2SandboxProvider, { lifetime: Lifetime.SINGLETON }),
     macosSandboxProvider: asClass(MacOsSandboxProvider, { lifetime: Lifetime.SINGLETON }),
+    kasmClient: asFunction(
+      ({ logger }) =>
+        new KasmClient({
+          kasmApiUrl: process.env.KASM_API_URL ?? "",
+          kasmApiKey: process.env.KASM_API_KEY ?? "",
+          kasmApiKeySecret: process.env.KASM_API_KEY_SECRET ?? "",
+          logger,
+        }),
+      { lifetime: Lifetime.SINGLETON },
+    ),
+    kasmSandboxProvider: asClass(KasmSandboxProvider, { lifetime: Lifetime.SINGLETON }),
     sandboxProviderFactory: asFunction(
-      ({ ec2SandboxProvider, macosSandboxProvider }) =>
-        new SandboxProviderFactory([ec2SandboxProvider, macosSandboxProvider]),
+      ({ ec2SandboxProvider, macosSandboxProvider, kasmSandboxProvider }) =>
+        new SandboxProviderFactory([ec2SandboxProvider, macosSandboxProvider, kasmSandboxProvider]),
       { lifetime: Lifetime.SINGLETON },
     ),
     deployHistoryRepo: asClass(DeployHistoryRepository, { lifetime: Lifetime.SINGLETON }),

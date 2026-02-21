@@ -123,16 +123,18 @@ export async function buildApp() {
 
   // Start sandbox health monitor and auto-stop monitor after server is ready
   fastify.addHook("onReady", async () => {
-    const { sandboxHealthMonitor, autoStopMonitor } = diContainer.cradle;
+    const { sandboxHealthMonitor, autoStopMonitor, autoScaleMonitor } = diContainer.cradle;
     sandboxHealthMonitor.start();
     autoStopMonitor.start();
+    autoScaleMonitor.start();
   });
 
   // Stop monitors on close
   fastify.addHook("onClose", async () => {
-    const { sandboxHealthMonitor, autoStopMonitor } = diContainer.cradle;
+    const { sandboxHealthMonitor, autoStopMonitor, autoScaleMonitor } = diContainer.cradle;
     sandboxHealthMonitor.stop();
     autoStopMonitor.stop();
+    autoScaleMonitor.stop();
   });
 
   return fastify;

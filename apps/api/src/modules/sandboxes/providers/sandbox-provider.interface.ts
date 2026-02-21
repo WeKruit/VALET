@@ -29,12 +29,13 @@ export interface SandboxProvider {
   pingAgent(sandbox: SandboxRecord): Promise<boolean>;
 }
 
-export type SandboxMachineType = "ec2" | "macos" | "local_docker";
+export type SandboxMachineType = "ec2" | "macos" | "local_docker" | "kasm";
 
 export interface MachineLifecycleResult {
   success: boolean;
   message: string;
   newStatus?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface MachineStatus {
