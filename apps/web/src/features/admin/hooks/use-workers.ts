@@ -33,6 +33,7 @@ export interface WorkerEntry {
   sandbox_id: string | null;
   sandbox_name: string | null;
   environment: string | null;
+  ec2_ip: string | null;
   status: "active" | "draining" | "offline";
   current_job_id: string | null;
   registered_at: string;
