@@ -75,6 +75,10 @@ describe("AutoScaleService", () => {
     Object.assign(process.env, overrides);
   }
 
+  // Coupling note: This helper reaches into the private `asgClient` field by name.
+  // The AutoScaleService implementation MUST name its AWS client field `asgClient`
+  // for these tests to work. If this becomes brittle, consider constructor injection
+  // (e.g. pass an `AsgClient` interface) to decouple tests from internal field names.
   function getAsgClientSend(service: AutoScaleService): ReturnType<typeof vi.fn> {
     // The AutoScaleService creates an AutoScalingClient internally; the mock
     // captures .send() via the mocked constructor.
