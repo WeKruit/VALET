@@ -44,5 +44,7 @@ export default defineConfig({
     "notifications",
     "action_manuals",
     "manual_steps",
+    "sandboxes",
+    // "sandbox_secrets" — deprecated, excluded from drizzle-kit management
   ],
 });

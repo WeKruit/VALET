@@ -1,5 +1,5 @@
 -- Add action_manuals and manual_steps tables for self-learning workflow system
-CREATE TABLE "action_manuals" (
+CREATE TABLE IF NOT EXISTS "action_manuals" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"url_pattern" text NOT NULL,
 	"platform" "platform" NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE "action_manuals" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
-CREATE TABLE "manual_steps" (
+CREATE TABLE IF NOT EXISTS "manual_steps" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"manual_id" uuid NOT NULL,
 	"step_order" integer NOT NULL,
@@ -26,7 +26,12 @@ CREATE TABLE "manual_steps" (
 	"wait_after_ms" integer DEFAULT 500,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
-ALTER TABLE "manual_steps" ADD CONSTRAINT "manual_steps_manual_id_action_manuals_id_fk" FOREIGN KEY ("manual_id") REFERENCES "public"."action_manuals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "idx_manuals_platform" ON "action_manuals" USING btree ("platform");--> statement-breakpoint
-CREATE INDEX "idx_manuals_health" ON "action_manuals" USING btree ("health_score");--> statement-breakpoint
-CREATE INDEX "idx_steps_manual" ON "manual_steps" USING btree ("manual_id");
+DO $$ BEGIN
+  ALTER TABLE "manual_steps" ADD CONSTRAINT "manual_steps_manual_id_action_manuals_id_fk" FOREIGN KEY ("manual_id") REFERENCES "public"."action_manuals"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_manuals_platform" ON "action_manuals" USING btree ("platform");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_manuals_health" ON "action_manuals" USING btree ("health_score");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_steps_manual" ON "manual_steps" USING btree ("manual_id");

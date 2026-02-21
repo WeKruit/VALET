@@ -9,6 +9,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   User,
+  Server,
 } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
 import { useUIStore } from "@/stores/ui.store";
@@ -23,6 +24,10 @@ const navItems = [
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 
+const adminNavItems = [
+  { path: "/admin/sandboxes", label: "Sandboxes", icon: Server },
+];
+
 interface SidebarContentProps {
   collapsed?: boolean;
   onNavigate?: () => void;
@@ -32,6 +37,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
   const { theme, setTheme, sidebarOpen, toggleSidebar } = useUIStore();
   const { user } = useAuth();
   const expanded = collapsed ? false : sidebarOpen;
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
 
   return (
     <>
@@ -105,6 +111,53 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
             )}
           </NavLink>
         ))}
+
+        {/* Admin section — only visible to admin/superadmin */}
+        {isAdmin && (
+          <>
+            {expanded && (
+              <div className="pt-4 pb-1">
+                <p className="px-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--wk-text-tertiary)]">
+                  Admin
+                </p>
+              </div>
+            )}
+            {!expanded && <div className="my-2 mx-3 h-px bg-[var(--wk-border-subtle)]" />}
+            {adminNavItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                title={!expanded ? item.label : undefined}
+                aria-label={item.label}
+                onClick={onNavigate}
+                className={({ isActive }) =>
+                  cn(
+                    "group relative flex items-center gap-3 px-3 py-2.5 rounded-[var(--wk-radius-lg)] text-sm font-medium",
+                    "transition-all duration-200 ease-[var(--wk-ease-default)]",
+                    isActive
+                      ? "bg-[var(--wk-surface-raised)] text-[var(--wk-text-primary)]"
+                      : "text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-raised)] hover:text-[var(--wk-text-primary)]",
+                    !expanded && "justify-center"
+                  )
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-[var(--wk-accent-amber)] transition-all duration-200" />
+                    )}
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {expanded && (
+                      <span className="transition-transform duration-200 ease-[var(--wk-ease-default)] group-hover:translate-x-0.5">
+                        {item.label}
+                      </span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </>
+        )}
       </nav>
 
       {/* Upgrade CTA for free-tier users */}

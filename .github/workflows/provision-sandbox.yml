@@ -1,0 +1,336 @@
+# =============================================================================
+# Provision Sandbox — Create a new EC2 browser worker instance
+# =============================================================================
+#
+# Creates a new EC2 instance via Terraform, installs the browser engine,
+# deploys the Valet worker, and registers the sandbox with the API.
+#
+# Prerequisites:
+#   - AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY in GitHub Secrets
+#   - VALET_API_TOKEN (admin API token) in GitHub Secrets
+#   - SANDBOX_SSH_KEY (shared SSH private key) in GitHub Secrets
+#   - SSH key pair must exist in AWS EC2 (key_name = "valet-worker")
+#
+# =============================================================================
+
+name: Provision Sandbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      instance_type:
+        description: "EC2 instance type"
+        required: true
+        type: choice
+        options:
+          - t3.medium
+          - t3.large
+          - t3.xlarge
+      browser_engine:
+        description: "Browser engine to install"
+        required: true
+        type: choice
+        options:
+          - chromium
+          - adspower
+      capacity:
+        description: "Max concurrent browser sessions"
+        required: false
+        type: number
+        default: 5
+
+concurrency:
+  group: provision-sandbox-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  TF_DIR: infra/terraform
+  AWS_REGION: us-east-1
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      instance_ip: ${{ steps.terraform.outputs.instance_ip }}
+      instance_id: ${{ steps.terraform.outputs.instance_id }}
+      sandbox_id: ${{ steps.register.outputs.sandbox_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+
+      - name: Terraform apply
+        id: terraform
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          # Map environment input to Terraform environment variable
+          TF_ENV="${{ github.event.inputs.environment }}"
+          if [[ "$TF_ENV" == "prod" ]]; then
+            TF_ENV="production"
+          fi
+
+          terraform apply -auto-approve \
+            -var="instance_type=${{ github.event.inputs.instance_type }}" \
+            -var="environment=$TF_ENV" \
+            -var="key_name=valet-worker" \
+            -var="instance_count=1"
+
+          # Extract outputs
+          INSTANCE_IP=$(terraform output -json instance_public_ips | jq -r '.[0]')
+          INSTANCE_ID=$(terraform output -json instance_ids 2>/dev/null | jq -r '.[0]' || echo "unknown")
+
+          echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "Provisioned instance: IP=$INSTANCE_IP, ID=$INSTANCE_ID"
+
+      - name: Wait for instance ready
+        run: |
+          INSTANCE_IP="${{ steps.terraform.outputs.instance_ip }}"
+          echo "Waiting for SSH on $INSTANCE_IP (timeout: 5min)..."
+
+          # Write SSH key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SANDBOX_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+
+          MAX_WAIT=300
+          ELAPSED=0
+          INTERVAL=15
+
+          while [[ $ELAPSED -lt $MAX_WAIT ]]; do
+            if ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+               ubuntu@$INSTANCE_IP "echo ready" 2>/dev/null; then
+              echo "Instance is ready after ${ELAPSED}s"
+              break
+            fi
+            echo "Waiting... (${ELAPSED}s / ${MAX_WAIT}s)"
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+            echo "::error::Instance did not become ready within ${MAX_WAIT}s"
+            exit 1
+          fi
+
+      - name: Wait for cloud-init completion
+        run: |
+          INSTANCE_IP="${{ steps.terraform.outputs.instance_ip }}"
+          echo "Waiting for cloud-init to finish..."
+
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP \
+            "cloud-init status --wait" || {
+            echo "::warning::cloud-init may not have completed cleanly"
+          }
+
+      - name: Install browser engine
+        run: |
+          INSTANCE_IP="${{ steps.terraform.outputs.instance_ip }}"
+          ENGINE="${{ github.event.inputs.browser_engine }}"
+
+          if [[ "$ENGINE" == "chromium" ]]; then
+            echo "Installing Chromium..."
+            ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'INSTALL_CHROMIUM'
+            set -euo pipefail
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq chromium-browser || \
+              sudo apt-get install -y -qq chromium
+            chromium --version || chromium-browser --version || echo "Chromium installed"
+          INSTALL_CHROMIUM
+
+          elif [[ "$ENGINE" == "adspower" ]]; then
+            echo "Installing AdsPower..."
+            scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+              infra/scripts/install-adspower.sh \
+              ubuntu@$INSTANCE_IP:/tmp/install-adspower.sh
+
+            ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP \
+              "chmod +x /tmp/install-adspower.sh && sudo bash /tmp/install-adspower.sh"
+          fi
+
+          echo "Browser engine '$ENGINE' installed"
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Build and deploy worker
+        run: |
+          INSTANCE_IP="${{ steps.terraform.outputs.instance_ip }}"
+
+          # Build locally
+          pnpm install --frozen-lockfile
+          pnpm --filter @valet/shared build
+          pnpm --filter @valet/contracts build
+          pnpm --filter @valet/db build
+          pnpm --filter @valet/llm build
+          pnpm --filter @valet/worker build
+
+          # Create tarball
+          tar -czf /tmp/valet-worker.tar.gz \
+            apps/worker/dist/ \
+            apps/worker/package.json \
+            packages/shared/dist/ \
+            packages/shared/package.json \
+            packages/db/dist/ \
+            packages/db/package.json \
+            packages/contracts/dist/ \
+            packages/contracts/package.json \
+            packages/llm/dist/ \
+            packages/llm/package.json \
+            package.json \
+            pnpm-workspace.yaml \
+            pnpm-lock.yaml
+
+          # Upload and deploy
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            /tmp/valet-worker.tar.gz ubuntu@$INSTANCE_IP:/tmp/valet-worker.tar.gz
+
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'DEPLOY'
+          set -euo pipefail
+          APP_DIR="/opt/valet/app"
+          sudo mkdir -p "$APP_DIR"
+          sudo tar -xzf /tmp/valet-worker.tar.gz -C "$APP_DIR"
+          sudo rm -f /tmp/valet-worker.tar.gz
+
+          OWNER="valet"
+          id valet &>/dev/null || OWNER="ubuntu"
+          sudo chown -R "$OWNER:$OWNER" "$APP_DIR"
+
+          cd "$APP_DIR"
+          sudo -u "$OWNER" bash -c "cd $APP_DIR && pnpm install --prod --frozen-lockfile" || \
+            sudo -u "$OWNER" bash -c "cd $APP_DIR && pnpm install --prod"
+
+          sudo systemctl daemon-reload
+          sudo systemctl enable valet-worker
+          sudo systemctl restart valet-worker
+          sleep 5
+
+          if sudo systemctl is-active --quiet valet-worker; then
+            echo "Worker started successfully"
+          else
+            echo "Worker failed to start (secrets may need configuration)"
+          fi
+          DEPLOY
+
+      - name: Register sandbox via API
+        id: register
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          INSTANCE_IP="${{ steps.terraform.outputs.instance_ip }}"
+          INSTANCE_ID="${{ steps.terraform.outputs.instance_id }}"
+
+          # Determine API URL based on environment
+          case "$ENV" in
+            prod)    API_URL="https://valet-api.fly.dev" ;;
+            staging) API_URL="https://valet-api-stg.fly.dev" ;;
+            dev)     API_URL="https://valet-api-stg.fly.dev" ;;
+          esac
+
+          # Register sandbox with the API
+          RESPONSE=$(curl -sf -X POST "$API_URL/api/v1/admin/sandboxes" \
+            -H "Authorization: Bearer ${{ secrets.VALET_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"sandbox-$(date +%Y%m%d-%H%M%S)\",
+              \"instance_id\": \"$INSTANCE_ID\",
+              \"public_ip\": \"$INSTANCE_IP\",
+              \"instance_type\": \"${{ github.event.inputs.instance_type }}\",
+              \"browser_engine\": \"${{ github.event.inputs.browser_engine }}\",
+              \"capacity\": ${{ github.event.inputs.capacity }},
+              \"environment\": \"$ENV\",
+              \"status\": \"provisioning\"
+            }" 2>/dev/null) || {
+            echo "::warning::Failed to register sandbox with API (API may not support this endpoint yet)"
+            echo "sandbox_id=pending" >> $GITHUB_OUTPUT
+            exit 0
+          }
+
+          SANDBOX_ID=$(echo "$RESPONSE" | jq -r '.id // .sandbox_id // "unknown"')
+          echo "sandbox_id=$SANDBOX_ID" >> $GITHUB_OUTPUT
+          echo "Registered sandbox: $SANDBOX_ID"
+
+      - name: Run health check
+        run: |
+          INSTANCE_IP="${{ steps.terraform.outputs.instance_ip }}"
+          SANDBOX_ID="${{ steps.register.outputs.sandbox_id }}"
+          MAX_RETRIES=3
+          RETRY_DELAY=10
+          HEALTHY=false
+
+          for attempt in $(seq 1 $MAX_RETRIES); do
+            echo "Health check attempt $attempt/$MAX_RETRIES..."
+
+            SERVICE_STATUS=$(ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+              ubuntu@$INSTANCE_IP \
+              "sudo systemctl is-active valet-worker 2>/dev/null" 2>/dev/null || echo "inactive")
+
+            if [[ "$SERVICE_STATUS" == "active" ]]; then
+              echo "Health check PASSED"
+              HEALTHY=true
+              break
+            fi
+
+            echo "Service status: $SERVICE_STATUS"
+            if [[ $attempt -lt $MAX_RETRIES ]]; then
+              echo "Retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+            fi
+          done
+
+          if [[ "$HEALTHY" != "true" ]]; then
+            echo "::warning::Health check did not pass. Worker may need secrets configuration."
+          fi
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/ec2_key
+
+      - name: Provision summary
+        if: always()
+        run: |
+          echo "### Sandbox Provisioned" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance Type | ${{ github.event.inputs.instance_type }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Browser Engine | ${{ github.event.inputs.browser_engine }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Capacity | ${{ github.event.inputs.capacity }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Public IP | ${{ steps.terraform.outputs.instance_ip }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance ID | ${{ steps.terraform.outputs.instance_id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sandbox ID | ${{ steps.register.outputs.sandbox_id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| noVNC | http://${{ steps.terraform.outputs.instance_ip }}:6080/vnc.html |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Configure secrets: \`./infra/scripts/set-secrets.sh ${{ steps.terraform.outputs.instance_ip }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. If AdsPower: activate license via noVNC" >> $GITHUB_STEP_SUMMARY
+          echo "3. Run health check: \`./infra/scripts/health-check.sh ${{ steps.terraform.outputs.instance_ip }}\`" >> $GITHUB_STEP_SUMMARY

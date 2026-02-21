@@ -12,7 +12,20 @@
     "db:migrate": "turbo db:migrate --filter=@valet/db",
     "db:seed": "turbo db:seed --filter=@valet/db",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "prepare": "husky",
+    "precommit": "lint-staged && pnpm typecheck",
+    "prepush": "bash ./scripts/validate-ci-setup.sh",
+    "validate": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",
@@ -25,7 +38,9 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import-x": "^4.16.1",
     "globals": "^16.2.0",
+    "husky": "^9.1.7",
     "jsdom": "^25.0.1",
+    "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0",

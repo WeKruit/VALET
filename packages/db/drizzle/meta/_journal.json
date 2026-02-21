@@ -29,6 +29,48 @@
       "when": 1740200000000,
       "tag": "0003_add_action_manuals",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1740600000000,
+      "tag": "0004_add_sandboxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1741000000000,
+      "tag": "0005_add_user_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1741400000000,
+      "tag": "0006_add_sandbox_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1741800000000,
+      "tag": "0007_add_browser_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1739721600000,
+      "tag": "0008_add_performance_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1742169600000,
+      "tag": "0009_add_ec2_controls",
+      "breakpoints": true
     }
   ]
 }

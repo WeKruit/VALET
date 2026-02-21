@@ -43,7 +43,8 @@ COPY --from=builder /app/packages/ ./packages/
 
 # Non-root user for security
 RUN addgroup --system --gid 1001 valet && \
-    adduser --system --uid 1001 --ingroup valet valet
+    adduser --system --uid 1001 --ingroup valet valet && \
+    chown -R valet:valet /app
 USER valet
 
 ENV NODE_ENV=production

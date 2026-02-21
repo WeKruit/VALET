@@ -13,7 +13,6 @@ import type {
   ProxyConfig,
   ProxyOptions,
   BrowserSession,
-  FormField,
   FormAnalysis,
   FieldMapping,
   UserData,
@@ -166,10 +165,7 @@ export interface IBrowserEngine {
   getCurrentUrl(): Promise<string>;
 
   // Actions
-  act(
-    instruction: string,
-    variables?: Record<string, string>,
-  ): Promise<EngineActionResult>;
+  act(instruction: string, variables?: Record<string, string>): Promise<EngineActionResult>;
 
   extract<T = Record<string, unknown>>(
     instruction: string,
@@ -318,10 +314,7 @@ export interface IEngineOrchestrator {
     context: { taskId: string; step: string },
   ): Promise<T>;
 
-  requestHumanTakeover(
-    reason: InterventionReason,
-    screenshotUrl?: string,
-  ): Promise<void>;
+  requestHumanTakeover(reason: InterventionReason, screenshotUrl?: string): Promise<void>;
 
   getCurrentEngine(): EngineType;
 }
@@ -402,17 +395,9 @@ export interface SessionSnapshot {
  *   - AdsPowerSessionManager   (Tier 1)
  */
 export interface ISessionManager {
-  capture(
-    engine: IBrowserEngine,
-    userId: string,
-    platform: Platform,
-  ): Promise<SessionSnapshot>;
+  capture(engine: IBrowserEngine, userId: string, platform: Platform): Promise<SessionSnapshot>;
 
-  restore(
-    engine: IBrowserEngine,
-    userId: string,
-    platform: Platform,
-  ): Promise<boolean>;
+  restore(engine: IBrowserEngine, userId: string, platform: Platform): Promise<boolean>;
 
   clear(userId: string, platform?: Platform): Promise<void>;
   hasSnapshot(userId: string, platform: Platform): Promise<boolean>;
@@ -525,10 +510,7 @@ export interface ISandboxFormAnalyzer {
     qaAnswers?: Record<string, string>,
   ): Promise<FieldMapping[]>;
 
-  generateAnswer(
-    question: string,
-    context: AnswerContext,
-  ): Promise<GeneratedAnswer>;
+  generateAnswer(question: string, context: AnswerContext): Promise<GeneratedAnswer>;
 
   scoreConfidence(mapping: FieldMapping): Promise<number>;
 }
@@ -755,10 +737,7 @@ export interface IManualManager {
   ): Promise<ActionManual>;
 
   /** Update the health score of a manual based on execution outcome */
-  updateHealthScore(
-    manualId: string,
-    success: boolean,
-  ): Promise<ActionManual>;
+  updateHealthScore(manualId: string, success: boolean): Promise<ActionManual>;
 
   /** Get a manual by ID */
   getManual(manualId: string): Promise<ActionManual | null>;

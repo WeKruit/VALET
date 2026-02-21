@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   uuid,
   varchar,
   text,
@@ -7,6 +8,8 @@ import {
   jsonb,
   timestamp,
 } from "drizzle-orm/pg-core";
+
+export const userRoleEnum = pgEnum("user_role", ["user", "admin", "superadmin"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -32,6 +35,7 @@ export const users = pgTable("users", {
   languages: jsonb("languages").default([]),
   preferences: jsonb("preferences").default({}),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).unique(),
+  role: userRoleEnum("role").default("user").notNull(),
   subscriptionTier: varchar("subscription_tier", { length: 50 }).default("free").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   acceptedDisclaimerVersion: varchar("accepted_disclaimer_version", { length: 20 }),
