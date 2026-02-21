@@ -64,7 +64,14 @@ const EXTERNAL_STATUS_OPTIONS = [
 export function TaskDetail({ taskId }: TaskDetailProps) {
   const { data, isLoading, isError } = useTask(taskId);
   const { status: wsStatus } = useTaskWebSocket(taskId);
-  const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, true);
+
+  // Compute terminal status before SSE hook so we skip connections for finished tasks
+  const taskData = data?.status === 200 ? data.body : null;
+  const isTerminalTask =
+    taskData?.status === "completed" ||
+    taskData?.status === "cancelled" ||
+    taskData?.status === "failed";
+  const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, !isTerminalTask);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [showLiveView, setShowLiveView] = useState(true);
   const queryClient = useQueryClient();

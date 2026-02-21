@@ -2,8 +2,8 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as jose from "jose";
 import { streamKey, parseStreamFields } from "../../lib/redis-streams.js";
 
-// Per-user SSE connection tracking
-const activeConnections = new Map<string, number>();
+// Per-user SSE connection tracking (exported for testing)
+export const activeConnections = new Map<string, number>();
 const MAX_CONNECTIONS_PER_USER = 5;
 
 export async function taskEventsSSERoutes(fastify: FastifyInstance) {
@@ -77,7 +77,7 @@ export async function taskEventsSSERoutes(fastify: FastifyInstance) {
       });
 
       // 5. Duplicate Redis for blocking XREAD
-      const redis = request.server.redis.duplicate();
+      const redis = request.server.redis.duplicate({ maxRetriesPerRequest: null });
       const key = streamKey(jobId);
       let lastId = (request.headers["last-event-id"] as string) || "$";
       let closed = false;

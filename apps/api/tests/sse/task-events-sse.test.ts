@@ -189,6 +189,76 @@ describe("SSE Auth Tests", () => {
   });
 });
 
+describe("SSE Connection Limit (429)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = await buildSSETestApp();
+  });
+
+  afterAll(async () => {
+    // Import and clear the module-level activeConnections map
+    const { activeConnections } = await import("../../src/modules/tasks/task-events-sse.routes.js");
+    activeConnections.clear();
+    await app.close();
+  });
+
+  it("returns 429 when user exceeds MAX_CONNECTIONS_PER_USER", async () => {
+    // Pre-populate the module-level activeConnections map to the limit
+    const { activeConnections } = await import("../../src/modules/tasks/task-events-sse.routes.js");
+    activeConnections.set(USER_ID, 5);
+
+    const token = await createAccessToken({
+      sub: USER_ID,
+      email: "test@example.com",
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${TASK_ID}/events/stream?token=${token}`,
+    });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.json().error).toBe("Too many concurrent SSE connections");
+
+    // Cleanup
+    activeConnections.clear();
+  });
+});
+
+describe("SSE Last-Event-ID", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = await buildSSETestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("accepts Last-Event-ID header without crashing", async () => {
+    const token = await createAccessToken({
+      sub: USER_ID,
+      email: "test@example.com",
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${TASK_ID}/events/stream?token=${token}`,
+      headers: {
+        "last-event-id": "1234567890-0",
+      },
+    });
+
+    // The handler should proceed past auth (200 SSE stream) — the mock XREAD
+    // throws immediately, so the stream closes, but we verify the header
+    // doesn't cause an error before the XREAD loop starts.
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("text/event-stream");
+  });
+});
+
 describe("SSE Missing JWT_SECRET", () => {
   let app: FastifyInstance;
 
