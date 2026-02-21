@@ -20,11 +20,7 @@ interface WorkflowInput {
   mode: "copilot" | "autopilot";
 }
 
-function publishProgress(
-  redis: Redis,
-  userId: string,
-  message: Record<string, unknown>,
-) {
+function publishProgress(redis: Redis, userId: string, message: Record<string, unknown>) {
   return redis.publish(`tasks:${userId}`, JSON.stringify(message));
 }
 
@@ -59,7 +55,9 @@ async function buildUserDataFromResume(
   const workHistory = (parsed.workHistory as Array<Record<string, unknown>>) ?? [];
   const totalYears = workHistory.reduce((sum, job) => {
     const start = job.startDate ? new Date(String(job.startDate)).getFullYear() : null;
-    const end = job.endDate ? new Date(String(job.endDate)).getFullYear() : new Date().getFullYear();
+    const end = job.endDate
+      ? new Date(String(job.endDate)).getFullYear()
+      : new Date().getFullYear();
     return sum + (start && end ? end - start : 0);
   }, 0);
 
@@ -72,9 +70,10 @@ async function buildUserDataFromResume(
     resumeUrl: resume.fileKey,
     yearsOfExperience: totalYears > 0 ? totalYears : undefined,
     skills: Array.isArray(parsed.skills) ? parsed.skills.map(String) : undefined,
-    education: Array.isArray(parsed.education) && parsed.education.length > 0
-      ? String((parsed.education[0] as Record<string, unknown>).degree ?? "")
-      : undefined,
+    education:
+      Array.isArray(parsed.education) && parsed.education.length > 0
+        ? String((parsed.education[0] as Record<string, unknown>).degree ?? "")
+        : undefined,
   };
 }
 
@@ -148,10 +147,7 @@ export function registerJobApplicationWorkflow(
         from: "provisioning",
         to: "analyzing",
         platform: detection.platform,
-        totalFields: formFlow.pages.reduce(
-          (sum, p) => sum + p.fields.length,
-          0,
-        ),
+        totalFields: formFlow.pages.reduce((sum, p) => sum + p.fields.length, 0),
       });
 
       await publishProgress(redis, input.userId, {
@@ -269,7 +265,6 @@ export function registerJobApplicationWorkflow(
           type: "human_needed",
           taskId: input.taskId,
           reason: "CAPTCHA detected",
-          vncUrl: "wss://mock-vnc:6901/websockify",
         });
 
         // Durable wait for CAPTCHA to be solved
@@ -286,9 +281,7 @@ export function registerJobApplicationWorkflow(
         taskId: input.taskId,
         step: "check-captcha",
         pct: 80,
-        message: captchaDetected
-          ? "CAPTCHA solved, continuing"
-          : "No CAPTCHA detected",
+        message: captchaDetected ? "CAPTCHA solved, continuing" : "No CAPTCHA detected",
       });
 
       return { captchaDetected, captchaSolved: true };
@@ -306,10 +299,7 @@ export function registerJobApplicationWorkflow(
 
       // In Copilot mode, wait for user approval before submitting
       if (prevData.requiresReview) {
-        logger.info(
-          { taskId: input.taskId },
-          "Waiting for user review approval",
-        );
+        logger.info({ taskId: input.taskId }, "Waiting for user review approval");
         await eventLogger.log(input.taskId, "human_takeover", {
           subType: "review_requested",
         });
@@ -340,9 +330,7 @@ export function registerJobApplicationWorkflow(
         taskId: input.taskId,
         step: "submit",
         pct: 90,
-        message: submitResult.success
-          ? "Application submitted"
-          : "Submission failed",
+        message: submitResult.success ? "Application submitted" : "Submission failed",
       });
 
       return submitResult;
