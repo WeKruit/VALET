@@ -9,6 +9,7 @@ import type {
 import type { TaskRepository } from "./task.repository.js";
 import type { ResumeRepository } from "../resumes/resume.repository.js";
 import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
+import type { SandboxRepository } from "../sandboxes/sandbox.repository.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
@@ -57,6 +58,7 @@ export class TaskService {
   private taskQueueService: TaskQueueService;
   private redis: Redis;
   private logger: FastifyBaseLogger;
+  private sandboxRepo: SandboxRepository;
 
   constructor({
     taskRepo,
@@ -69,6 +71,7 @@ export class TaskService {
     taskQueueService,
     redis,
     logger,
+    sandboxRepo,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -80,6 +83,7 @@ export class TaskService {
     taskQueueService: TaskQueueService;
     redis: Redis;
     logger: FastifyBaseLogger;
+    sandboxRepo: SandboxRepository;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -91,6 +95,7 @@ export class TaskService {
     this.taskQueueService = taskQueueService;
     this.redis = redis;
     this.logger = logger;
+    this.sandboxRepo = sandboxRepo;
   }
 
   async getById(id: string, userId: string) {
@@ -1171,5 +1176,33 @@ export class TaskService {
         totalPages: Math.ceil(total / query.pageSize),
       },
     };
+  }
+
+  /**
+   * WEK-134: Get the VNC live-view URL for the sandbox running this task.
+   * Returns the noVNC URL from the sandbox record, or null if unavailable.
+   */
+  async getVncUrl(
+    taskId: string,
+    userId: string,
+  ): Promise<{ url: string; readOnly: boolean } | null> {
+    const task = await this.taskRepo.findById(taskId, userId);
+    if (!task) throw new TaskNotFoundError(taskId);
+
+    if (!task.sandboxId) {
+      this.logger.debug({ taskId }, "Task has no sandboxId, cannot resolve VNC URL");
+      return null;
+    }
+
+    const sandbox = await this.sandboxRepo.findById(task.sandboxId);
+    if (!sandbox?.novncUrl) {
+      this.logger.debug(
+        { taskId, sandboxId: task.sandboxId },
+        "Sandbox has no novncUrl configured",
+      );
+      return null;
+    }
+
+    return { url: sandbox.novncUrl, readOnly: true };
   }
 }

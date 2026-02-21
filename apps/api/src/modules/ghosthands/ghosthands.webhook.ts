@@ -71,7 +71,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
 
-      const { taskRepo, ghJobRepo, redis } = request.diScope.cradle;
+      const { taskRepo, ghJobRepo, sandboxRepo, redis } = request.diScope.cradle;
       const payload = request.body as GHCallbackPayload;
 
       if (!payload?.job_id || !payload?.status) {
@@ -294,10 +294,28 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         // HITL blocker: publish task_needs_human with interaction data
         const wsMappedType =
           interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
+
+        // WEK-134: Look up the real VNC URL from the sandbox running this task
+        let vncUrl: string | undefined;
+        if (task.sandboxId) {
+          try {
+            const sandbox = await sandboxRepo.findById(task.sandboxId);
+            if (sandbox?.novncUrl) {
+              vncUrl = sandbox.novncUrl;
+            }
+          } catch (err) {
+            request.log.warn(
+              { err, sandboxId: task.sandboxId },
+              "Failed to look up sandbox VNC URL for HITL message (non-critical)",
+            );
+          }
+        }
+
         await publishToUser(redis, task.userId, {
           type: "task_needs_human",
           taskId: task.id,
           status: taskStatus,
+          ...(vncUrl ? { vncUrl } : {}),
           interaction: {
             type: wsMappedType,
             screenshotUrl: payload.interaction.screenshot_url ?? null,

@@ -153,6 +153,14 @@ export const resolveBlockerResponse = z.object({
   message: z.string(),
 });
 
+// ─── VNC URL Response ───
+export const vncUrlResponse = z.object({
+  url: z.string().url(),
+  readOnly: z.boolean(),
+});
+
+export type VncUrlResponse = z.infer<typeof vncUrlResponse>;
+
 // ─── GhostHands Job Data (enriched from GH API) ───
 export const ghJobSchema = z.object({
   jobId: z.string(),

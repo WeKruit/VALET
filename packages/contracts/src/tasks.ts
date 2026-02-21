@@ -10,6 +10,7 @@ import {
   updateExternalStatusRequest,
   resolveBlockerRequest,
   resolveBlockerResponse,
+  vncUrlResponse,
   errorResponse,
 } from "@valet/shared/schemas";
 
@@ -137,5 +138,15 @@ export const taskContract = c.router({
       409: errorResponse,
     },
     summary: "Retry a failed GhostHands task",
+  },
+  getVncUrl: {
+    method: "GET",
+    path: "/api/v1/tasks/:id/vnc-url",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: vncUrlResponse,
+      404: errorResponse,
+    },
+    summary: "Get the VNC live-view URL for the sandbox running this task",
   },
 });

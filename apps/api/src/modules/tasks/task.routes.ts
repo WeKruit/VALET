@@ -83,4 +83,16 @@ export const taskRouter = s.router(taskContract, {
     const task = await taskService.retry(params.id, request.userId);
     return { status: 200, body: task };
   },
+
+  getVncUrl: async ({ params, request }) => {
+    const { taskService } = request.diScope.cradle;
+    const result = await taskService.getVncUrl(params.id, request.userId);
+    if (!result) {
+      return {
+        status: 404 as const,
+        body: { error: "NOT_FOUND", message: "VNC URL not available for this task" },
+      };
+    }
+    return { status: 200 as const, body: result };
+  },
 });

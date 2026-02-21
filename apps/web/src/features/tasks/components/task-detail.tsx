@@ -21,10 +21,11 @@ import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { toast } from "sonner";
 import { ExternalLink, RefreshCw, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { LiveView } from "./live-view";
+import { useVncUrl } from "../hooks/use-vnc-url";
 
 interface TaskDetailProps {
   taskId: string;
@@ -72,10 +73,12 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     taskData?.status === "cancelled" ||
     taskData?.status === "failed";
   const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, !isTerminalTask);
+  const { data: vncData } = useVncUrl(taskId, !isTerminalTask);
+  const vncUrl = vncData?.status === 200 ? vncData.body.url : null;
+  const vncReadOnly = vncData?.status === 200 ? vncData.body.readOnly : true;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
-  const [showLiveView, setShowLiveView] = useState(true);
+  const [showLiveView, setShowLiveView] = useState(false);
   const queryClient = useQueryClient();
-  const noVncUrl = useMemo(() => import.meta.env.VITE_NOVNC_URL ?? "", []);
 
   const cancelTask = api.tasks.cancel.useMutation({
     onSuccess: () => {
@@ -280,12 +283,13 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         </CardContent>
       </Card>
 
-      {/* Live View - only for active tasks */}
-      {!isTerminal && noVncUrl && (
+      {/* Live View - only for active tasks with VNC URL */}
+      {!isTerminal && vncUrl && (
         <LiveView
-          url={noVncUrl}
+          url={vncUrl}
           isVisible={showLiveView}
           onToggle={() => setShowLiveView(!showLiveView)}
+          readOnly={vncReadOnly}
         />
       )}
 
