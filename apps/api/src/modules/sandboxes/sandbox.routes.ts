@@ -507,22 +507,36 @@ export const sandboxRouter = s.router(sandboxContract, {
     const sandbox = await sandboxService.getById(params.id);
     const provider = sandboxProviderFactory.getProvider(sandbox);
 
-    // Get Docker container count from deploy-server health
+    // Get Docker container count from deploy-server health (EC2/macOS only — port 8000)
+    // Kasm sandboxes run a single container without a deploy-server, so we skip this check
     let dockerContainers: number | null = null;
-    try {
-      const agentUrl = provider.getAgentUrl(sandbox);
-      const agentResp = await fetch(`${agentUrl}/health`, {
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (agentResp.ok) {
-        const agentBody = (await agentResp.json()) as Record<string, unknown>;
-        let count = 1;
-        if (agentBody.apiHealthy) count++;
-        if (agentBody.workerStatus && agentBody.workerStatus !== "unknown") count++;
-        dockerContainers = count;
+    if (provider.type !== "kasm") {
+      try {
+        const agentUrl = provider.getAgentUrl(sandbox);
+        const deployResp = await fetch(`${agentUrl}/health`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (deployResp.ok) {
+          const deployBody = (await deployResp.json()) as Record<string, unknown>;
+          let count = 1; // deploy-server is running (we got a response)
+          if (deployBody.apiHealthy) count++;
+          if (deployBody.workerStatus && deployBody.workerStatus !== "unknown") count++;
+          dockerContainers = count;
+        }
+      } catch {
+        logger.debug({ sandboxId: params.id }, "Deploy-server unreachable for container count");
       }
-    } catch {
-      logger.debug({ sandboxId: params.id }, "Deploy-server unreachable for container count");
+    } else {
+      // Kasm: single container — if the agent responds, count it as 1
+      try {
+        const agentUrl = provider.getAgentUrl(sandbox);
+        const resp = await fetch(`${agentUrl}/health`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (resp.ok) dockerContainers = 1;
+      } catch {
+        logger.debug({ sandboxId: params.id }, "Kasm agent unreachable for container count");
+      }
     }
 
     // Check GhostHands API health (graceful failure)
