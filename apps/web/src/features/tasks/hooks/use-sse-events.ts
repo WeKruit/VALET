@@ -25,15 +25,15 @@ export type SSEStatus = "connecting" | "connected" | "disconnected" | "done";
  * Hook that connects to the SSE endpoint for real-time execution progress.
  *
  * Uses EventSource API with automatic reconnection (built-in).
+ * Auth token is passed as a query parameter (EventSource cannot set headers).
  * Falls back gracefully if SSE is not available.
  *
  * @param taskId - The VALET task UUID
  * @param enabled - Whether to connect (false for terminal tasks)
  */
 export function useSSEEvents(taskId: string, enabled: boolean) {
-  const [events, setEvents] = useState<SSEProgressEvent[]>([]);
-  const [status, setStatus] = useState<SSEStatus>("disconnected");
   const [latestEvent, setLatestEvent] = useState<SSEProgressEvent | null>(null);
+  const [status, setStatus] = useState<SSEStatus>("disconnected");
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const connect = useCallback(() => {
@@ -47,12 +47,11 @@ export function useSSEEvents(taskId: string, enabled: boolean) {
 
     setStatus("connecting");
 
-    // EventSource doesn't support custom headers, so we pass the token as a query param.
-    // The SSE endpoint uses the standard auth middleware (Authorization header from cookie/onRequest).
-    // For EventSource, we'll rely on the existing auth middleware which checks the global onRequest hook.
-    const url = `${API_BASE_URL}/api/v1/tasks/${taskId}/events`;
+    // EventSource cannot send custom headers, so we pass the JWT as a query param.
+    // The SSE endpoint verifies it inline (same pattern as the WebSocket handler).
+    const url = `${API_BASE_URL}/api/v1/tasks/${taskId}/events?token=${encodeURIComponent(token)}`;
 
-    const es = new EventSource(url, { withCredentials: true });
+    const es = new EventSource(url);
     eventSourceRef.current = es;
 
     es.onopen = () => {
@@ -63,9 +62,7 @@ export function useSSEEvents(taskId: string, enabled: boolean) {
     es.addEventListener("progress", (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data) as SSEProgressEvent;
-        // Use the Redis stream message ID as the event ID
         const enriched = { ...data, id: event.lastEventId || data.id };
-        setEvents((prev) => [...prev, enriched]);
         setLatestEvent(enriched);
       } catch {
         // Ignore malformed events
@@ -77,7 +74,6 @@ export function useSSEEvents(taskId: string, enabled: boolean) {
       try {
         const data = JSON.parse(event.data);
         setStatus("done");
-        // Add a final event
         setLatestEvent((prev) => (prev ? { ...prev, step: data.step, progress_pct: 100 } : null));
       } catch {
         // Ignore
@@ -106,16 +102,8 @@ export function useSSEEvents(taskId: string, enabled: boolean) {
     };
   }, [connect]);
 
-  /** Clear accumulated events (e.g. when switching tasks). */
-  const clearEvents = useCallback(() => {
-    setEvents([]);
-    setLatestEvent(null);
-  }, []);
-
   return {
-    events,
     latestEvent,
     status,
-    clearEvents,
   };
 }

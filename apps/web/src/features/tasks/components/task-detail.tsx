@@ -284,6 +284,11 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
       {/* GhostHands Job Status */}
       {task.ghJob && <GhJobCard ghJob={task.ghJob} />}
 
+      {/* Real-time Execution Timeline (SSE-powered, for active tasks) */}
+      {task.ghJob && (
+        <ExecutionTimeline taskId={taskId} isTerminal={isTerminal} taskStatus={task.status} />
+      )}
+
       {/* Activity Feed - real GH job events timeline */}
       {task.ghJob && <ActivityFeed taskId={taskId} isTerminal={isTerminal} />}
 
@@ -362,11 +367,6 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {/* Real-time Execution Timeline (SSE-powered, for active tasks) */}
-      {task.ghJob && (
-        <ExecutionTimeline taskId={taskId} isTerminal={isTerminal} taskStatus={task.status} />
       )}
 
       {/* Static Progress Timeline (fallback / completed view) */}
