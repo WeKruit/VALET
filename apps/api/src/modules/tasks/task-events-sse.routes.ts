@@ -3,6 +3,10 @@ import type Redis from "ioredis";
 import * as jose from "jose";
 import { xreadEvents, xreadBlock, type ParsedProgressEvent } from "../../lib/redis-streams.js";
 
+// -- Per-user SSE connection tracking --
+const MAX_SSE_PER_USER = 5;
+const activeSSEConnections = new Map<string, number>();
+
 /**
  * SSE endpoint for real-time execution progress streaming.
  *
@@ -34,7 +38,12 @@ export async function taskEventsSSERoute(fastify: FastifyInstance) {
 
       let userId: string;
       try {
-        const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? "");
+        const jwtSecret = process.env.JWT_SECRET;
+        if (!jwtSecret) {
+          request.log.error("JWT_SECRET is not configured");
+          return reply.status(500).send({ error: "Server configuration error" });
+        }
+        const secret = new TextEncoder().encode(jwtSecret);
         const { payload } = await jose.jwtVerify(token, secret, {
           algorithms: ["HS256"],
         });
@@ -45,6 +54,13 @@ export async function taskEventsSSERoute(fastify: FastifyInstance) {
       } catch {
         return reply.status(401).send({ error: "Invalid or expired token" });
       }
+
+      // --- Per-user connection limit ---
+      const currentCount = activeSSEConnections.get(userId) ?? 0;
+      if (currentCount >= MAX_SSE_PER_USER) {
+        return reply.status(429).send({ error: "Too many concurrent SSE connections" });
+      }
+      activeSSEConnections.set(userId, currentCount + 1);
 
       const { taskId } = request.params as { taskId: string };
       const { taskService } = request.diScope.cradle;
@@ -113,6 +129,13 @@ export async function taskEventsSSERoute(fastify: FastifyInstance) {
         closed = true;
         clearInterval(heartbeat);
         sseRedis.quit().catch(() => {});
+        // Decrement per-user SSE connection count
+        const count = activeSSEConnections.get(userId) ?? 1;
+        if (count <= 1) {
+          activeSSEConnections.delete(userId);
+        } else {
+          activeSSEConnections.set(userId, count - 1);
+        }
       };
 
       request.raw.on("close", cleanup);

@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
-import type { Circle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   Check,
   Loader2,
@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { useSSEEvents } from "../hooks/use-sse-events";
 
 /** Maps GH ProgressStep values to display info. */
-const STEP_CONFIG: Record<string, { label: string; icon: typeof Circle; description: string }> = {
+const STEP_CONFIG: Record<string, { label: string; icon: LucideIcon; description: string }> = {
   queued: {
     label: "Queued",
     icon: Clock,

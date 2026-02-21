@@ -133,7 +133,7 @@ export async function streamLength(redis: Redis, jobId: string): Promise<number>
 // -- Internal helpers --
 
 /** Parse flat Redis field array into typed event object. */
-function parseStreamFields(id: string, fields: string[]): ParsedProgressEvent {
+export function parseStreamFields(id: string, fields: string[]): ParsedProgressEvent {
   const map: Record<string, string> = {};
   for (let i = 0; i < fields.length; i += 2) {
     const key = fields[i];
