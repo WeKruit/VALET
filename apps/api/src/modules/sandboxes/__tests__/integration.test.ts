@@ -286,6 +286,26 @@ describe("SandboxService", () => {
       expect(repo.create).toHaveBeenCalledWith(createBody);
     });
 
+    it("passes machineType through to repository (WEK-131)", async () => {
+      const kasmBody = {
+        ...createBody,
+        instanceId: "kasm-123",
+        machineType: "kasm" as const,
+      };
+      repo.findByInstanceId.mockResolvedValue(null);
+      repo.create.mockResolvedValue({
+        ...SANDBOX_FIXTURE,
+        ...kasmBody,
+        id: "33333333-3333-3333-3333-333333333333",
+        machineType: "kasm",
+      });
+
+      const result = await service.create(kasmBody);
+
+      expect(result.machineType).toBe("kasm");
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ machineType: "kasm" }));
+    });
+
     it("throws SandboxDuplicateInstanceError for duplicate instanceId", async () => {
       repo.findByInstanceId.mockResolvedValue(SANDBOX_FIXTURE);
 
