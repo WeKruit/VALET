@@ -391,9 +391,9 @@ export class SandboxService {
 
     const provider = this.providerFactory.getProvider(sandbox);
     // Only send keepalive if the provider supports it
-    if ("keepalive" in provider && typeof provider.keepalive === "function") {
+    if (provider.keepalive) {
       try {
-        await (provider.keepalive as (s: unknown) => Promise<void>)(sandbox);
+        await provider.keepalive(sandbox);
       } catch (err) {
         this.logger.warn({ sandboxId: id, err }, "Failed to send keepalive");
       }
