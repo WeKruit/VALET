@@ -18,6 +18,7 @@ import type {
   GHWorkerFleetResponse,
   GHDeregisterWorkerParams,
   GHDeregisterWorkerResponse,
+  GHModelCatalog,
 } from "./ghosthands.types.js";
 
 export class GhostHandsClient {
@@ -132,6 +133,10 @@ export class GhostHandsClient {
 
   async healthCheck(): Promise<{ status: string }> {
     return this.request<{ status: string }>("GET", "/health", undefined, 5_000);
+  }
+
+  async getModels(): Promise<GHModelCatalog> {
+    return this.request<GHModelCatalog>("GET", "/api/v1/gh/models", undefined, 10_000);
   }
 
   async getDetailedHealth(): Promise<GHDetailedHealth> {

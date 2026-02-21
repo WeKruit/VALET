@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { cn } from "@/lib/utils";
+import { QualitySelector } from "./quality-selector";
 
 type PlatformInfo = {
   name: string;
@@ -70,8 +71,7 @@ function detectPlatform(url: string): string | null {
   if (url.includes("linkedin.com")) return "LinkedIn";
   if (url.includes("greenhouse.io")) return "Greenhouse";
   if (url.includes("lever.co")) return "Lever";
-  if (url.includes("workday.com") || url.includes("myworkday.com"))
-    return "Workday";
+  if (url.includes("workday.com") || url.includes("myworkday.com")) return "Workday";
   return null;
 }
 
@@ -96,29 +96,30 @@ function isValidUrl(url: string): boolean {
 export function ApplyForm() {
   const [url, setUrl] = useState("");
   const [notes, setNotes] = useState("");
+  const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
   const [selectedResumeId, setSelectedResumeId] = useState<string>("");
   const navigate = useNavigate();
 
-  const { data: resumesData, isLoading: resumesLoading } =
-    api.resumes.list.useQuery({
-      queryKey: ["resumes"],
-      queryData: {},
-      staleTime: 1000 * 60 * 5,
-      refetchInterval: (query) => {
-        const resumes = query.state.data?.status === 200 ? query.state.data.body.data : [];
-        return resumes.some((r) => r.status === "parsing" || r.status === "uploading") ? 3000 : false;
-      },
-    });
+  const { data: resumesData, isLoading: resumesLoading } = api.resumes.list.useQuery({
+    queryKey: ["resumes"],
+    queryData: {},
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: (query) => {
+      const resumes = query.state.data?.status === 200 ? query.state.data.body.data : [];
+      return resumes.some((r) => r.status === "parsing" || r.status === "uploading") ? 3000 : false;
+    },
+  });
 
   const resumes = resumesData?.status === 200 ? resumesData.body.data : [];
   const readyResumes = resumes.filter((r) => r.status === "parsed");
-  const defaultResume =
-    readyResumes.find((r) => r.isDefault) ?? readyResumes[0] ?? null;
+  const defaultResume = readyResumes.find((r) => r.isDefault) ?? readyResumes[0] ?? null;
 
   // Auto-select default resume when loaded (only from parsed resumes)
   const activeResumeId = selectedResumeId || defaultResume?.id || "";
   const activeResume = readyResumes.find((r) => r.id === activeResumeId) ?? null;
-  const hasStuckResumes = resumes.some((r) => r.status === "parsing" || r.status === "parse_failed");
+  const hasStuckResumes = resumes.some(
+    (r) => r.status === "parsing" || r.status === "parse_failed",
+  );
 
   const createTask = api.tasks.create.useMutation({
     onSuccess: (data) => {
@@ -141,9 +142,7 @@ export function ApplyForm() {
     if (!isValid) return;
 
     if (!activeResume) {
-      toast.error(
-        "Please upload a resume first in Settings before applying."
-      );
+      toast.error("Please upload a resume first in Settings before applying.");
       return;
     }
 
@@ -152,6 +151,7 @@ export function ApplyForm() {
         jobUrl: url,
         mode: "copilot",
         resumeId: activeResume.id,
+        quality,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       },
     });
@@ -168,20 +168,16 @@ export function ApplyForm() {
                 <Sparkles className="h-6 w-6 text-[var(--wk-accent-amber)]" />
               </div>
             </div>
-            <h2 className="font-display text-xl font-semibold">
-              Ready to apply to your next job!
-            </h2>
+            <h2 className="font-display text-xl font-semibold">Ready to apply to your next job!</h2>
             <p className="text-sm text-[var(--wk-text-secondary)]">
-              Paste a job URL below. We'll fill the application and show you
-              every field before submitting.
+              Paste a job URL below. We'll fill the application and show you every field before
+              submitting.
             </p>
           </div>
 
           {/* URL input section */}
           <div className="space-y-3">
-            <label className="text-sm font-medium text-[var(--wk-text-primary)]">
-              Job URL
-            </label>
+            <label className="text-sm font-medium text-[var(--wk-text-primary)]">Job URL</label>
             <div className="relative">
               <Link2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--wk-text-tertiary)]" />
               <Input
@@ -192,7 +188,7 @@ export function ApplyForm() {
                 className={cn(
                   "pl-10",
                   url && !isValid && isValidUrl(url) && "border-[var(--wk-status-warning)]",
-                  url && isValid && "border-[var(--wk-status-success)]"
+                  url && isValid && "border-[var(--wk-status-success)]",
                 )}
               />
             </div>
@@ -205,7 +201,7 @@ export function ApplyForm() {
                     "inline-flex items-center gap-1.5 rounded-[var(--wk-radius-full)] px-2.5 py-0.5 text-xs font-medium border",
                     platformInfo.bgClass,
                     platformInfo.textClass,
-                    platformInfo.borderClass
+                    platformInfo.borderClass,
                   )}
                 >
                   <Briefcase className="h-3 w-3" />
@@ -227,8 +223,8 @@ export function ApplyForm() {
                   External
                 </span>
                 <span className="text-xs text-[var(--wk-status-warning)]">
-                  Unsupported platform -- only LinkedIn, Greenhouse, Lever, and
-                  Workday are supported.
+                  Unsupported platform -- only LinkedIn, Greenhouse, Lever, and Workday are
+                  supported.
                 </span>
               </div>
             )}
@@ -241,9 +237,7 @@ export function ApplyForm() {
         <CardContent className="p-6">
           <div className="flex items-center gap-2 mb-3">
             <FileText className="h-4 w-4 text-[var(--wk-text-secondary)]" />
-            <label className="text-sm font-medium text-[var(--wk-text-primary)]">
-              Resume
-            </label>
+            <label className="text-sm font-medium text-[var(--wk-text-primary)]">Resume</label>
           </div>
 
           {resumesLoading ? (
@@ -278,9 +272,11 @@ export function ApplyForm() {
                   No resumes ready
                 </p>
                 <p className="text-sm text-[var(--wk-text-secondary)]">
-                  {resumes.length} resume{resumes.length > 1 ? "s" : ""} uploaded
-                  but {resumes.some((r) => r.status === "parsing") ? "still processing" : "failed to parse"}.
-                  Go to{" "}
+                  {resumes.length} resume{resumes.length > 1 ? "s" : ""} uploaded but{" "}
+                  {resumes.some((r) => r.status === "parsing")
+                    ? "still processing"
+                    : "failed to parse"}
+                  . Go to{" "}
                   <Link
                     to="/settings"
                     className="text-[var(--wk-copilot)] hover:underline font-medium"
@@ -293,10 +289,7 @@ export function ApplyForm() {
             </div>
           ) : (
             <>
-              <Select
-                value={activeResumeId}
-                onValueChange={setSelectedResumeId}
-              >
+              <Select value={activeResumeId} onValueChange={setSelectedResumeId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a resume" />
                 </SelectTrigger>
@@ -320,8 +313,8 @@ export function ApplyForm() {
               </Select>
               {hasStuckResumes && (
                 <p className="text-xs text-[var(--wk-text-tertiary)] mt-1">
-                  {resumes.length - readyResumes.length} resume{resumes.length - readyResumes.length > 1 ? "s" : ""} still
-                  processing or failed.{" "}
+                  {resumes.length - readyResumes.length} resume
+                  {resumes.length - readyResumes.length > 1 ? "s" : ""} still processing or failed.{" "}
                   <Link to="/settings" className="text-[var(--wk-copilot)] hover:underline">
                     Manage in Settings
                   </Link>
@@ -332,6 +325,17 @@ export function ApplyForm() {
         </CardContent>
       </Card>
 
+      {/* Quality preset card */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Zap className="h-4 w-4 text-[var(--wk-text-secondary)]" />
+            <label className="text-sm font-medium text-[var(--wk-text-primary)]">Quality</label>
+          </div>
+          <QualitySelector value={quality} onChange={setQuality} />
+        </CardContent>
+      </Card>
+
       {/* Notes card */}
       <Card>
         <CardContent className="p-6">
@@ -339,9 +343,7 @@ export function ApplyForm() {
             <StickyNote className="h-4 w-4 text-[var(--wk-text-secondary)]" />
             <label className="text-sm font-medium text-[var(--wk-text-primary)]">
               Notes
-              <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">
-                (optional)
-              </span>
+              <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(optional)</span>
             </label>
           </div>
           <Textarea
@@ -367,10 +369,8 @@ export function ApplyForm() {
             <Zap className="h-4 w-4 text-[var(--wk-copilot)]" />
             <span>
               Your application is in{" "}
-              <span className="font-medium text-[var(--wk-copilot)]">
-                Copilot mode
-              </span>{" "}
-              -- you review everything before submit.
+              <span className="font-medium text-[var(--wk-copilot)]">Copilot mode</span> -- you
+              review everything before submit.
             </span>
           </div>
 
@@ -378,12 +378,7 @@ export function ApplyForm() {
             variant="cta"
             size="lg"
             className="w-full"
-            disabled={
-              !isValid ||
-              createTask.isPending ||
-              resumesLoading ||
-              !activeResume
-            }
+            disabled={!isValid || createTask.isPending || resumesLoading || !activeResume}
             onClick={handleSubmit}
           >
             {resumesLoading ? (
@@ -406,39 +401,30 @@ export function ApplyForm() {
             Demo URLs
           </p>
           <p className="text-xs text-[var(--wk-text-tertiary)] mb-3">
-            These are placeholder URLs to test platform detection. Replace with a real job listing to apply.
+            These are placeholder URLs to test platform detection. Replace with a real job listing
+            to apply.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
-              onClick={() =>
-                setUrl("https://www.linkedin.com/jobs/view/12345")
-              }
+              onClick={() => setUrl("https://www.linkedin.com/jobs/view/12345")}
               className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-blue-50 border border-blue-200">
                 <Briefcase className="h-3 w-3 text-blue-700" />
               </span>
-              <span className="text-[var(--wk-text-secondary)]">
-                LinkedIn Easy Apply
-              </span>
+              <span className="text-[var(--wk-text-secondary)]">LinkedIn Easy Apply</span>
             </button>
             <button
-              onClick={() =>
-                setUrl("https://boards.greenhouse.io/company/jobs/12345")
-              }
+              onClick={() => setUrl("https://boards.greenhouse.io/company/jobs/12345")}
               className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-emerald-50 border border-emerald-200">
                 <Briefcase className="h-3 w-3 text-emerald-700" />
               </span>
-              <span className="text-[var(--wk-text-secondary)]">
-                Greenhouse
-              </span>
+              <span className="text-[var(--wk-text-secondary)]">Greenhouse</span>
             </button>
             <button
-              onClick={() =>
-                setUrl("https://jobs.lever.co/company/12345")
-              }
+              onClick={() => setUrl("https://jobs.lever.co/company/12345")}
               className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-purple-50 border border-purple-200">
@@ -447,11 +433,7 @@ export function ApplyForm() {
               <span className="text-[var(--wk-text-secondary)]">Lever</span>
             </button>
             <button
-              onClick={() =>
-                setUrl(
-                  "https://myworkday.com/example/d/job-posting/12345"
-                )
-              }
+              onClick={() => setUrl("https://myworkday.com/example/d/job-posting/12345")}
               className="flex items-center gap-2 p-2.5 rounded-[var(--wk-radius-lg)] text-left text-sm cursor-pointer hover:bg-[var(--wk-surface-raised)] transition-colors duration-150"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-[var(--wk-radius-md)] bg-orange-50 border border-orange-200">

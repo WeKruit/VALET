@@ -12,6 +12,7 @@ import { billingContract } from "./billing.js";
 import { dashboardContract } from "./dashboard.js";
 import { notificationContract } from "./notifications.js";
 import { sandboxContract } from "./sandbox.js";
+import { modelContract } from "./models.js";
 
 const c = initContract();
 
@@ -29,6 +30,7 @@ export const apiContract = c.router({
   dashboard: dashboardContract,
   notifications: notificationContract,
   sandboxes: sandboxContract,
+  models: modelContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -47,4 +49,5 @@ export {
   dashboardContract,
   notificationContract,
   sandboxContract,
+  modelContract,
 };

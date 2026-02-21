@@ -15,6 +15,8 @@ export const platform = z.enum(["linkedin", "greenhouse", "lever", "workday", "u
 
 export const applicationMode = z.enum(["copilot", "autopilot"]);
 
+export const qualityPreset = z.enum(["speed", "balanced", "quality"]);
+
 export const externalStatus = z.enum([
   "applied",
   "viewed",
@@ -66,6 +68,7 @@ export const createTaskRequest = z.object({
   mode: applicationMode.default("copilot"),
   resumeId: z.string().uuid(),
   notes: z.string().max(1000).optional(),
+  quality: qualityPreset.optional(),
 });
 
 export const taskListQuery = z.object({
@@ -221,6 +224,7 @@ export const taskStatsResponse = z.object({
 export type TaskStatus = z.infer<typeof taskStatus>;
 export type Platform = z.infer<typeof platform>;
 export type ApplicationMode = z.infer<typeof applicationMode>;
+export type QualityPreset = z.infer<typeof qualityPreset>;
 export type ExternalStatus = z.infer<typeof externalStatus>;
 export type Task = z.infer<typeof taskSchema>;
 export type CreateTaskRequest = z.infer<typeof createTaskRequest>;

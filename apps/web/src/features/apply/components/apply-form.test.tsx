@@ -7,8 +7,7 @@ import { ApplyForm } from "./apply-form";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
-  const actual =
-    await vi.importActual<typeof ReactRouterDom>("react-router-dom");
+  const actual = await vi.importActual<typeof ReactRouterDom>("react-router-dom");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -67,7 +66,7 @@ function renderApplyForm() {
   return render(
     <MemoryRouter>
       <ApplyForm />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -79,26 +78,20 @@ describe("ApplyForm", () => {
 
   it("renders the heading and description", () => {
     renderApplyForm();
-    expect(
-      screen.getByText("Ready to apply to your next job!")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/paste a job url below/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText("Ready to apply to your next job!")).toBeInTheDocument();
+    expect(screen.getByText(/paste a job url below/i)).toBeInTheDocument();
   });
 
   it("renders the URL input with placeholder", () => {
     renderApplyForm();
     expect(
-      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/...")
+      screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
     ).toBeInTheDocument();
   });
 
   it("renders the Start Application button as disabled initially", () => {
     renderApplyForm();
-    expect(
-      screen.getByRole("button", { name: "Start Application" })
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start Application" })).toBeDisabled();
   });
 
   it("renders sample job links", () => {
@@ -121,7 +114,7 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "https://www.linkedin.com/jobs/view/12345"
+      "https://www.linkedin.com/jobs/view/12345",
     );
 
     expect(screen.getByText("LinkedIn")).toBeInTheDocument();
@@ -134,7 +127,7 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "https://boards.greenhouse.io/company/jobs/12345"
+      "https://boards.greenhouse.io/company/jobs/12345",
     );
 
     // "Greenhouse" appears in both platform badge and sample links
@@ -148,7 +141,7 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "https://jobs.lever.co/company/12345"
+      "https://jobs.lever.co/company/12345",
     );
 
     // "Lever" appears in both platform badge and sample links
@@ -164,12 +157,10 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "not-a-url"
+      "not-a-url",
     );
 
-    expect(
-      screen.getByRole("button", { name: "Start Application" })
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start Application" })).toBeDisabled();
   });
 
   it("keeps button disabled for non-supported platform URL", async () => {
@@ -178,12 +169,10 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "https://www.indeed.com/job/12345"
+      "https://www.indeed.com/job/12345",
     );
 
-    expect(
-      screen.getByRole("button", { name: "Start Application" })
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start Application" })).toBeDisabled();
   });
 
   it("enables button for valid supported URL", async () => {
@@ -192,12 +181,10 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "https://www.linkedin.com/jobs/view/12345"
+      "https://www.linkedin.com/jobs/view/12345",
     );
 
-    expect(
-      screen.getByRole("button", { name: "Start Application" })
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Start Application" })).toBeEnabled();
   });
 
   // --- Submission ---
@@ -208,17 +195,16 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "https://www.linkedin.com/jobs/view/12345"
+      "https://www.linkedin.com/jobs/view/12345",
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Start Application" })
-    );
+    await user.click(screen.getByRole("button", { name: "Start Application" }));
 
     expect(mockMutate).toHaveBeenCalledWith({
       body: {
         jobUrl: "https://www.linkedin.com/jobs/view/12345",
         mode: "copilot",
+        quality: "balanced",
         resumeId: "resume-1",
       },
     });
@@ -230,12 +216,10 @@ describe("ApplyForm", () => {
 
     await user.type(
       screen.getByPlaceholderText("https://www.linkedin.com/jobs/view/..."),
-      "https://www.linkedin.com/jobs/view/12345"
+      "https://www.linkedin.com/jobs/view/12345",
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Start Application" })
-    );
+    await user.click(screen.getByRole("button", { name: "Start Application" }));
 
     expect(mockNavigate).toHaveBeenCalledWith("/tasks/task-123");
   });
@@ -249,7 +233,7 @@ describe("ApplyForm", () => {
     await user.click(screen.getByText("LinkedIn Easy Apply"));
 
     const input = screen.getByPlaceholderText(
-      "https://www.linkedin.com/jobs/view/..."
+      "https://www.linkedin.com/jobs/view/...",
     ) as HTMLInputElement;
     expect(input.value).toBe("https://www.linkedin.com/jobs/view/12345");
   });
@@ -261,10 +245,8 @@ describe("ApplyForm", () => {
     await user.click(screen.getByText("Greenhouse"));
 
     const input = screen.getByPlaceholderText(
-      "https://www.linkedin.com/jobs/view/..."
+      "https://www.linkedin.com/jobs/view/...",
     ) as HTMLInputElement;
-    expect(input.value).toBe(
-      "https://boards.greenhouse.io/company/jobs/12345"
-    );
+    expect(input.value).toBe("https://boards.greenhouse.io/company/jobs/12345");
   });
 });
