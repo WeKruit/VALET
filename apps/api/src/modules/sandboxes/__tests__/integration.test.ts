@@ -286,6 +286,26 @@ describe("SandboxService", () => {
       expect(repo.create).toHaveBeenCalledWith(createBody);
     });
 
+    it("passes machineType through to repository (WEK-131)", async () => {
+      const kasmBody = {
+        ...createBody,
+        instanceId: "kasm-123",
+        machineType: "kasm" as const,
+      };
+      repo.findByInstanceId.mockResolvedValue(null);
+      repo.create.mockResolvedValue({
+        ...SANDBOX_FIXTURE,
+        ...kasmBody,
+        id: "33333333-3333-3333-3333-333333333333",
+        machineType: "kasm",
+      });
+
+      await service.create(kasmBody);
+
+      // Companion repo-level test in sandbox-repository.test.ts verifies Drizzle persistence
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ machineType: "kasm" }));
+    });
+
     it("throws SandboxDuplicateInstanceError for duplicate instanceId", async () => {
       repo.findByInstanceId.mockResolvedValue(SANDBOX_FIXTURE);
 
