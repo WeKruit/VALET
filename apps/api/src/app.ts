@@ -31,6 +31,7 @@ import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
 import { taskAdminRoutes } from "./modules/tasks/task.admin-routes.js";
 import { deployAdminRoutes } from "./modules/sandboxes/deploy.admin-routes.js";
 import { taskUserRoutes } from "./modules/tasks/task.user-routes.js";
+import { taskEventsSSERoutes } from "./modules/tasks/task-events-sse.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -117,6 +118,9 @@ export async function buildApp() {
 
   // User-facing standalone routes (outside ts-rest, needs auth)
   await fastify.register(taskUserRoutes);
+
+  // SSE streaming route (handles its own JWT auth via query param)
+  await fastify.register(taskEventsSSERoutes);
 
   // WebSocket
   await registerWebSocket(fastify);

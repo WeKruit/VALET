@@ -16,6 +16,7 @@ import { GhJobCard } from "./gh-job-card";
 import { ActivityFeed } from "./activity-feed";
 import { useTask } from "../hooks/use-tasks";
 import { useTaskWebSocket } from "../hooks/use-task-websocket";
+import { useSSEEvents } from "../hooks/use-sse-events";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { toast } from "sonner";
@@ -63,6 +64,14 @@ const EXTERNAL_STATUS_OPTIONS = [
 export function TaskDetail({ taskId }: TaskDetailProps) {
   const { data, isLoading, isError } = useTask(taskId);
   const { status: wsStatus } = useTaskWebSocket(taskId);
+
+  // Compute terminal status before SSE hook so we skip connections for finished tasks
+  const taskData = data?.status === 200 ? data.body : null;
+  const isTerminalTask =
+    taskData?.status === "completed" ||
+    taskData?.status === "cancelled" ||
+    taskData?.status === "failed";
+  const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, !isTerminalTask);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [showLiveView, setShowLiveView] = useState(true);
   const queryClient = useQueryClient();
@@ -161,6 +170,25 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                   {wsStatus === "connected" ? "Live" : wsStatus}
                 </span>
               </div>
+              {/* SSE stream indicator */}
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`h-2 w-2 rounded-full ${
+                    sseStatus === "connected"
+                      ? "bg-[var(--wk-status-success)]"
+                      : sseStatus === "connecting"
+                        ? "bg-[var(--wk-status-warning)] animate-pulse"
+                        : "bg-[var(--wk-text-tertiary)]"
+                  }`}
+                />
+                <span className="text-xs text-[var(--wk-text-tertiary)]">
+                  {sseStatus === "connected"
+                    ? "SSE"
+                    : sseStatus === "connecting"
+                      ? "SSE..."
+                      : "SSE off"}
+                </span>
+              </div>
               <Badge variant={task.mode === "copilot" ? "copilot" : "autopilot"}>{task.mode}</Badge>
               <Badge variant={statusBadgeVariant[task.status] ?? "default"} className="capitalize">
                 {task.status.replace("_", " ")}
@@ -200,11 +228,18 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 <div className="h-2 w-24 rounded-full bg-[var(--wk-surface-sunken)] overflow-hidden">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-[var(--wk-copilot)] to-[var(--wk-accent-teal)] transition-all duration-500"
-                    style={{ width: `${task.progress}%` }}
+                    style={{ width: `${sseEvent ? sseEvent.progress_pct : task.progress}%` }}
                   />
                 </div>
-                <span className="text-sm font-medium">{task.progress}%</span>
+                <span className="text-sm font-medium">
+                  {sseEvent ? `${sseEvent.progress_pct}%` : `${task.progress}%`}
+                </span>
               </div>
+              {sseEvent?.description && (
+                <p className="mt-1 text-xs text-[var(--wk-text-tertiary)]">
+                  {sseEvent.description}
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">

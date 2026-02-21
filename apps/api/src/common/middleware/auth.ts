@@ -32,13 +32,17 @@ const PUBLIC_EXACT_PATHS = [
 
 const PUBLIC_PREFIX_PATHS = ["/api/v1/ws", "/docs"];
 
+/** Routes that handle their own JWT auth (e.g. via query-param token). */
+const SELF_AUTH_PATTERNS = [/^\/api\/v1\/tasks\/[^/]+\/events\/stream$/];
+
 export async function authMiddleware(request: FastifyRequest, _reply: FastifyReply) {
   const path = request.url.split("?")[0];
   if (!path) return;
 
   if (
     PUBLIC_EXACT_PATHS.includes(path) ||
-    PUBLIC_PREFIX_PATHS.some((p) => path === p || path.startsWith(p + "/"))
+    PUBLIC_PREFIX_PATHS.some((p) => path === p || path.startsWith(p + "/")) ||
+    SELF_AUTH_PATTERNS.some((re) => re.test(path))
   ) {
     return;
   }
