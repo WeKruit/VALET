@@ -51,7 +51,7 @@ export interface GHSubmitApplicationParams {
   profile: GHProfile;
   qa_answers?: Record<string, string>;
   callback_url?: string;
-  quality?: "fast" | "balanced" | "thorough";
+  quality?: "speed" | "balanced" | "quality";
   priority?: number;
   timeout_seconds?: number;
   max_retries?: number;

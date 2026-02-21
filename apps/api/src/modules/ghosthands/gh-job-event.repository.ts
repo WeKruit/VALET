@@ -1,4 +1,4 @@
-import { eq, asc } from "drizzle-orm";
+import { eq, and, asc, desc } from "drizzle-orm";
 import { ghJobEvents, type Database } from "@valet/db";
 
 export interface GhJobEventRecord {
@@ -38,5 +38,36 @@ export class GhJobEventRepository {
       actor: r.actor,
       createdAt: r.createdAt,
     }));
+  }
+
+  /**
+   * Returns the most recent progress_update event for a job.
+   * Used to compute progress from gh_job_events (single source of truth)
+   * instead of duplicating progress data in the tasks table.
+   *
+   * @see WEK-71 progress dedup
+   */
+  async findLatestProgressEvent(jobId: string): Promise<GhJobEventRecord | null> {
+    const rows = await this.db
+      .select()
+      .from(ghJobEvents)
+      .where(and(eq(ghJobEvents.jobId, jobId), eq(ghJobEvents.eventType, "progress_update")))
+      .orderBy(desc(ghJobEvents.createdAt))
+      .limit(1);
+
+    const r = rows[0];
+    if (!r) return null;
+
+    return {
+      id: r.id,
+      jobId: r.jobId,
+      eventType: r.eventType,
+      fromStatus: r.fromStatus,
+      toStatus: r.toStatus,
+      message: r.message,
+      metadata: (r.metadata as Record<string, unknown>) ?? null,
+      actor: r.actor,
+      createdAt: r.createdAt,
+    };
   }
 }
