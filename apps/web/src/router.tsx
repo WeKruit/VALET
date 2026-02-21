@@ -109,6 +109,11 @@ const MonitoringPage = lazy(() =>
     default: m.MonitoringPage,
   })),
 );
+const WorkersPage = lazy(() =>
+  import("./features/admin/pages/workers-page").then((m) => ({
+    default: m.WorkersPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -210,6 +215,14 @@ export function AppRouter() {
             element={
               <AdminGuard>
                 <SessionsPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/workers"
+            element={
+              <AdminGuard>
+                <WorkersPage />
               </AdminGuard>
             }
           />
