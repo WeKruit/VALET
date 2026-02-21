@@ -142,6 +142,59 @@ export class GhAutomationJobRepository {
     return row ? toRecord(row as Record<string, unknown>) : null;
   }
 
+  /**
+   * Insert a pending gh_automation_jobs record directly from VALET.
+   * Used when dispatching via pg-boss queue instead of GH REST API.
+   */
+  async insertPendingJob(params: {
+    userId: string;
+    jobType: string;
+    targetUrl: string;
+    taskDescription?: string;
+    inputData?: Record<string, unknown>;
+    priority?: number;
+    maxRetries?: number;
+    timeoutSeconds?: number;
+    tags?: string[];
+    idempotencyKey?: string;
+    metadata?: Record<string, unknown>;
+    targetWorkerId?: string;
+    callbackUrl?: string;
+    valetTaskId: string;
+    executionMode?: string;
+    workerAffinity?: string;
+  }): Promise<GhJobRecord> {
+    const rows = await this.db
+      .insert(ghAutomationJobs)
+      .values({
+        userId: params.userId,
+        createdBy: "valet",
+        jobType: params.jobType,
+        targetUrl: params.targetUrl,
+        taskDescription: params.taskDescription,
+        inputData: params.inputData ?? {},
+        priority: params.priority ?? 0,
+        maxRetries: params.maxRetries ?? 3,
+        timeoutSeconds: params.timeoutSeconds,
+        tags: params.tags ?? ["valet"],
+        idempotencyKey: params.idempotencyKey,
+        metadata: {
+          ...params.metadata,
+          source: "valet",
+          valet_task_id: params.valetTaskId,
+          callback_url: params.callbackUrl ?? null,
+          worker_affinity: params.workerAffinity ?? null,
+        },
+        targetWorkerId: params.targetWorkerId,
+        callbackUrl: params.callbackUrl,
+        valetTaskId: params.valetTaskId,
+        executionMode: params.executionMode,
+        status: "queued",
+      })
+      .returning();
+    return toRecord(rows[0] as Record<string, unknown>);
+  }
+
   async findStuckJobs(stuckMinutes = 30): Promise<GhJobRecord[]> {
     const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000);
     const rows = await this.db

@@ -13,12 +13,17 @@ import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
+import type { TaskQueueService } from "./task-queue.service.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
   TaskNotResolvableError,
 } from "./task.errors.js";
 import { publishToUser } from "../../websocket/handler.js";
+
+function useQueueDispatch(): boolean {
+  return process.env.TASK_DISPATCH_MODE === "queue";
+}
 
 const CANCELLABLE_STATUSES = new Set(["created", "queued", "in_progress", "waiting_human"]);
 
@@ -47,6 +52,7 @@ export class TaskService {
   private ghosthandsClient: GhostHandsClient;
   private ghJobRepo: GhAutomationJobRepository;
   private ghSessionRepo: GhBrowserSessionRepository;
+  private taskQueueService: TaskQueueService;
   private redis: Redis;
   private logger: FastifyBaseLogger;
 
@@ -57,6 +63,7 @@ export class TaskService {
     ghosthandsClient,
     ghJobRepo,
     ghSessionRepo,
+    taskQueueService,
     redis,
     logger,
   }: {
@@ -66,6 +73,7 @@ export class TaskService {
     ghosthandsClient: GhostHandsClient;
     ghJobRepo: GhAutomationJobRepository;
     ghSessionRepo: GhBrowserSessionRepository;
+    taskQueueService: TaskQueueService;
     redis: Redis;
     logger: FastifyBaseLogger;
   }) {
@@ -75,6 +83,7 @@ export class TaskService {
     this.ghosthandsClient = ghosthandsClient;
     this.ghJobRepo = ghJobRepo;
     this.ghSessionRepo = ghSessionRepo;
+    this.taskQueueService = taskQueueService;
     this.redis = redis;
     this.logger = logger;
   }
@@ -344,49 +353,112 @@ export class TaskService {
 
     const callbackUrl = buildCallbackUrl();
 
-    try {
-      const ghResponse = await this.ghosthandsClient.submitApplication({
-        valet_task_id: task.id,
-        valet_user_id: userId,
-        target_url: task.jobUrl,
-        platform: task.platform,
-        resume: {
-          storage_path: resume?.fileKey ?? "",
-        },
-        profile,
-        qa_answers: Object.keys(qaAnswers).length > 0 ? qaAnswers : undefined,
-        callback_url: callbackUrl,
-        quality: body.mode === "autopilot" ? "fast" : "thorough",
-        max_retries: 1,
-        ...(body.targetWorkerId
-          ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }
-          : {}),
-      });
+    if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+      // ── Queue dispatch path (pg-boss) ──
+      try {
+        const ghJob = await this.ghJobRepo.insertPendingJob({
+          userId,
+          jobType: "apply",
+          targetUrl: task.jobUrl,
+          inputData: {
+            user_data: profile,
+            qa_overrides: Object.keys(qaAnswers).length > 0 ? qaAnswers : {},
+            tier: body.mode === "autopilot" ? "free" : "starter",
+            platform: task.platform,
+            resume_ref: { storage_path: resume?.fileKey ?? "" },
+          },
+          priority: 0,
+          maxRetries: 1,
+          tags: ["valet", "apply"],
+          metadata: {
+            quality_preset: body.mode === "autopilot" ? "fast" : "thorough",
+          },
+          targetWorkerId: body.targetWorkerId,
+          callbackUrl,
+          valetTaskId: task.id,
+          workerAffinity: body.targetWorkerId ? "strict" : undefined,
+        });
 
-      // Store the GhostHands job ID in workflowRunId field
-      await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
-      await this.taskRepo.updateStatus(task.id, "queued");
+        await this.taskQueueService.enqueueApplyJob(
+          {
+            ghJobId: ghJob.id,
+            valetTaskId: task.id,
+            userId,
+            targetUrl: task.jobUrl,
+            platform: task.platform,
+            jobType: "apply",
+            callbackUrl,
+          },
+          { targetWorkerId: body.targetWorkerId },
+        );
 
-      // Notify WebSocket clients
-      await publishToUser(this.redis, userId, {
-        type: "task_update",
-        taskId: task.id,
-        status: "queued",
-        progress: 0,
-        currentStep: "Submitted to GhostHands",
-      });
-    } catch (err) {
-      this.logger.error({ err, taskId: task.id }, "Failed to submit application to GhostHands");
-      await this.taskRepo.updateStatus(task.id, "failed");
-      await this.taskRepo.updateGhosthandsResult(task.id, {
-        ghJobId: "",
-        result: null,
-        error: {
-          code: "GH_SUBMIT_FAILED",
-          message: err instanceof Error ? err.message : "Failed to submit to GhostHands",
-        },
-        completedAt: null,
-      });
+        await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
+        await this.taskRepo.updateStatus(task.id, "queued");
+
+        await publishToUser(this.redis, userId, {
+          type: "task_update",
+          taskId: task.id,
+          status: "queued",
+          progress: 0,
+          currentStep: "Submitted to GhostHands (queue)",
+        });
+      } catch (err) {
+        this.logger.error({ err, taskId: task.id }, "Failed to enqueue job via pg-boss");
+        await this.taskRepo.updateStatus(task.id, "failed");
+        await this.taskRepo.updateGhosthandsResult(task.id, {
+          ghJobId: "",
+          result: null,
+          error: {
+            code: "GH_QUEUE_FAILED",
+            message: err instanceof Error ? err.message : "Failed to enqueue job",
+          },
+          completedAt: null,
+        });
+      }
+    } else {
+      // ── REST dispatch path (legacy) ──
+      try {
+        const ghResponse = await this.ghosthandsClient.submitApplication({
+          valet_task_id: task.id,
+          valet_user_id: userId,
+          target_url: task.jobUrl,
+          platform: task.platform,
+          resume: {
+            storage_path: resume?.fileKey ?? "",
+          },
+          profile,
+          qa_answers: Object.keys(qaAnswers).length > 0 ? qaAnswers : undefined,
+          callback_url: callbackUrl,
+          quality: body.mode === "autopilot" ? "fast" : "thorough",
+          max_retries: 1,
+          ...(body.targetWorkerId
+            ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }
+            : {}),
+        });
+
+        await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
+        await this.taskRepo.updateStatus(task.id, "queued");
+
+        await publishToUser(this.redis, userId, {
+          type: "task_update",
+          taskId: task.id,
+          status: "queued",
+          progress: 0,
+          currentStep: "Submitted to GhostHands",
+        });
+      } catch (err) {
+        this.logger.error({ err, taskId: task.id }, "Failed to submit application to GhostHands");
+        await this.taskRepo.updateStatus(task.id, "failed");
+        await this.taskRepo.updateGhosthandsResult(task.id, {
+          ghJobId: "",
+          result: null,
+          error: {
+            code: "GH_SUBMIT_FAILED",
+            message: err instanceof Error ? err.message : "Failed to submit to GhostHands",
+          },
+          completedAt: null,
+        });
+      }
     }
 
     return task;
@@ -464,42 +536,99 @@ export class TaskService {
     });
 
     const callbackUrl = buildCallbackUrl();
+    const taskDescription = `Google search integration test: ${body.searchQuery}`;
 
-    try {
-      const ghResponse = await this.ghosthandsClient.submitGenericTask({
-        valet_task_id: task.id,
-        valet_user_id: userId,
-        job_type: "custom",
-        target_url: "https://www.google.com",
-        task_description: `Google search integration test: ${body.searchQuery}`,
-        callback_url: callbackUrl,
-        max_retries: 1,
-        target_worker_id: body.targetWorkerId,
-        worker_affinity: "strict",
-      });
+    if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+      // ── Queue dispatch path (pg-boss) ──
+      try {
+        const ghJob = await this.ghJobRepo.insertPendingJob({
+          userId,
+          jobType: "custom",
+          targetUrl: "https://www.google.com",
+          taskDescription,
+          inputData: { platform: "google", tier: "free" },
+          maxRetries: 1,
+          tags: ["valet", "test"],
+          targetWorkerId: body.targetWorkerId,
+          callbackUrl,
+          valetTaskId: task.id,
+          workerAffinity: "strict",
+        });
 
-      await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
-      await this.taskRepo.updateStatus(task.id, "queued");
+        await this.taskQueueService.enqueueGenericTask(
+          {
+            ghJobId: ghJob.id,
+            valetTaskId: task.id,
+            userId,
+            targetUrl: "https://www.google.com",
+            jobType: "custom",
+            taskDescription,
+            callbackUrl,
+          },
+          { targetWorkerId: body.targetWorkerId },
+        );
 
-      await publishToUser(this.redis, userId, {
-        type: "task_update",
-        taskId: task.id,
-        status: "queued",
-        progress: 0,
-        currentStep: "Integration test submitted to GhostHands",
-      });
-    } catch (err) {
-      this.logger.error({ err, taskId: task.id }, "Failed to submit test task to GhostHands");
-      await this.taskRepo.updateStatus(task.id, "failed");
-      await this.taskRepo.updateGhosthandsResult(task.id, {
-        ghJobId: "",
-        result: null,
-        error: {
-          code: "GH_SUBMIT_FAILED",
-          message: err instanceof Error ? err.message : "Failed to submit test to GhostHands",
-        },
-        completedAt: null,
-      });
+        await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
+        await this.taskRepo.updateStatus(task.id, "queued");
+
+        await publishToUser(this.redis, userId, {
+          type: "task_update",
+          taskId: task.id,
+          status: "queued",
+          progress: 0,
+          currentStep: "Integration test submitted (queue)",
+        });
+      } catch (err) {
+        this.logger.error({ err, taskId: task.id }, "Failed to enqueue test task via pg-boss");
+        await this.taskRepo.updateStatus(task.id, "failed");
+        await this.taskRepo.updateGhosthandsResult(task.id, {
+          ghJobId: "",
+          result: null,
+          error: {
+            code: "GH_QUEUE_FAILED",
+            message: err instanceof Error ? err.message : "Failed to enqueue test task",
+          },
+          completedAt: null,
+        });
+      }
+    } else {
+      // ── REST dispatch path (legacy) ──
+      try {
+        const ghResponse = await this.ghosthandsClient.submitGenericTask({
+          valet_task_id: task.id,
+          valet_user_id: userId,
+          job_type: "custom",
+          target_url: "https://www.google.com",
+          task_description: taskDescription,
+          callback_url: callbackUrl,
+          max_retries: 1,
+          target_worker_id: body.targetWorkerId,
+          worker_affinity: "strict",
+        });
+
+        await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
+        await this.taskRepo.updateStatus(task.id, "queued");
+
+        await publishToUser(this.redis, userId, {
+          type: "task_update",
+          taskId: task.id,
+          status: "queued",
+          progress: 0,
+          currentStep: "Integration test submitted to GhostHands",
+        });
+      } catch (err) {
+        this.logger.error({ err, taskId: task.id }, "Failed to submit test task to GhostHands");
+        await this.taskRepo.updateStatus(task.id, "failed");
+        await this.taskRepo.updateGhosthandsResult(task.id, {
+          ghJobId: "",
+          result: null,
+          error: {
+            code: "GH_SUBMIT_FAILED",
+            message: err instanceof Error ? err.message : "Failed to submit test to GhostHands",
+          },
+          completedAt: null,
+        });
+      }
     }
 
     return task;
