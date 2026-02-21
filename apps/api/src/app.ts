@@ -123,9 +123,11 @@ export async function buildApp() {
 
   // Start sandbox health monitor and auto-stop monitor after server is ready
   fastify.addHook("onReady", async () => {
-    const { sandboxHealthMonitor, autoStopMonitor, pgBossService } = diContainer.cradle;
+    const { sandboxHealthMonitor, autoStopMonitor, autoScaleMonitor, pgBossService } =
+      diContainer.cradle;
     sandboxHealthMonitor.start();
     autoStopMonitor.start();
+    autoScaleMonitor.start();
     // Start pg-boss (non-blocking — logs warning if DATABASE_DIRECT_URL not set)
     await pgBossService.start().catch((err) => {
       fastify.log.error({ err }, "pg-boss failed to start — queue dispatch disabled");
@@ -134,9 +136,11 @@ export async function buildApp() {
 
   // Stop monitors and pg-boss on close
   fastify.addHook("onClose", async () => {
-    const { sandboxHealthMonitor, autoStopMonitor, pgBossService } = diContainer.cradle;
+    const { sandboxHealthMonitor, autoStopMonitor, autoScaleMonitor, pgBossService } =
+      diContainer.cradle;
     sandboxHealthMonitor.stop();
     autoStopMonitor.stop();
+    autoScaleMonitor.stop();
     await pgBossService.stop();
   });
 

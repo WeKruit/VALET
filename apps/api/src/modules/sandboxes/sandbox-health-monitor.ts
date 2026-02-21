@@ -22,10 +22,7 @@ export class SandboxHealthMonitor {
   start() {
     if (this.intervalId) return;
 
-    this.logger.info(
-      { intervalMs: HEALTH_CHECK_INTERVAL_MS },
-      "Starting sandbox health monitor",
-    );
+    this.logger.info({ intervalMs: HEALTH_CHECK_INTERVAL_MS }, "Starting sandbox health monitor");
 
     // Run immediately on start
     this.runHealthChecks();
@@ -71,8 +68,26 @@ export class SandboxHealthMonitor {
           );
         }
       }
+
+      // Send keepalives for all checked sandboxes (prevents Kasm session expiry)
+      await this.sendKeepalives(results.map((r) => r.sandboxId));
     } catch (err) {
       this.logger.error({ err }, "Failed to run scheduled health checks");
+    }
+  }
+
+  private async sendKeepalives(sandboxIds: string[]) {
+    let sent = 0;
+    for (const id of sandboxIds) {
+      try {
+        await this.sandboxService.sendKeepalive(id);
+        sent++;
+      } catch (err) {
+        this.logger.debug({ sandboxId: id, err }, "Keepalive skipped or failed");
+      }
+    }
+    if (sent > 0) {
+      this.logger.debug({ count: sent }, "Sent keepalives for checked sandboxes");
     }
   }
 }

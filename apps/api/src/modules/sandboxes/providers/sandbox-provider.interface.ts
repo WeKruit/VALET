@@ -27,14 +27,18 @@ export interface SandboxProvider {
 
   /** Check if the agent is reachable */
   pingAgent(sandbox: SandboxRecord): Promise<boolean>;
+
+  /** Optional keepalive signal to prevent auto-stop */
+  keepalive?(sandbox: SandboxRecord): Promise<void>;
 }
 
-export type SandboxMachineType = "ec2" | "macos" | "local_docker";
+export type SandboxMachineType = "ec2" | "macos" | "local_docker" | "kasm";
 
 export interface MachineLifecycleResult {
   success: boolean;
   message: string;
   newStatus?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface MachineStatus {

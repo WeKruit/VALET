@@ -82,7 +82,7 @@ export const sandboxRouter = s.router(sandboxContract, {
   getEc2Status: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
-    const result = await sandboxService.getEc2Status(params.id);
+    const result = await sandboxService.getMachineStatus(params.id);
     return { status: 200, body: result };
   },
 
@@ -501,27 +501,41 @@ export const sandboxRouter = s.router(sandboxContract, {
 
   workerStatus: async ({ params, request }) => {
     await adminOnly(request);
-    const { sandboxService, taskRepo, ghosthandsClient, logger } = request.diScope.cradle;
+    const { sandboxService, sandboxProviderFactory, taskRepo, ghosthandsClient, logger } =
+      request.diScope.cradle;
 
     const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
 
-    // Get Docker container count from EC2 deploy-server health
+    // Get Docker container count from deploy-server health (EC2/macOS only — port 8000)
+    // Kasm sandboxes run a single container without a deploy-server, so we skip this check
     let dockerContainers: number | null = null;
-    if (sandbox.publicIp) {
+    if (provider.type !== "kasm") {
       try {
-        const ec2Resp = await fetch(`http://${sandbox.publicIp}:8000/health`, {
+        const agentUrl = provider.getAgentUrl(sandbox);
+        const deployResp = await fetch(`${agentUrl}/health`, {
           signal: AbortSignal.timeout(5_000),
         });
-        if (ec2Resp.ok) {
-          const ec2Body = (await ec2Resp.json()) as Record<string, unknown>;
-          // Count running containers: API (if healthy) + worker (if status known) + deploy-server (always 1 if we got here)
+        if (deployResp.ok) {
+          const deployBody = (await deployResp.json()) as Record<string, unknown>;
           let count = 1; // deploy-server is running (we got a response)
-          if (ec2Body.apiHealthy) count++;
-          if (ec2Body.workerStatus && ec2Body.workerStatus !== "unknown") count++;
+          if (deployBody.apiHealthy) count++;
+          if (deployBody.workerStatus && deployBody.workerStatus !== "unknown") count++;
           dockerContainers = count;
         }
       } catch {
-        logger.debug({ sandboxId: params.id }, "EC2 deploy-server unreachable for container count");
+        logger.debug({ sandboxId: params.id }, "Deploy-server unreachable for container count");
+      }
+    } else {
+      // Kasm: single container — if the agent responds, count it as 1
+      try {
+        const agentUrl = provider.getAgentUrl(sandbox);
+        const resp = await fetch(`${agentUrl}/health`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (resp.ok) dockerContainers = 1;
+      } catch {
+        logger.debug({ sandboxId: params.id }, "Kasm agent unreachable for container count");
       }
     }
 

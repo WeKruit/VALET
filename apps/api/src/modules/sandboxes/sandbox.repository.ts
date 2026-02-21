@@ -160,6 +160,7 @@ export class SandboxRepository {
     browserEngine?: BrowserEngine;
     browserConfig?: Record<string, unknown>;
     tags?: Record<string, unknown>;
+    machineType?: string;
   }): Promise<SandboxRecord> {
     const rows = await this.db
       .insert(sandboxes)
@@ -177,6 +178,7 @@ export class SandboxRepository {
         browserEngine: data.browserEngine ?? "adspower",
         browserConfig: data.browserConfig ?? {},
         tags: data.tags ?? {},
+        machineType: data.machineType ?? "ec2",
       })
       .returning();
     return toSandboxRecord(rows[0] as Record<string, unknown>);
@@ -222,7 +224,14 @@ export class SandboxRepository {
   async updateEc2Status(
     id: string,
     ec2Status: Ec2Status,
-    extra?: { lastStartedAt?: Date; lastStoppedAt?: Date; publicIp?: string | null },
+    extra?: {
+      lastStartedAt?: Date;
+      lastStoppedAt?: Date;
+      publicIp?: string | null;
+      instanceId?: string;
+      novncUrl?: string | null;
+      tags?: Record<string, unknown> | null;
+    },
   ): Promise<SandboxRecord | null> {
     const rows = await this.db
       .update(sandboxes)
@@ -235,6 +244,14 @@ export class SandboxRepository {
       .returning();
     const row = rows[0];
     return row ? toSandboxRecord(row as Record<string, unknown>) : null;
+  }
+
+  async findByMachineType(machineType: string): Promise<SandboxRecord[]> {
+    const data = await this.db
+      .select()
+      .from(sandboxes)
+      .where(and(eq(sandboxes.machineType, machineType), eq(sandboxes.status, "active")));
+    return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
   }
 
   async findAutoStopCandidates(): Promise<SandboxRecord[]> {

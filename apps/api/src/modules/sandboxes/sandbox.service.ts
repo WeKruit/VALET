@@ -3,13 +3,14 @@ import type {
   SandboxCreateRequest,
   SandboxUpdateRequest,
   SandboxHealthStatus,
+  Ec2Status,
 } from "@valet/shared/schemas";
 import type { SandboxRepository } from "./sandbox.repository.js";
-import type { EC2Service } from "./ec2.service.js";
 import type { TaskRepository } from "../tasks/task.repository.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { SandboxProviderFactory } from "./providers/provider-factory.js";
 import type { SandboxAgentClient } from "./agent/sandbox-agent.client.js";
+import type { MachineStatus } from "./providers/sandbox-provider.interface.js";
 import {
   SandboxNotFoundError,
   SandboxDuplicateInstanceError,
@@ -20,7 +21,6 @@ import { AppError } from "../../common/errors.js";
 export class SandboxService {
   private sandboxRepo: SandboxRepository;
   private logger: FastifyBaseLogger;
-  private ec2Service: EC2Service;
   private taskRepo: TaskRepository;
   private ghosthandsClient: GhostHandsClient;
   private providerFactory: SandboxProviderFactory;
@@ -29,7 +29,6 @@ export class SandboxService {
   constructor({
     sandboxRepo,
     logger,
-    ec2Service,
     taskRepo,
     ghosthandsClient,
     sandboxProviderFactory,
@@ -37,7 +36,6 @@ export class SandboxService {
   }: {
     sandboxRepo: SandboxRepository;
     logger: FastifyBaseLogger;
-    ec2Service: EC2Service;
     taskRepo: TaskRepository;
     ghosthandsClient: GhostHandsClient;
     sandboxProviderFactory: SandboxProviderFactory;
@@ -45,7 +43,6 @@ export class SandboxService {
   }) {
     this.sandboxRepo = sandboxRepo;
     this.logger = logger;
-    this.ec2Service = ec2Service;
     this.taskRepo = taskRepo;
     this.ghosthandsClient = ghosthandsClient;
     this.providerFactory = sandboxProviderFactory;
@@ -162,7 +159,7 @@ export class SandboxService {
     const sandbox = await this.sandboxRepo.findById(id);
     if (!sandbox) throw new SandboxNotFoundError(id);
 
-    // Skip health check for stopped/terminated EC2 instances — they can't respond
+    // Skip health check for stopped/terminated instances — they can't respond
     if (
       sandbox.ec2Status === "stopped" ||
       sandbox.ec2Status === "terminated" ||
@@ -176,11 +173,15 @@ export class SandboxService {
         sandboxId: id,
         healthStatus: sandbox.healthStatus,
         checkedAt: new Date(),
-        details: { skipped: true, reason: `EC2 instance is ${sandbox.ec2Status}` },
+        details: { skipped: true, reason: `Instance is ${sandbox.ec2Status}` },
       };
     }
 
-    if (!sandbox.publicIp) {
+    const provider = this.providerFactory.getProvider(sandbox);
+    let agentUrl: string;
+    try {
+      agentUrl = provider.getAgentUrl(sandbox);
+    } catch {
       await this.sandboxRepo.updateHealthStatus(id, "unhealthy");
       return {
         sandboxId: id,
@@ -190,7 +191,6 @@ export class SandboxService {
       };
     }
 
-    const agentUrl = `http://${sandbox.publicIp}:8000`;
     let healthStatus: SandboxHealthStatus = "unhealthy";
     let details: Record<string, unknown> = {};
 
@@ -223,11 +223,13 @@ export class SandboxService {
     const sandbox = await this.sandboxRepo.findById(id);
     if (!sandbox) throw new SandboxNotFoundError(id);
 
-    if (!sandbox.publicIp) {
+    const provider = this.providerFactory.getProvider(sandbox);
+    let agentUrl: string;
+    try {
+      agentUrl = provider.getAgentUrl(sandbox);
+    } catch {
       throw new SandboxUnreachableError(id);
     }
-
-    const agentUrl = `http://${sandbox.publicIp}:8000`;
 
     try {
       const metrics = await this.sandboxAgentClient.getMetrics(agentUrl);
@@ -253,7 +255,20 @@ export class SandboxService {
     const sandbox = await this.sandboxRepo.findById(id);
     if (!sandbox) throw new SandboxNotFoundError(id);
 
-    if (!sandbox.publicIp) {
+    // restartAdspower only applies to adspower browser engine
+    if (sandbox.browserEngine !== "adspower") {
+      throw new AppError(
+        400,
+        "INVALID_BROWSER_ENGINE",
+        `Cannot restart AdsPower on sandbox with browser engine: ${sandbox.browserEngine}`,
+      );
+    }
+
+    const provider = this.providerFactory.getProvider(sandbox);
+    let agentUrl: string;
+    try {
+      agentUrl = provider.getAgentUrl(sandbox);
+    } catch {
       throw new SandboxUnreachableError(id);
     }
 
@@ -261,7 +276,7 @@ export class SandboxService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
-      const response = await fetch(`http://${sandbox.publicIp}:8000/restart-adspower`, {
+      const response = await fetch(`${agentUrl}/restart-adspower`, {
         method: "POST",
         signal: controller.signal,
       });
@@ -275,6 +290,7 @@ export class SandboxService {
       return { message: `AdsPower restart initiated on sandbox ${sandbox.name}` };
     } catch (err) {
       if (err instanceof SandboxUnreachableError) throw err;
+      if (err instanceof AppError) throw err;
       throw new SandboxUnreachableError(id);
     }
   }
@@ -292,17 +308,25 @@ export class SandboxService {
     }
 
     const provider = this.providerFactory.getProvider(sandbox);
-    await provider.startMachine(sandbox);
-    await this.sandboxRepo.updateEc2Status(id, "pending", {
-      lastStartedAt: new Date(),
-    });
+    const result = await provider.startMachine(sandbox);
 
-    // Poll in background — don't block the response (EC2-specific)
-    if (provider.type === "ec2") {
-      this.pollEc2StatusUntilStable(id, sandbox.instanceId, "running").catch((err) => {
-        this.logger.error({ sandboxId: id, err }, "Failed to poll EC2 status after start");
-      });
+    // Persist provider metadata (e.g., kasm_id, kasm_url, hostname)
+    const updateData: Record<string, unknown> = {
+      lastStartedAt: new Date(),
+    };
+    if (result.metadata) {
+      if (result.metadata.kasm_id) updateData.instanceId = result.metadata.kasm_id;
+      if (result.metadata.kasm_url) updateData.novncUrl = result.metadata.kasm_url;
+      if (result.metadata.hostname) updateData.publicIp = result.metadata.hostname;
+      updateData.tags = { ...(sandbox.tags ?? {}), ...result.metadata };
     }
+
+    await this.sandboxRepo.updateEc2Status(id, "pending", updateData);
+
+    // Poll in background — don't block the response
+    this.pollMachineStatusUntilStable(id, "running").catch((err) => {
+      this.logger.error({ sandboxId: id, err }, "Failed to poll machine status after start");
+    });
 
     return { message: `Starting sandbox ${sandbox.name}`, ec2Status: "pending" };
   }
@@ -325,58 +349,110 @@ export class SandboxService {
       lastStoppedAt: new Date(),
     });
 
-    // Poll in background (EC2-specific)
-    if (provider.type === "ec2") {
-      this.pollEc2StatusUntilStable(id, sandbox.instanceId, "stopped").catch((err) => {
-        this.logger.error({ sandboxId: id, err }, "Failed to poll EC2 status after stop");
-      });
-    }
+    // Poll in background — don't block the response
+    this.pollMachineStatusUntilStable(id, "stopped").catch((err) => {
+      this.logger.error({ sandboxId: id, err }, "Failed to poll machine status after stop");
+    });
 
     return { message: `Stopping sandbox ${sandbox.name}`, ec2Status: "stopping" };
   }
 
-  async getEc2Status(id: string) {
+  async getMachineStatus(id: string): Promise<{
+    sandboxId: string;
+    ec2Status: Ec2Status;
+    publicIp: string | null;
+    lastStartedAt: Date | null;
+    lastStoppedAt: Date | null;
+  }> {
     const sandbox = await this.sandboxRepo.findById(id);
     if (!sandbox) throw new SandboxNotFoundError(id);
 
-    const liveStatus = await this.ec2Service.getInstanceStatus(sandbox.instanceId);
+    const provider = this.providerFactory.getProvider(sandbox);
+    const status = await provider.getMachineStatus(sandbox);
+    const dbStatus = this.mapToDbStatus(status.state);
 
-    // Map AWS statuses to our enum
-    const mappedStatus =
-      liveStatus === "shutting-down"
-        ? ("stopping" as const)
-        : (liveStatus as "pending" | "running" | "stopping" | "stopped" | "terminated");
-
-    // Sync DB if different
-    if (mappedStatus !== sandbox.ec2Status) {
-      await this.sandboxRepo.updateEc2Status(id, mappedStatus);
+    // Sync DB if status changed
+    if (dbStatus && dbStatus !== sandbox.ec2Status) {
+      await this.sandboxRepo.updateEc2Status(id, dbStatus);
     }
 
     return {
       sandboxId: id,
-      ec2Status: mappedStatus,
-      publicIp: sandbox.publicIp,
+      ec2Status: dbStatus ?? sandbox.ec2Status ?? "stopped",
+      publicIp: status.publicIp ?? sandbox.publicIp ?? null,
       lastStartedAt: sandbox.lastStartedAt,
       lastStoppedAt: sandbox.lastStoppedAt,
     };
   }
 
-  private async pollEc2StatusUntilStable(
-    sandboxId: string,
-    instanceId: string,
-    targetStatus: "running" | "stopped",
-  ) {
-    const finalStatus = await this.ec2Service.waitForStatus(instanceId, targetStatus);
-    const mappedStatus =
-      finalStatus === "shutting-down"
-        ? ("stopping" as const)
-        : (finalStatus as "pending" | "running" | "stopping" | "stopped" | "terminated");
-    await this.sandboxRepo.updateEc2Status(sandboxId, mappedStatus);
+  async sendKeepalive(id: string) {
+    const sandbox = await this.sandboxRepo.findById(id);
+    if (!sandbox) return;
 
-    this.logger.info(
-      { sandboxId, instanceId, finalStatus: mappedStatus },
-      "EC2 instance reached stable state",
-    );
+    const provider = this.providerFactory.getProvider(sandbox);
+    // Only send keepalive if the provider supports it
+    if (provider.keepalive) {
+      try {
+        await provider.keepalive(sandbox);
+      } catch (err) {
+        this.logger.warn({ sandboxId: id, err }, "Failed to send keepalive");
+      }
+    }
+  }
+
+  private mapToDbStatus(state: MachineStatus["state"]): Ec2Status | null {
+    const stateMap: Record<string, Ec2Status> = {
+      running: "running",
+      stopped: "stopped",
+      starting: "pending",
+      stopping: "stopping",
+      terminated: "terminated",
+    };
+    return stateMap[state] ?? null;
+  }
+
+  private async pollMachineStatusUntilStable(
+    sandboxId: string,
+    targetState: "running" | "stopped",
+    timeoutMs = 120_000,
+    pollIntervalMs = 5_000,
+  ) {
+    const start = Date.now();
+    const targetDbStatus = targetState as Ec2Status;
+
+    while (Date.now() - start < timeoutMs) {
+      const sandbox = await this.sandboxRepo.findById(sandboxId);
+      if (!sandbox) return;
+
+      const provider = this.providerFactory.getProvider(sandbox);
+      const status = await provider.getMachineStatus(sandbox);
+      const dbStatus = this.mapToDbStatus(status.state);
+
+      this.logger.debug({ sandboxId, state: status.state, targetState }, "Polling machine status");
+
+      if (dbStatus === targetDbStatus) {
+        await this.sandboxRepo.updateEc2Status(sandboxId, dbStatus);
+        this.logger.info({ sandboxId, finalStatus: dbStatus }, "Machine reached stable state");
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    // Timeout — do a final status sync
+    const sandbox = await this.sandboxRepo.findById(sandboxId);
+    if (sandbox) {
+      const provider = this.providerFactory.getProvider(sandbox);
+      const finalStatus = await provider.getMachineStatus(sandbox);
+      const dbStatus = this.mapToDbStatus(finalStatus.state);
+      if (dbStatus) {
+        await this.sandboxRepo.updateEc2Status(sandboxId, dbStatus);
+      }
+      this.logger.warn(
+        { sandboxId, finalState: finalStatus.state, targetState, timeoutMs },
+        "Timed out waiting for machine status",
+      );
+    }
   }
 
   async checkAllSandboxes() {
@@ -385,7 +461,7 @@ export class SandboxService {
     let skipped = 0;
 
     for (const sandbox of activeSandboxes) {
-      // Skip health checks for non-running EC2 instances
+      // Skip health checks for non-running instances
       if (sandbox.ec2Status !== "running" && sandbox.ec2Status !== "pending") {
         skipped++;
         this.logger.debug(
