@@ -10,6 +10,7 @@ import {
   SelectItem,
 } from "@valet/ui/components/select";
 import { TaskProgress } from "./task-progress";
+import { ExecutionTimeline } from "./execution-timeline";
 import { FieldReview } from "./field-review";
 import { HitlBlockerCard } from "./hitl-blocker-card";
 import { GhJobCard } from "./gh-job-card";
@@ -283,6 +284,11 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
       {/* GhostHands Job Status */}
       {task.ghJob && <GhJobCard ghJob={task.ghJob} />}
 
+      {/* Real-time Execution Timeline (SSE-powered, for active tasks) */}
+      {task.ghJob && (
+        <ExecutionTimeline taskId={taskId} isTerminal={isTerminal} taskStatus={task.status} />
+      )}
+
       {/* Activity Feed - real GH job events timeline */}
       {task.ghJob && <ActivityFeed taskId={taskId} isTerminal={isTerminal} />}
 
@@ -363,7 +369,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         </Card>
       )}
 
-      {/* Progress Timeline */}
+      {/* Static Progress Timeline (fallback / completed view) */}
       <TaskProgress
         progress={task.progress}
         status={task.status}
