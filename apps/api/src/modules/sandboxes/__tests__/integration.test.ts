@@ -300,9 +300,9 @@ describe("SandboxService", () => {
         machineType: "kasm",
       });
 
-      const result = await service.create(kasmBody);
+      await service.create(kasmBody);
 
-      expect(result.machineType).toBe("kasm");
+      // Companion repo-level test in sandbox-repository.test.ts verifies Drizzle persistence
       expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ machineType: "kasm" }));
     });
 
