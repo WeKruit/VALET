@@ -444,7 +444,7 @@ export class TaskService {
 
         // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
         const pgBossQueueName = body.targetWorkerId
-          ? `${QUEUE_APPLY_JOB}:${body.targetWorkerId}`
+          ? `${QUEUE_APPLY_JOB}/${body.targetWorkerId}`
           : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
@@ -631,7 +631,7 @@ export class TaskService {
 
         // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
         const pgBossQueueName = body.targetWorkerId
-          ? `${QUEUE_APPLY_JOB}:${body.targetWorkerId}`
+          ? `${QUEUE_APPLY_JOB}/${body.targetWorkerId}`
           : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
@@ -765,7 +765,7 @@ export class TaskService {
 
       // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
       const pgBossQueueName = targetWorkerId
-        ? `${QUEUE_APPLY_JOB}:${targetWorkerId}`
+        ? `${QUEUE_APPLY_JOB}/${targetWorkerId}`
         : QUEUE_APPLY_JOB;
       if (pgBossJobId) {
         await this.ghJobRepo.updateStatus(ghJob.id, {
