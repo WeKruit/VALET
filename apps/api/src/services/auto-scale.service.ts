@@ -71,25 +71,24 @@ export class AutoScaleService {
           { desired, current, queueDepth },
           "ASG capacity matches desired — no change",
         );
-        return;
+      } else {
+        this.logger.info({ desired, current, queueDepth }, "Updating ASG desired capacity");
+
+        await this.asgClient!.send(
+          new UpdateAutoScalingGroupCommand({
+            AutoScalingGroupName: this.asgName,
+            DesiredCapacity: desired,
+            MinSize: this.minCapacity,
+            MaxSize: this.maxCapacity,
+          }),
+        );
       }
-
-      this.logger.info({ desired, current, queueDepth }, "Updating ASG desired capacity");
-
-      await this.asgClient!.send(
-        new UpdateAutoScalingGroupCommand({
-          AutoScalingGroupName: this.asgName,
-          DesiredCapacity: desired,
-          MinSize: this.minCapacity,
-          MaxSize: this.maxCapacity,
-        }),
-      );
     } catch (err) {
       this.logger.error({ err }, "AutoScale evaluate failed");
       // don't rethrow — let the pg-boss schedule continue
     }
 
-    // Sync ASG instance IPs into DB (runs on every evaluate cycle)
+    // Sync ASG instance IPs into DB (runs on every evaluate cycle, regardless of scaling changes)
     await this.syncAsgIps();
   }
 
@@ -181,9 +180,9 @@ export class AutoScaleService {
       if (instances.length === 0) return;
 
       for (const { instanceId, publicIp } of instances) {
-        // Update sandboxes table (match on ec2_instance_id)
+        // Update sandboxes table (match on instance_id)
         await this.db.execute(
-          sql`UPDATE sandboxes SET public_ip = ${publicIp} WHERE ec2_instance_id = ${instanceId} AND (public_ip IS NULL OR public_ip != ${publicIp})`,
+          sql`UPDATE sandboxes SET public_ip = ${publicIp} WHERE instance_id = ${instanceId} AND (public_ip IS NULL OR public_ip != ${publicIp})`,
         );
 
         // Update gh_worker_registry (match on ec2_instance_id)

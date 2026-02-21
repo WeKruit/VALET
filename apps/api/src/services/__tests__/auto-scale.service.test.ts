@@ -66,6 +66,8 @@ describe("AutoScaleService", () => {
 
   beforeEach(() => {
     originalEnv = { ...process.env };
+    // Default: syncAsgIps finds no instances (called after every evaluate)
+    mockEc2Send.mockResolvedValue({ Reservations: [] });
   });
 
   afterEach(() => {
