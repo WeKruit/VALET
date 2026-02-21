@@ -86,10 +86,12 @@ export class AutoScaleMonitor {
 
       const running = kasmSandboxes.filter((s) => s.ec2Status === "running");
       const idle = running.filter((s) => s.currentLoad === 0);
-      const total = kasmSandboxes.length;
+      const activeCount = kasmSandboxes.filter(
+        (s) => s.ec2Status === "running" || s.ec2Status === "pending",
+      ).length;
 
       this.logger.debug(
-        { queueDepth, totalKasm: total, running: running.length, idle: idle.length },
+        { queueDepth, activeCount, running: running.length, idle: idle.length },
         "Auto-scale evaluation",
       );
 
@@ -99,7 +101,7 @@ export class AutoScaleMonitor {
       }
 
       // Scale up: queue has work, no idle sessions, below max
-      if (queueDepth > 0 && idle.length === 0 && total < this.maxInstances) {
+      if (queueDepth > 0 && idle.length === 0 && activeCount < this.maxInstances) {
         await this.scaleUp();
         return;
       }
@@ -124,7 +126,7 @@ export class AutoScaleMonitor {
     try {
       const sandbox = await this.sandboxService.create({
         name: `kasm-auto-${Date.now()}`,
-        environment: "prod",
+        environment: (process.env.AUTOSCALE_ENVIRONMENT ?? "prod") as "dev" | "staging" | "prod",
         instanceId: `kasm-pending-${Date.now()}`,
         instanceType: "kasm",
         capacity: 1,

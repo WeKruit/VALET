@@ -190,12 +190,12 @@ describe("KasmSandboxProvider", () => {
       expect(result).toBe(true);
     });
 
-    it("falls back to Kasm status when agent unreachable", async () => {
+    it("returns false when agent unreachable (no Kasm fallback)", async () => {
       vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
 
       const result = await provider.pingAgent(SANDBOX_FIXTURE);
-      // Kasm status returns "running" from mock, so should be true
-      expect(result).toBe(true);
+      // A running Kasm session with a dead agent should be reported as unreachable
+      expect(result).toBe(false);
     });
   });
 

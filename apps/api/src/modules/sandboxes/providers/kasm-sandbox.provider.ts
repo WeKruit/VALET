@@ -109,15 +109,7 @@ export class KasmSandboxProvider implements SandboxProvider {
       });
       return resp.ok;
     } catch {
-      // Fallback: check Kasm session status
-      if (sandbox.instanceId) {
-        try {
-          const status = await this.kasmClient.getKasmStatus(sandbox.instanceId);
-          return status.kasm.operational_status === "running";
-        } catch {
-          return false;
-        }
-      }
+      // A running Kasm session with a dead agent is unreachable, not healthy
       return false;
     }
   }
