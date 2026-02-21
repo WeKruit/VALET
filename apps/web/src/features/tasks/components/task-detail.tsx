@@ -75,6 +75,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
   const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, !isTerminalTask);
   const { data: vncData } = useVncUrl(taskId, !isTerminalTask);
   const vncUrl = vncData?.status === 200 ? vncData.body.url : null;
+  const vncReadOnly = vncData?.status === 200 ? vncData.body.readOnly : true;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [showLiveView, setShowLiveView] = useState(false);
   const queryClient = useQueryClient();
@@ -288,6 +289,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
           url={vncUrl}
           isVisible={showLiveView}
           onToggle={() => setShowLiveView(!showLiveView)}
+          readOnly={vncReadOnly}
         />
       )}
 

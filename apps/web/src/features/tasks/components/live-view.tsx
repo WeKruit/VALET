@@ -7,14 +7,16 @@ interface LiveViewProps {
   url: string;
   isVisible: boolean;
   onToggle: () => void;
+  readOnly?: boolean;
 }
 
-export function LiveView({ url, isVisible, onToggle }: LiveViewProps) {
+export function LiveView({ url, isVisible, onToggle, readOnly = false }: LiveViewProps) {
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [viewOnly, setViewOnly] = useState(true);
 
+  const effectiveViewOnly = readOnly || viewOnly;
   const iframeUrl = url
-    ? `${url}/vnc.html?autoconnect=true&resize=scale&view_only=${viewOnly}`
+    ? `${url}/vnc.html?autoconnect=true&resize=scale&view_only=${effectiveViewOnly}`
     : "";
 
   if (!url) {
@@ -32,24 +34,26 @@ export function LiveView({ url, isVisible, onToggle }: LiveViewProps) {
           <div className="flex items-center gap-2">
             {isVisible && (
               <>
-                <Button
-                  variant={viewOnly ? "ghost" : "primary"}
-                  size="sm"
-                  onClick={() => setViewOnly(!viewOnly)}
-                  title={viewOnly ? "Take Control" : "View Only"}
-                >
-                  {viewOnly ? (
-                    <>
-                      <MousePointer className="h-4 w-4 mr-1.5" />
-                      Take Control
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="h-4 w-4 mr-1.5" />
-                      View Only
-                    </>
-                  )}
-                </Button>
+                {!readOnly && (
+                  <Button
+                    variant={viewOnly ? "ghost" : "primary"}
+                    size="sm"
+                    onClick={() => setViewOnly(!viewOnly)}
+                    title={viewOnly ? "Take Control" : "View Only"}
+                  >
+                    {viewOnly ? (
+                      <>
+                        <MousePointer className="h-4 w-4 mr-1.5" />
+                        Take Control
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-4 w-4 mr-1.5" />
+                        View Only
+                      </>
+                    )}
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"

@@ -155,7 +155,7 @@ export const resolveBlockerResponse = z.object({
 
 // ─── VNC URL Response ───
 export const vncUrlResponse = z.object({
-  url: z.string(),
+  url: z.string().url(),
   readOnly: z.boolean(),
 });
 
