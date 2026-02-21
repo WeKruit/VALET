@@ -15,7 +15,24 @@ import {
 
 const c = initContract();
 
+const queueStatsResponse = z.object({
+  available: z.boolean(),
+  queued: z.number(),
+  active: z.number(),
+  completed: z.number(),
+  failed: z.number(),
+  all: z.number(),
+});
+
 export const taskContract = c.router({
+  queueStats: {
+    method: "GET",
+    path: "/api/v1/tasks/queue-stats",
+    responses: {
+      200: queueStatsResponse,
+    },
+    summary: "Get pg-boss queue statistics",
+  },
   stats: {
     method: "GET",
     path: "/api/v1/tasks/stats",
