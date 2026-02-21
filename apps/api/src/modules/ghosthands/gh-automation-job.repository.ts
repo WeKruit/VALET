@@ -177,7 +177,7 @@ export class GhAutomationJobRepository {
         targetUrl: params.targetUrl,
         taskDescription: params.taskDescription,
         inputData: params.inputData ?? {},
-        priority: params.priority ?? 0,
+        priority: params.priority ?? 5,
         maxRetries: params.maxRetries ?? 3,
         timeoutSeconds: params.timeoutSeconds,
         tags: params.tags ?? ["valet"],
