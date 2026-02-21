@@ -47,6 +47,7 @@ import { SandboxAgentClient } from "../modules/sandboxes/agent/sandbox-agent.cli
 import { DeployHistoryRepository } from "../modules/sandboxes/deploy-history.repository.js";
 import { PgBossService } from "../services/pgboss.service.js";
 import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
+import { AutoScaleService } from "../services/auto-scale.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -94,6 +95,7 @@ export interface AppCradle {
   deployHistoryRepo: DeployHistoryRepository;
   pgBossService: PgBossService;
   taskQueueService: TaskQueueService;
+  autoScaleService: AutoScaleService;
 }
 
 declare module "@fastify/awilix" {
@@ -189,5 +191,6 @@ export default fp(async (fastify: FastifyInstance) => {
     ),
     pgBossService: asClass(PgBossService, { lifetime: Lifetime.SINGLETON }),
     taskQueueService: asClass(TaskQueueService, { lifetime: Lifetime.SINGLETON }),
+    autoScaleService: asClass(AutoScaleService, { lifetime: Lifetime.SINGLETON }),
   });
 });

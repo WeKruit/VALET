@@ -11,6 +11,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@aws-sdk/client-auto-scaling": "^3.990.0",
     "@aws-sdk/client-ec2": "^3.990.0",
     "@aws-sdk/client-s3": "^3.989.0",
     "@fastify/awilix": "^6.0.0",
