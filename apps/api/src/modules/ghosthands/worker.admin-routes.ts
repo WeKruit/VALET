@@ -5,6 +5,7 @@ function enrichWorker(
   w: {
     worker_id: string;
     target_worker_id?: string | null;
+    ec2_ip?: string | null;
     status: string;
     current_job_id: string | null;
     registered_at: string;
@@ -21,6 +22,7 @@ function enrichWorker(
     sandbox_id: sandbox?.id ?? null,
     sandbox_name: sandbox?.name ?? null,
     environment: sandbox?.environment ?? null,
+    ec2_ip: w.ec2_ip ?? null,
     status: w.status,
     current_job_id: w.current_job_id,
     registered_at: w.registered_at,

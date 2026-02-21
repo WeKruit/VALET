@@ -195,6 +195,9 @@ export function WorkersPage() {
                       Sandbox
                     </th>
                     <th className="px-4 py-3 text-left font-medium text-[var(--wk-text-secondary)]">
+                      IP Address
+                    </th>
+                    <th className="px-4 py-3 text-left font-medium text-[var(--wk-text-secondary)]">
                       Status
                     </th>
                     <th className="px-4 py-3 text-left font-medium text-[var(--wk-text-secondary)]">
@@ -220,6 +223,9 @@ export function WorkersPage() {
                       <td className="px-4 py-3 font-mono text-xs">{w.worker_id.slice(0, 8)}...</td>
                       <td className="px-4 py-3 text-xs text-[var(--wk-text-secondary)]">
                         {w.sandbox_name ?? "\u2014"}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-[var(--wk-text-secondary)]">
+                        {w.ec2_ip ?? "\u2014"}
                       </td>
                       <td className="px-4 py-3">
                         <Badge

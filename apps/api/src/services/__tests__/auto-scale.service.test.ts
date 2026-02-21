@@ -5,20 +5,28 @@ import type { Database } from "@valet/db";
 import type { FastifyBaseLogger } from "fastify";
 
 // Mock AWS SDK — we don't want real AWS calls in tests
-vi.mock("@aws-sdk/client-auto-scaling", () => {
-  const send = vi.fn();
-  return {
-    AutoScalingClient: vi.fn().mockImplementation(() => ({ send })),
-    DescribeAutoScalingGroupsCommand: vi.fn().mockImplementation((input) => ({
-      _type: "DescribeAutoScalingGroups",
-      ...input,
-    })),
-    UpdateAutoScalingGroupCommand: vi.fn().mockImplementation((input) => ({
-      _type: "UpdateAutoScalingGroup",
-      ...input,
-    })),
-  };
-});
+const mockAsgSend = vi.fn();
+const mockEc2Send = vi.fn();
+
+vi.mock("@aws-sdk/client-auto-scaling", () => ({
+  AutoScalingClient: vi.fn().mockImplementation(() => ({ send: mockAsgSend })),
+  DescribeAutoScalingGroupsCommand: vi.fn().mockImplementation((input) => ({
+    _type: "DescribeAutoScalingGroups",
+    ...input,
+  })),
+  UpdateAutoScalingGroupCommand: vi.fn().mockImplementation((input) => ({
+    _type: "UpdateAutoScalingGroup",
+    ...input,
+  })),
+}));
+
+vi.mock("@aws-sdk/client-ec2", () => ({
+  EC2Client: vi.fn().mockImplementation(() => ({ send: mockEc2Send })),
+  DescribeInstancesCommand: vi.fn().mockImplementation((input) => ({
+    _type: "DescribeInstances",
+    ...input,
+  })),
+}));
 
 function makeLogger(): FastifyBaseLogger {
   return {
@@ -77,17 +85,10 @@ describe("AutoScaleService", () => {
     Object.assign(process.env, overrides);
   }
 
-  // Coupling note: This helper reaches into the private `asgClient` field by name.
-  // The AutoScaleService implementation MUST name its AWS client field `asgClient`
-  // for these tests to work. If this becomes brittle, consider constructor injection
-  // (e.g. pass an `AsgClient` interface) to decouple tests from internal field names.
-  function getAsgClientSend(service: AutoScaleService): ReturnType<typeof vi.fn> {
-    // The AutoScaleService creates an AutoScalingClient internally; the mock
-    // captures .send() via the mocked constructor.
-    // Access it through the private field.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (service as any).asgClient;
-    return client?.send as ReturnType<typeof vi.fn>;
+  // Use the module-level mock send functions directly.
+  // Both AutoScalingClient and EC2Client .send() are captured via the mocked constructors above.
+  function getAsgClientSend(_service: AutoScaleService): ReturnType<typeof vi.fn> {
+    return mockAsgSend;
   }
 
   describe("evaluate() — queue=10, workers=2, jobsPerWorker=3 => desired=4", () => {
@@ -317,6 +318,57 @@ describe("AutoScaleService", () => {
 
       const capacity = await service.getCurrentCapacity();
       expect(capacity).toBe(0);
+    });
+  });
+
+  describe("syncAsgIps()", () => {
+    it("updates sandboxes and worker registry with current instance IPs", async () => {
+      setEnv();
+      process.env.GHOSTHANDS_API_URL = "http://10.0.0.1:3100";
+
+      const db = makeDb();
+      // syncAsgIps calls db.execute for each instance (sandboxes + worker_registry)
+      (db.execute as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const tqs = makeTaskQueueService();
+      const logger = makeLogger();
+
+      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+
+      mockEc2Send.mockResolvedValueOnce({
+        Reservations: [
+          {
+            Instances: [
+              { InstanceId: "i-abc123", PublicIpAddress: "1.2.3.4" },
+              { InstanceId: "i-def456", PublicIpAddress: "5.6.7.8" },
+            ],
+          },
+        ],
+      });
+
+      await service.syncAsgIps();
+
+      // 2 instances x 2 updates each (sandboxes + worker_registry) = 4 calls
+      // Plus the 2 from makeDb setup
+      expect(db.execute).toHaveBeenCalled();
+      // Should warn about GHOSTHANDS_API_URL mismatch
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ currentIps: ["1.2.3.4", "5.6.7.8"] }),
+        expect.stringContaining("GHOSTHANDS_API_URL"),
+      );
+    });
+
+    it("skips when disabled", async () => {
+      delete process.env.AUTOSCALE_ASG_ENABLED;
+
+      const db = makeDb();
+      const tqs = makeTaskQueueService();
+      const logger = makeLogger();
+
+      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+
+      await service.syncAsgIps();
+
+      expect(mockEc2Send).not.toHaveBeenCalled();
     });
   });
 });
