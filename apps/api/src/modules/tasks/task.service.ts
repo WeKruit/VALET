@@ -417,7 +417,7 @@ export class TaskService {
             platform: task.platform,
             resume_ref: { storage_path: resume?.fileKey ?? "" },
           },
-          priority: 0,
+          priority: 5,
           maxRetries: 1,
           tags: ["valet", "apply"],
           metadata: {
@@ -735,7 +735,7 @@ export class TaskService {
         targetUrl: task.jobUrl,
         taskDescription: `Retry of task ${id}`,
         inputData: originalGhJob.inputData ?? {},
-        priority: 0,
+        priority: 5,
         maxRetries: 3,
         timeoutSeconds: 1800,
         tags: ["retry", "valet"],
