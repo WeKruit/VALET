@@ -648,11 +648,46 @@ export class TaskService {
 
     this.logger.info({ taskId: id, jobId: task.workflowRunId }, "Retrying GhostHands job");
 
-    try {
-      await this.ghosthandsClient.retryJob(task.workflowRunId);
-    } catch (err) {
-      this.logger.error({ err, taskId: id }, "Failed to retry GhostHands job");
-      throw err;
+    if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+      // Queue mode: create new gh_automation_jobs record + enqueue via pg-boss
+      const callbackUrl = `${process.env.API_PUBLIC_URL || "http://localhost:8000"}/api/v1/webhooks/ghosthands`;
+      const ghJob = await this.ghJobRepo.insertPendingJob({
+        userId,
+        jobType: "apply",
+        targetUrl: task.jobUrl,
+        taskDescription: `Retry of task ${id}`,
+        priority: 0,
+        maxRetries: 3,
+        timeoutSeconds: 1800,
+        tags: ["retry"],
+        valetTaskId: id,
+        callbackUrl,
+        metadata: { retryOf: task.workflowRunId },
+      });
+
+      await this.taskQueueService.enqueueApplyJob(
+        {
+          ghJobId: ghJob.id,
+          valetTaskId: id,
+          userId,
+          targetUrl: task.jobUrl,
+          platform: task.platform || "other",
+          jobType: "apply",
+          callbackUrl,
+        },
+        { targetWorkerId: task.sandboxId || undefined },
+      );
+
+      // Update task to point to the new job
+      await this.taskRepo.updateWorkflowRunId(id, ghJob.id);
+    } else {
+      // Legacy REST mode
+      try {
+        await this.ghosthandsClient.retryJob(task.workflowRunId);
+      } catch (err) {
+        this.logger.error({ err, taskId: id }, "Failed to retry GhostHands job");
+        throw err;
+      }
     }
 
     await this.taskRepo.updateStatus(id, "queued");
@@ -681,8 +716,25 @@ export class TaskService {
 
     await this.taskRepo.cancel(id);
 
-    // Try to cancel the GhostHands job if one exists
+    // Cancel the GhostHands job if one exists
     if (task.workflowRunId) {
+      // In queue mode, also mark the gh_automation_jobs record as cancelled
+      if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+        try {
+          await this.ghJobRepo.updateStatus(task.workflowRunId, {
+            status: "cancelled",
+            completedAt: new Date(),
+            statusMessage: "Cancelled by user via VALET",
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err, taskId: id, jobId: task.workflowRunId },
+            "Failed to cancel gh_automation_jobs record",
+          );
+        }
+      }
+
+      // Also try REST cancel for in-flight jobs (needed if worker is already executing)
       try {
         await this.ghosthandsClient.cancelJob(task.workflowRunId);
       } catch (err) {
@@ -692,6 +744,21 @@ export class TaskService {
         );
       }
     }
+  }
+
+  /**
+   * Get pg-boss queue statistics.
+   * Returns stats if pg-boss is available, otherwise a zeroed-out response.
+   */
+  async getQueueStats() {
+    if (!this.taskQueueService.isAvailable) {
+      return { available: false, queued: 0, active: 0, completed: 0, failed: 0, all: 0 };
+    }
+    const stats = await this.taskQueueService.getQueueStats();
+    if (!stats) {
+      return { available: false, queued: 0, active: 0, completed: 0, failed: 0, all: 0 };
+    }
+    return { available: true, ...stats };
   }
 
   async approve(id: string, userId: string, fieldOverrides?: Record<string, string>) {
