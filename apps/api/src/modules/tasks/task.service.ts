@@ -722,19 +722,31 @@ export class TaskService {
 
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // Queue mode: create new gh_automation_jobs record + enqueue via pg-boss
+      // Fetch original job to copy inputData (profile, QA answers, resume ref, platform, tier)
+      const originalGhJob = await this.ghJobRepo.findById(task.workflowRunId);
+      if (!originalGhJob) {
+        throw new TaskNotResolvableError(id, "original GhostHands job not found for retry");
+      }
+
       const callbackUrl = buildCallbackUrl();
       const ghJob = await this.ghJobRepo.insertPendingJob({
         userId,
-        jobType: "apply",
+        jobType: originalGhJob.jobType ?? "apply",
         targetUrl: task.jobUrl,
         taskDescription: `Retry of task ${id}`,
+        inputData: originalGhJob.inputData ?? {},
         priority: 0,
         maxRetries: 3,
         timeoutSeconds: 1800,
-        tags: ["retry"],
+        tags: ["retry", "valet"],
         valetTaskId: id,
         callbackUrl,
-        metadata: { retryOf: task.workflowRunId },
+        targetWorkerId: originalGhJob.targetWorkerId ?? undefined,
+        workerAffinity: originalGhJob.targetWorkerId ? "strict" : undefined,
+        metadata: {
+          retryOf: task.workflowRunId,
+          quality_preset: originalGhJob.metadata?.quality_preset ?? "quality",
+        },
       });
 
       const targetWorkerId = task.sandboxId || undefined;

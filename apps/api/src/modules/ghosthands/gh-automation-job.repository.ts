@@ -25,6 +25,7 @@ export interface GhJobRecord {
   targetWorkerId: string | null;
   valetTaskId: string | null;
   interactionType: string | null;
+  inputData: Record<string, unknown> | null;
   interactionData: Record<string, unknown> | null;
   pausedAt: Date | null;
   metadata: Record<string, unknown> | null;
@@ -57,6 +58,7 @@ function toRecord(row: Record<string, unknown>): GhJobRecord {
     targetWorkerId: (row.targetWorkerId as string) ?? null,
     valetTaskId: (row.valetTaskId as string) ?? null,
     interactionType: (row.interactionType as string) ?? null,
+    inputData: (row.inputData as Record<string, unknown>) ?? null,
     interactionData: (row.interactionData as Record<string, unknown>) ?? null,
     pausedAt: (row.pausedAt as Date) ?? null,
     metadata: (row.metadata as Record<string, unknown>) ?? null,
