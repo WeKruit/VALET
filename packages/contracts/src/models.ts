@@ -4,18 +4,32 @@ import { z } from "zod";
 const c = initContract();
 
 const modelInfoSchema = z.object({
-  id: z.string(),
-  name: z.string(),
+  alias: z.string().optional(),
+  model: z.string(),
   provider: z.string(),
-  purpose: z.enum(["reasoning", "vision", "general"]),
-  context_window: z.number().optional(),
-  supports_vision: z.boolean().optional(),
+  provider_name: z.string().optional(),
+  vision: z.boolean().optional(),
+  cost: z
+    .object({
+      input: z.number().optional(),
+      output: z.number().optional(),
+      unit: z.string().optional(),
+    })
+    .optional(),
+  note: z.string().optional(),
+});
+
+const presetSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  model: z.string(),
 });
 
 const modelCatalogResponse = z.object({
   models: z.array(modelInfoSchema),
-  default_reasoning_model: z.string().optional(),
-  default_vision_model: z.string().optional(),
+  presets: z.array(presetSchema).optional(),
+  default: z.string().optional(),
+  total: z.number().optional(),
 });
 
 export const modelContract = c.router({
