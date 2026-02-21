@@ -132,18 +132,20 @@ export class TaskQueueService {
 
   /**
    * Cancel a pg-boss job if it hasn't been picked up yet.
+   * @param pgBossJobId - The pg-boss job ID to cancel.
+   * @param queueName - The queue the job was sent to. Defaults to the general queue.
    * @returns true if cancelled, false if already picked up or not found.
    */
-  async cancelJob(pgBossJobId: string): Promise<boolean> {
+  async cancelJob(pgBossJobId: string, queueName = QUEUE_APPLY_JOB): Promise<boolean> {
     const boss = this.pgBossService.instance;
     if (!boss) return false;
 
     try {
-      await boss.cancel(QUEUE_APPLY_JOB, pgBossJobId);
-      this.logger.info({ pgBossJobId }, "Cancelled pg-boss job");
+      await boss.cancel(queueName, pgBossJobId);
+      this.logger.info({ pgBossJobId, queueName }, "Cancelled pg-boss job");
       return true;
     } catch (err) {
-      this.logger.warn({ err, pgBossJobId }, "Failed to cancel pg-boss job");
+      this.logger.warn({ err, pgBossJobId, queueName }, "Failed to cancel pg-boss job");
       return false;
     }
   }
@@ -160,6 +162,9 @@ export class TaskQueueService {
       if (!queue) {
         return { queued: 0, active: 0, completed: 0, failed: 0, all: 0 };
       }
+      // TODO: pg-boss getQueue() only exposes queuedCount, activeCount, and totalCount.
+      // Completed/failed counts are not available via this API. To get these, we would
+      // need to query the pgboss.job table directly (e.g., SELECT count(*) WHERE state='completed').
       return {
         queued: queue.queuedCount,
         active: queue.activeCount,

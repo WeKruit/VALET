@@ -13,7 +13,7 @@ import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
-import type { TaskQueueService } from "./task-queue.service.js";
+import { QUEUE_APPLY_JOB, type TaskQueueService } from "./task-queue.service.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -379,7 +379,7 @@ export class TaskService {
           workerAffinity: body.targetWorkerId ? "strict" : undefined,
         });
 
-        await this.taskQueueService.enqueueApplyJob(
+        const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
           {
             ghJobId: ghJob.id,
             valetTaskId: task.id,
@@ -391,6 +391,21 @@ export class TaskService {
           },
           { targetWorkerId: body.targetWorkerId },
         );
+
+        // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
+        const pgBossQueueName = body.targetWorkerId
+          ? `${QUEUE_APPLY_JOB}:${body.targetWorkerId}`
+          : QUEUE_APPLY_JOB;
+        if (pgBossJobId) {
+          await this.ghJobRepo.updateStatus(ghJob.id, {
+            status: "queued",
+            metadata: {
+              ...(ghJob.metadata ?? {}),
+              pgBossJobId,
+              pgBossQueueName,
+            },
+          });
+        }
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
         await this.taskRepo.updateStatus(task.id, "queued");
@@ -555,7 +570,7 @@ export class TaskService {
           workerAffinity: "strict",
         });
 
-        await this.taskQueueService.enqueueGenericTask(
+        const pgBossJobId = await this.taskQueueService.enqueueGenericTask(
           {
             ghJobId: ghJob.id,
             valetTaskId: task.id,
@@ -567,6 +582,21 @@ export class TaskService {
           },
           { targetWorkerId: body.targetWorkerId },
         );
+
+        // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
+        const pgBossQueueName = body.targetWorkerId
+          ? `${QUEUE_APPLY_JOB}:${body.targetWorkerId}`
+          : QUEUE_APPLY_JOB;
+        if (pgBossJobId) {
+          await this.ghJobRepo.updateStatus(ghJob.id, {
+            status: "queued",
+            metadata: {
+              ...(ghJob.metadata ?? {}),
+              pgBossJobId,
+              pgBossQueueName,
+            },
+          });
+        }
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
         await this.taskRepo.updateStatus(task.id, "queued");
@@ -650,7 +680,7 @@ export class TaskService {
 
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // Queue mode: create new gh_automation_jobs record + enqueue via pg-boss
-      const callbackUrl = `${process.env.API_PUBLIC_URL || "http://localhost:8000"}/api/v1/webhooks/ghosthands`;
+      const callbackUrl = buildCallbackUrl();
       const ghJob = await this.ghJobRepo.insertPendingJob({
         userId,
         jobType: "apply",
@@ -665,7 +695,8 @@ export class TaskService {
         metadata: { retryOf: task.workflowRunId },
       });
 
-      await this.taskQueueService.enqueueApplyJob(
+      const targetWorkerId = task.sandboxId || undefined;
+      const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
           ghJobId: ghJob.id,
           valetTaskId: id,
@@ -675,8 +706,26 @@ export class TaskService {
           jobType: "apply",
           callbackUrl,
         },
-        { targetWorkerId: task.sandboxId || undefined },
+        { targetWorkerId },
       );
+
+      // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
+      const pgBossQueueName = targetWorkerId
+        ? `${QUEUE_APPLY_JOB}:${targetWorkerId}`
+        : QUEUE_APPLY_JOB;
+      if (pgBossJobId) {
+        await this.ghJobRepo.updateStatus(ghJob.id, {
+          status: "queued",
+          metadata: {
+            ...(((ghJob as unknown as Record<string, unknown>).metadata as Record<
+              string,
+              unknown
+            >) ?? {}),
+            pgBossJobId,
+            pgBossQueueName,
+          },
+        });
+      }
 
       // Update task to point to the new job
       await this.taskRepo.updateWorkflowRunId(id, ghJob.id);
@@ -718,9 +767,18 @@ export class TaskService {
 
     // Cancel the GhostHands job if one exists
     if (task.workflowRunId) {
-      // In queue mode, also mark the gh_automation_jobs record as cancelled
+      // In queue mode, cancel pg-boss job and mark the gh_automation_jobs record as cancelled
       if (useQueueDispatch() && this.taskQueueService.isAvailable) {
         try {
+          // Read GH job metadata for pg-boss job ID and queue name
+          const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
+          const pgBossJobId = ghJob?.metadata?.pgBossJobId as string | undefined;
+          const pgBossQueueName = ghJob?.metadata?.pgBossQueueName as string | undefined;
+
+          if (pgBossJobId) {
+            await this.taskQueueService.cancelJob(pgBossJobId, pgBossQueueName);
+          }
+
           await this.ghJobRepo.updateStatus(task.workflowRunId, {
             status: "cancelled",
             completedAt: new Date(),

@@ -27,6 +27,7 @@ export interface GhJobRecord {
   interactionType: string | null;
   interactionData: Record<string, unknown> | null;
   pausedAt: Date | null;
+  metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,6 +59,7 @@ function toRecord(row: Record<string, unknown>): GhJobRecord {
     interactionType: (row.interactionType as string) ?? null,
     interactionData: (row.interactionData as Record<string, unknown>) ?? null,
     pausedAt: (row.pausedAt as Date) ?? null,
+    metadata: (row.metadata as Record<string, unknown>) ?? null,
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
   };
@@ -192,7 +194,9 @@ export class GhAutomationJobRepository {
         status: "queued",
       })
       .returning();
-    return toRecord(rows[0] as Record<string, unknown>);
+    const row = rows[0];
+    if (!row) throw new Error("INSERT into gh_automation_jobs returned no rows");
+    return toRecord(row as Record<string, unknown>);
   }
 
   async findStuckJobs(stuckMinutes = 30): Promise<GhJobRecord[]> {
