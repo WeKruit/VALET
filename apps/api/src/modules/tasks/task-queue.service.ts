@@ -79,7 +79,7 @@ export class TaskQueueService {
 
     // Route to specific worker via named queue, or use the general queue
     const queueName = options?.targetWorkerId
-      ? `${QUEUE_APPLY_JOB}:${options.targetWorkerId}`
+      ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
 
     const jobId = await boss.send(queueName, payload, {
@@ -112,7 +112,7 @@ export class TaskQueueService {
     }
 
     const queueName = options?.targetWorkerId
-      ? `${QUEUE_APPLY_JOB}:${options.targetWorkerId}`
+      ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
 
     const jobId = await boss.send(queueName, payload, {
