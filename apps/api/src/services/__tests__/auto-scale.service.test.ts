@@ -70,6 +70,8 @@ describe("AutoScaleService", () => {
     process.env.AWS_ASG_NAME = "gh-worker-asg";
     process.env.AUTOSCALE_ASG_MIN = "1";
     process.env.AUTOSCALE_ASG_MAX = "10";
+    // NOTE: Production default is 1 (matching GH MAX_CONCURRENT_JOBS).
+    // Tests use 3 to verify the scaling formula with a non-trivial divisor.
     process.env.JOBS_PER_WORKER = "3";
     process.env.AWS_REGION = "us-east-1";
     Object.assign(process.env, overrides);

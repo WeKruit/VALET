@@ -36,7 +36,7 @@ export class AutoScaleService {
     this.asgName = process.env.AWS_ASG_NAME ?? "";
     this.minCapacity = parseInt(process.env.AUTOSCALE_ASG_MIN ?? "1", 10);
     this.maxCapacity = parseInt(process.env.AUTOSCALE_ASG_MAX ?? "10", 10);
-    this.jobsPerWorker = parseInt(process.env.JOBS_PER_WORKER ?? "3", 10);
+    this.jobsPerWorker = parseInt(process.env.JOBS_PER_WORKER ?? "1", 10);
 
     if (this.enabled) {
       this.asgClient = new AutoScalingClient({
@@ -52,34 +52,39 @@ export class AutoScaleService {
       return;
     }
 
-    const stats = await this.taskQueueService.getQueueStats();
-    const queueDepth = stats?.queued ?? 0;
+    try {
+      const stats = await this.taskQueueService.getQueueStats();
+      const queueDepth = stats?.queued ?? 0;
 
-    const desired = Math.min(
-      this.maxCapacity,
-      Math.max(this.minCapacity, Math.ceil(queueDepth / this.jobsPerWorker)),
-    );
-
-    const current = await this.getCurrentCapacity();
-
-    if (desired === current) {
-      this.logger.info(
-        { desired, current, queueDepth },
-        "ASG capacity matches desired — no change",
+      const desired = Math.min(
+        this.maxCapacity,
+        Math.max(this.minCapacity, Math.ceil(queueDepth / this.jobsPerWorker)),
       );
-      return;
+
+      const current = await this.getCurrentCapacity();
+
+      if (desired === current) {
+        this.logger.info(
+          { desired, current, queueDepth },
+          "ASG capacity matches desired — no change",
+        );
+        return;
+      }
+
+      this.logger.info({ desired, current, queueDepth }, "Updating ASG desired capacity");
+
+      await this.asgClient!.send(
+        new UpdateAutoScalingGroupCommand({
+          AutoScalingGroupName: this.asgName,
+          DesiredCapacity: desired,
+          MinSize: this.minCapacity,
+          MaxSize: this.maxCapacity,
+        }),
+      );
+    } catch (err) {
+      this.logger.error({ err }, "AutoScale evaluate failed");
+      // don't rethrow — let the pg-boss schedule continue
     }
-
-    this.logger.info({ desired, current, queueDepth }, "Updating ASG desired capacity");
-
-    await this.asgClient!.send(
-      new UpdateAutoScalingGroupCommand({
-        AutoScalingGroupName: this.asgName,
-        DesiredCapacity: desired,
-        MinSize: this.minCapacity,
-        MaxSize: this.maxCapacity,
-      }),
-    );
   }
 
   async getFleetStatus() {
