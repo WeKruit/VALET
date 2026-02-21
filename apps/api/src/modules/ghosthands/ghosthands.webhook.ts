@@ -316,19 +316,19 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           status: taskStatus,
         });
       } else if (taskStatus === "in_progress" && payload.status === "running") {
-        // Worker picked up the job: persist progress and publish WS event
-        const progress = payload.progress ?? 5;
-        const currentStep = payload.result_summary ?? "Processing application";
-        await taskRepo.updateProgress(task.id, { progress, currentStep });
+        // WEK-71: Progress is now computed from gh_job_events (single source of truth).
+        // No longer persist progress/currentStep to the tasks table from callbacks.
+        // The frontend reads live progress via getById() -> computeProgressFromEvents().
         await publishToUser(redis, task.userId, {
           type: "task_update",
           taskId: task.id,
           status: taskStatus,
-          progress,
-          currentStep,
         });
       } else {
         // Standard task_update for completed/failed/cancelled
+        // WEK-71: No longer persist currentStep to tasks table.
+        // Progress is computed from gh_job_events; terminal progress (100)
+        // is still set by updateStatus() for completed tasks.
         const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
         const stepLabel =
           taskStatus === "completed"
@@ -336,13 +336,11 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
             : taskStatus === "failed"
               ? `Failed: ${errorMessage}`
               : "Cancelled";
-        // Persist currentStep for terminal states (progress is set by updateStatus for completed)
-        await taskRepo.updateProgress(task.id, { currentStep: stepLabel });
         await publishToUser(redis, task.userId, {
           type: "task_update",
           taskId: task.id,
           status: taskStatus,
-          progress: taskStatus === "completed" ? 100 : task.progress,
+          progress: taskStatus === "completed" ? 100 : undefined,
           currentStep: stepLabel,
           result: resultObj,
           error: errorObj,

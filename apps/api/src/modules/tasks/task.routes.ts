@@ -5,6 +5,12 @@ import type { TaskResponse } from "@valet/shared/schemas";
 const s = initServer();
 
 export const taskRouter = s.router(taskContract, {
+  queueStats: async ({ request }) => {
+    const { taskService } = request.diScope.cradle;
+    const stats = await taskService.getQueueStats();
+    return { status: 200 as const, body: stats };
+  },
+
   stats: async ({ request }) => {
     const { taskService } = request.diScope.cradle;
     const stats = await taskService.stats(request.userId);

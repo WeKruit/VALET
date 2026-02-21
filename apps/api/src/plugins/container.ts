@@ -45,6 +45,8 @@ import { AuditLogRepository } from "../modules/sandboxes/audit-log.repository.js
 import { AuditLogService } from "../modules/sandboxes/audit-log.service.js";
 import { SandboxAgentClient } from "../modules/sandboxes/agent/sandbox-agent.client.js";
 import { DeployHistoryRepository } from "../modules/sandboxes/deploy-history.repository.js";
+import { PgBossService } from "../services/pgboss.service.js";
+import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -90,6 +92,8 @@ export interface AppCradle {
   auditLogService: AuditLogService;
   sandboxAgentClient: SandboxAgentClient;
   deployHistoryRepo: DeployHistoryRepository;
+  pgBossService: PgBossService;
+  taskQueueService: TaskQueueService;
 }
 
 declare module "@fastify/awilix" {
@@ -183,5 +187,7 @@ export default fp(async (fastify: FastifyInstance) => {
         }),
       { lifetime: Lifetime.SINGLETON },
     ),
+    pgBossService: asClass(PgBossService, { lifetime: Lifetime.SINGLETON }),
+    taskQueueService: asClass(TaskQueueService, { lifetime: Lifetime.SINGLETON }),
   });
 });

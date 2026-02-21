@@ -158,11 +158,9 @@ describe("Integration: Application Lifecycle (P0)", () => {
       // Verify task was updated to in_progress
       expect(taskRepo.updateStatus).toHaveBeenCalledWith(taskId, "in_progress");
 
-      // Verify progress was persisted
-      expect(taskRepo.updateProgress).toHaveBeenCalledWith(taskId, {
-        progress: 10,
-        currentStep: "Navigating to application page",
-      });
+      // WEK-71: Progress is no longer persisted to tasks table from callbacks.
+      // It's computed from gh_job_events at read time.
+      expect(taskRepo.updateProgress).not.toHaveBeenCalled();
 
       // Verify gh_automation_jobs was synced
       expect(ghJobRepo.updateStatus).toHaveBeenCalledWith(
@@ -225,10 +223,9 @@ describe("Integration: Application Lifecycle (P0)", () => {
         }),
       );
 
-      // Progress shows "Application submitted"
-      expect(taskRepo.updateProgress).toHaveBeenCalledWith(taskId, {
-        currentStep: "Application submitted successfully",
-      });
+      // WEK-71: Progress is no longer persisted to tasks table from callbacks.
+      // Terminal states (completed) set progress=100 in updateStatus().
+      expect(taskRepo.updateProgress).not.toHaveBeenCalled();
 
       // WebSocket published with completed status
       expect(redis.publish).toHaveBeenCalledWith(
