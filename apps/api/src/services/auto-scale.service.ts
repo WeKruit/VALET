@@ -46,8 +46,9 @@ export class AutoScaleService {
 
     this.enabled = process.env.AUTOSCALE_ASG_ENABLED === "true";
     this.asgName = process.env.AWS_ASG_NAME ?? "";
-    this.minCapacity = parseInt(process.env.AUTOSCALE_ASG_MIN ?? "1", 10);
-    this.maxCapacity = parseInt(process.env.AUTOSCALE_ASG_MAX ?? "10", 10);
+    // Canonical env vars: AUTOSCALE_MIN / AUTOSCALE_MAX (set on Fly.io)
+    this.minCapacity = parseInt(process.env.AUTOSCALE_MIN ?? "1", 10);
+    this.maxCapacity = parseInt(process.env.AUTOSCALE_MAX ?? "10", 10);
     this.jobsPerWorker = parseInt(process.env.JOBS_PER_WORKER ?? "1", 10);
 
     if (this.enabled) {
