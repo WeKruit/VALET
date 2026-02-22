@@ -36,6 +36,7 @@ function makeSandbox(overrides: Partial<SandboxRecord> = {}): SandboxRecord {
     ghImageTag: null,
     ghImageUpdatedAt: null,
     deployedCommitSha: null,
+    healthCheckFailureCount: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

@@ -113,6 +113,13 @@
       "when": 1742947200000,
       "tag": "0015_gh_job_events_realtime",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1745452800000,
+      "tag": "0016_add_health_failure_count",
+      "breakpoints": true
     }
   ]
 }

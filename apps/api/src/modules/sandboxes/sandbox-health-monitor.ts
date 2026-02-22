@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { SandboxService } from "./sandbox.service.js";
+import type { SandboxRepository } from "./sandbox.repository.js";
 import type { SandboxHealthStatus } from "@valet/shared/schemas";
 
 const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -7,23 +8,24 @@ const CONSECUTIVE_FAILURE_ALERT_THRESHOLD = 3;
 
 export class SandboxHealthMonitor {
   private sandboxService: SandboxService;
+  private sandboxRepo: SandboxRepository;
   private logger: FastifyBaseLogger;
   private intervalId: ReturnType<typeof setInterval> | null = null;
 
-  /** Track consecutive unhealthy check counts per sandbox */
-  private consecutiveFailures: Map<string, number> = new Map();
-
-  /** Track previous health status per sandbox to detect transitions */
+  /** Track previous health status per sandbox to detect transitions (in-memory is fine for this) */
   private previousHealthStatus: Map<string, SandboxHealthStatus> = new Map();
 
   constructor({
     sandboxService,
+    sandboxRepo,
     logger,
   }: {
     sandboxService: SandboxService;
+    sandboxRepo: SandboxRepository;
     logger: FastifyBaseLogger;
   }) {
     this.sandboxService = sandboxService;
+    this.sandboxRepo = sandboxRepo;
     this.logger = logger;
   }
 
@@ -87,10 +89,9 @@ export class SandboxHealthMonitor {
           );
         }
 
-        // Track consecutive failures
+        // Track consecutive failures via DB column
         if (current === "unhealthy" || current === "degraded") {
-          const count = (this.consecutiveFailures.get(result.sandboxId) ?? 0) + 1;
-          this.consecutiveFailures.set(result.sandboxId, count);
+          const count = await this.sandboxRepo.incrementHealthFailureCount(result.sandboxId);
 
           // Log individual unhealthy at warn level
           if (current === "unhealthy") {
@@ -113,20 +114,17 @@ export class SandboxHealthMonitor {
             );
           }
         } else {
-          // Reset failure counter on healthy check
-          if (this.consecutiveFailures.has(result.sandboxId)) {
-            const prevCount = this.consecutiveFailures.get(result.sandboxId)!;
-            if (prevCount > 0) {
-              this.logger.info(
-                {
-                  sandboxId: result.sandboxId,
-                  recoveredAfter: prevCount,
-                },
-                "Sandbox recovered — consecutive failure counter reset",
-              );
-            }
+          // Reset failure counter on healthy check (single call, no findById needed)
+          const prevCount = await this.sandboxRepo.resetHealthFailureCount(result.sandboxId);
+          if (prevCount > 0) {
+            this.logger.info(
+              {
+                sandboxId: result.sandboxId,
+                recoveredAfter: prevCount,
+              },
+              "Sandbox recovered — consecutive failure counter reset",
+            );
           }
-          this.consecutiveFailures.set(result.sandboxId, 0);
         }
 
         // Update previous status tracker

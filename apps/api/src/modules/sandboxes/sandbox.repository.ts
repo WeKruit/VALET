@@ -38,6 +38,7 @@ export interface SandboxRecord {
   ghImageTag: string | null;
   ghImageUpdatedAt: Date | null;
   deployedCommitSha: string | null;
+  healthCheckFailureCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -322,6 +323,45 @@ export class SandboxRepository {
         ),
       );
     return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
+  }
+
+  /**
+   * Atomically increment the health check failure count and return the new value.
+   * Used by SandboxHealthMonitor to track consecutive failures in the DB.
+   */
+  async incrementHealthFailureCount(id: string): Promise<number> {
+    const rows = await this.db
+      .update(sandboxes)
+      .set({
+        healthCheckFailureCount: sql`${sandboxes.healthCheckFailureCount} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(sandboxes.id, id))
+      .returning({ healthCheckFailureCount: sandboxes.healthCheckFailureCount });
+    return rows[0]?.healthCheckFailureCount ?? 0;
+  }
+
+  /**
+   * Reset health check failure count to 0 and return the previous value.
+   * Only issues an UPDATE when the count is actually > 0.
+   */
+  async resetHealthFailureCount(id: string): Promise<number> {
+    const rows = await this.db
+      .select({ count: sandboxes.healthCheckFailureCount })
+      .from(sandboxes)
+      .where(eq(sandboxes.id, id))
+      .limit(1);
+
+    const previousCount = rows[0]?.count ?? 0;
+
+    if (previousCount > 0) {
+      await this.db
+        .update(sandboxes)
+        .set({ healthCheckFailureCount: 0, updatedAt: new Date() })
+        .where(eq(sandboxes.id, id));
+    }
+
+    return previousCount;
   }
 
   /**

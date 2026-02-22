@@ -154,6 +154,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   ghImageTag: null,
   ghImageUpdatedAt: null,
   deployedCommitSha: null,
+  healthCheckFailureCount: 0,
   createdAt: new Date("2026-02-10T00:00:00Z"),
   updatedAt: new Date("2026-02-14T00:00:00Z"),
 };
