@@ -71,7 +71,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
 
-      const { taskRepo, ghJobRepo, sandboxRepo, redis } = request.diScope.cradle;
+      const { taskRepo, ghJobRepo, sandboxRepo, redis, kasmClient } = request.diScope.cradle;
       const payload = request.body as GHCallbackPayload;
 
       if (!payload?.job_id || !payload?.status) {
@@ -363,6 +363,29 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           result: resultObj,
           error: errorObj,
         });
+      }
+
+      // WEK-147: Clean up Kasm session on terminal status
+      if (
+        (taskStatus === "completed" || taskStatus === "failed" || taskStatus === "cancelled") &&
+        kasmClient
+      ) {
+        try {
+          const ghJobRecord = await ghJobRepo.findById(payload.job_id);
+          const kasmId = ghJobRecord?.metadata?.kasm_id as string | undefined;
+          if (kasmId) {
+            await kasmClient.destroyKasm(kasmId);
+            request.log.info(
+              { kasmId, jobId: payload.job_id },
+              "Destroyed Kasm session after job completion",
+            );
+          }
+        } catch (err) {
+          request.log.warn(
+            { err, jobId: payload.job_id },
+            "Failed to destroy Kasm session (may already be gone)",
+          );
+        }
       }
 
       return reply.status(200).send({ received: true });

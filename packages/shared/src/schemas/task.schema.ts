@@ -163,9 +163,13 @@ export const resolveBlockerResponse = z.object({
 });
 
 // ─── VNC URL Response ───
+export const liveViewType = z.enum(["novnc", "kasm"]);
+export type LiveViewType = z.infer<typeof liveViewType>;
+
 export const vncUrlResponse = z.object({
-  url: z.string().url(),
+  url: z.string(),
   readOnly: z.boolean(),
+  type: liveViewType.default("novnc"),
 });
 
 export type VncUrlResponse = z.infer<typeof vncUrlResponse>;

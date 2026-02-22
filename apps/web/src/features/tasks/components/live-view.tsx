@@ -1,16 +1,31 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Button } from "@valet/ui/components/button";
-import { Monitor, MonitorOff, Maximize2, Minimize2, MousePointer, Eye } from "lucide-react";
+import {
+  Monitor,
+  MonitorOff,
+  Maximize2,
+  Minimize2,
+  MousePointer,
+  Eye,
+  ExternalLink,
+} from "lucide-react";
 
 interface LiveViewProps {
   url: string;
   isVisible: boolean;
   onToggle: () => void;
   readOnly?: boolean;
+  type?: "novnc" | "kasm";
 }
 
-export function LiveView({ url, isVisible, onToggle, readOnly = false }: LiveViewProps) {
+export function LiveView({
+  url,
+  isVisible,
+  onToggle,
+  readOnly = false,
+  type = "novnc",
+}: LiveViewProps) {
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [viewOnly, setViewOnly] = useState(true);
 
@@ -23,6 +38,8 @@ export function LiveView({ url, isVisible, onToggle, readOnly = false }: LiveVie
     return null;
   }
 
+  const isKasm = type === "kasm";
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -32,7 +49,7 @@ export function LiveView({ url, isVisible, onToggle, readOnly = false }: LiveVie
             <CardTitle className="text-lg">Live View</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            {isVisible && (
+            {isVisible && !isKasm && (
               <>
                 {!readOnly && (
                   <Button
@@ -84,31 +101,53 @@ export function LiveView({ url, isVisible, onToggle, readOnly = false }: LiveVie
           </div>
         </div>
       </CardHeader>
-      {isVisible && (
-        <CardContent>
-          <div
-            className={`relative overflow-hidden rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-black ${
-              isFullWidth ? "w-full" : "max-w-4xl"
-            }`}
-          >
-            <div className="aspect-video">
-              <iframe
-                key={String(viewOnly)}
-                src={iframeUrl}
-                title="noVNC Live View"
-                className="h-full w-full border-0"
-                allow="clipboard-read; clipboard-write"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-              />
+      {isVisible &&
+        (isKasm ? (
+          <CardContent>
+            <div className="flex flex-col items-center justify-center gap-4 py-8 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-[var(--wk-bg-secondary)]">
+              <Monitor className="h-12 w-12 text-[var(--wk-text-tertiary)]" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-[var(--wk-text-primary)]">
+                  Browser automation is running
+                </p>
+                <p className="mt-1 text-xs text-[var(--wk-text-tertiary)]">
+                  Opens in a new tab with full desktop view
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+              >
+                <ExternalLink className="h-4 w-4 mr-1.5" />
+                Watch Live
+              </Button>
             </div>
-          </div>
-          <p className="mt-2 text-xs text-[var(--wk-text-tertiary)]">
-            {viewOnly
-              ? "Watching browser automation in real time (view only)"
-              : "Interactive mode — you have keyboard and mouse control"}
-          </p>
-        </CardContent>
-      )}
+          </CardContent>
+        ) : (
+          <CardContent>
+            <div
+              className={`relative overflow-hidden rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-black ${
+                isFullWidth ? "w-full" : "max-w-4xl"
+              }`}
+            >
+              <div className="aspect-video">
+                <iframe
+                  key={String(viewOnly)}
+                  src={iframeUrl}
+                  title="noVNC Live View"
+                  className="h-full w-full border-0"
+                  allow="clipboard-read; clipboard-write"
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-[var(--wk-text-tertiary)]">
+              {viewOnly
+                ? "Watching browser automation in real time (view only)"
+                : "Interactive mode — you have keyboard and mouse control"}
+            </p>
+          </CardContent>
+        ))}
     </Card>
   );
 }
