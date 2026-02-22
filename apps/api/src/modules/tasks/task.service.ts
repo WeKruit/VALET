@@ -1230,6 +1230,9 @@ export class TaskService {
       return null;
     }
 
-    return { url: sandbox.novncUrl, readOnly: true };
+    // Allow interactive control when task is waiting for human intervention
+    const readOnly = task.status !== "waiting_human";
+
+    return { url: sandbox.novncUrl, readOnly };
   }
 }

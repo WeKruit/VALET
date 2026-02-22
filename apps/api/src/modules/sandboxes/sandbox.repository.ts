@@ -1,4 +1,4 @@
-import { eq, and, count, desc, asc, ilike, or, sql, type SQL } from "drizzle-orm";
+import { eq, and, count, desc, asc, ilike, or, lt, sql, isNull, type SQL } from "drizzle-orm";
 import { sandboxes, type Database } from "@valet/db";
 import type {
   SandboxStatus,
@@ -254,6 +254,24 @@ export class SandboxRepository {
     return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
   }
 
+  /**
+   * Find active sandboxes, optionally filtered by machineType.
+   * Results are ordered: healthy first, then by most recent health check.
+   * Used by GhostHandsClient for dynamic GH API URL resolution.
+   */
+  async findActive(machineType?: string): Promise<SandboxRecord[]> {
+    const conditions: SQL[] = [eq(sandboxes.status, "active")];
+    if (machineType) {
+      conditions.push(eq(sandboxes.machineType, machineType));
+    }
+    const data = await this.db
+      .select()
+      .from(sandboxes)
+      .where(and(...conditions))
+      .orderBy(asc(sandboxes.healthStatus), desc(sandboxes.lastHealthCheckAt));
+    return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
+  }
+
   async findAutoStopCandidates(): Promise<SandboxRecord[]> {
     const data = await this.db
       .select()
@@ -285,5 +303,37 @@ export class SandboxRepository {
     )) as Array<{ worker_id: string }>;
 
     return rows[0]?.worker_id ?? null;
+   * Find active sandboxes whose last health check is older than `staleThresholdMs`
+   * or who have never been health-checked (lastHealthCheckAt is null).
+   */
+  async findStaleActive(staleThresholdMs: number): Promise<SandboxRecord[]> {
+    const cutoff = new Date(Date.now() - staleThresholdMs);
+    const data = await this.db
+      .select()
+      .from(sandboxes)
+      .where(
+        and(
+          eq(sandboxes.status, "active"),
+          eq(sandboxes.healthStatus, "healthy"),
+          or(lt(sandboxes.lastHealthCheckAt, cutoff), isNull(sandboxes.lastHealthCheckAt)),
+        ),
+      );
+    return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
+  }
+
+  /**
+   * Find all ASG-managed sandboxes (tagged with asg_managed: true).
+   * Used by syncAsgIps to reconcile ASG instances with DB records.
+   */
+  async findAsgManaged(): Promise<SandboxRecord[]> {
+    const data = await this.db.select().from(sandboxes).where(eq(sandboxes.status, "active"));
+    // Filter in JS since tags is a JSONB column and Drizzle doesn't natively
+    // support deep JSON field queries in a portable way.
+    return data
+      .map((r) => toSandboxRecord(r as Record<string, unknown>))
+      .filter((r) => {
+        const tags = r.tags as Record<string, unknown> | null;
+        return tags?.asg_managed === true;
+      });
   }
 }

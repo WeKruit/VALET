@@ -11,6 +11,7 @@ import sentryPlugin from "./plugins/sentry.js";
 import databasePlugin from "./plugins/database.js";
 import redisPlugin from "./plugins/redis.js";
 import containerPlugin from "./plugins/container.js";
+import startupValidatorPlugin from "./plugins/startup-validator.js";
 import securityPlugin from "./plugins/security.js";
 import swaggerPlugin from "./plugins/swagger.js";
 import { registerWebSocket } from "./websocket/handler.js";
@@ -66,6 +67,7 @@ export async function buildApp() {
   await fastify.register(databasePlugin);
   await fastify.register(redisPlugin);
   await fastify.register(containerPlugin);
+  await fastify.register(startupValidatorPlugin);
   await fastify.register(swaggerPlugin);
   await registerRateLimit(fastify);
 
@@ -90,6 +92,20 @@ export async function buildApp() {
     node_version: process.version,
     app: "valet-api",
   }));
+
+  // Startup validation results — exposes config checks run at boot
+  fastify.get("/api/v1/health/startup", async () => {
+    const results = fastify.configValidation ?? [];
+    const fails = results.filter((r) => r.status === "fail").length;
+    const warns = results.filter((r) => r.status === "warn").length;
+    const passes = results.filter((r) => r.status === "pass").length;
+    return {
+      status: fails > 0 ? ("degraded" as const) : ("ok" as const),
+      summary: { passes, warns, fails },
+      checks: results,
+      timestamp: new Date().toISOString(),
+    };
+  });
 
   // Register ts-rest routers
   const s = initServer();
@@ -131,8 +147,13 @@ export async function buildApp() {
 
   // Start monitors after server is ready
   fastify.addHook("onReady", async () => {
-    const { sandboxHealthMonitor, autoStopMonitor, autoScaleMonitor, pgBossService, staleTaskReconciliation } =
-      diContainer.cradle;
+    const {
+      sandboxHealthMonitor,
+      autoStopMonitor,
+      autoScaleMonitor,
+      pgBossService,
+      staleTaskReconciliation,
+    } = diContainer.cradle;
     sandboxHealthMonitor.start();
     autoStopMonitor.start();
     autoScaleMonitor.start();
@@ -145,8 +166,13 @@ export async function buildApp() {
 
   // Stop monitors and pg-boss on close
   fastify.addHook("onClose", async () => {
-    const { sandboxHealthMonitor, autoStopMonitor, autoScaleMonitor, pgBossService, staleTaskReconciliation } =
-      diContainer.cradle;
+    const {
+      sandboxHealthMonitor,
+      autoStopMonitor,
+      autoScaleMonitor,
+      pgBossService,
+      staleTaskReconciliation,
+    } = diContainer.cradle;
     sandboxHealthMonitor.stop();
     autoStopMonitor.stop();
     autoScaleMonitor.stop();

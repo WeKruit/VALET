@@ -1,12 +1,20 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { SandboxService } from "./sandbox.service.js";
+import type { SandboxHealthStatus } from "@valet/shared/schemas";
 
 const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const CONSECUTIVE_FAILURE_ALERT_THRESHOLD = 3;
 
 export class SandboxHealthMonitor {
   private sandboxService: SandboxService;
   private logger: FastifyBaseLogger;
   private intervalId: ReturnType<typeof setInterval> | null = null;
+
+  /** Track consecutive unhealthy check counts per sandbox */
+  private consecutiveFailures: Map<string, number> = new Map();
+
+  /** Track previous health status per sandbox to detect transitions */
+  private previousHealthStatus: Map<string, SandboxHealthStatus> = new Map();
 
   constructor({
     sandboxService,
@@ -59,18 +67,88 @@ export class SandboxHealthMonitor {
         "Sandbox health check completed",
       );
 
-      // Only log individual unhealthy sandboxes at warn level (not error) to reduce noise
+      // Track transitions + consecutive failures for each result
       for (const result of results) {
-        if (result.healthStatus === "unhealthy") {
+        const prev = this.previousHealthStatus.get(result.sandboxId);
+        const current = result.healthStatus;
+
+        // Detect healthy -> unhealthy transition
+        if (prev === "healthy" && (current === "unhealthy" || current === "degraded")) {
+          const failedChecks = (result.details as Record<string, unknown>)?.checks;
           this.logger.warn(
-            { sandboxId: result.sandboxId, details: result.details },
-            "Sandbox is unhealthy",
+            {
+              sandboxId: result.sandboxId,
+              previousStatus: prev,
+              currentStatus: current,
+              failedChecks,
+              details: result.details,
+            },
+            `Sandbox health transition: ${prev} -> ${current}`,
           );
         }
+
+        // Track consecutive failures
+        if (current === "unhealthy" || current === "degraded") {
+          const count = (this.consecutiveFailures.get(result.sandboxId) ?? 0) + 1;
+          this.consecutiveFailures.set(result.sandboxId, count);
+
+          // Log individual unhealthy at warn level
+          if (current === "unhealthy") {
+            this.logger.warn(
+              { sandboxId: result.sandboxId, consecutiveFailures: count, details: result.details },
+              "Sandbox is unhealthy",
+            );
+          }
+
+          // ALERT: 3+ consecutive failures
+          if (count >= CONSECUTIVE_FAILURE_ALERT_THRESHOLD) {
+            this.logger.error(
+              {
+                sandboxId: result.sandboxId,
+                consecutiveFailures: count,
+                healthStatus: current,
+                details: result.details,
+              },
+              `ALERT: Sandbox has been unhealthy for ${count} consecutive checks — investigate immediately`,
+            );
+          }
+        } else {
+          // Reset failure counter on healthy check
+          if (this.consecutiveFailures.has(result.sandboxId)) {
+            const prevCount = this.consecutiveFailures.get(result.sandboxId)!;
+            if (prevCount > 0) {
+              this.logger.info(
+                {
+                  sandboxId: result.sandboxId,
+                  recoveredAfter: prevCount,
+                },
+                "Sandbox recovered — consecutive failure counter reset",
+              );
+            }
+          }
+          this.consecutiveFailures.set(result.sandboxId, 0);
+        }
+
+        // Update previous status tracker
+        this.previousHealthStatus.set(result.sandboxId, current);
       }
 
       // Send keepalives for all checked sandboxes (prevents Kasm session expiry)
       await this.sendKeepalives(results.map((r) => r.sandboxId));
+
+      // Enforce state consistency: downgrade any sandbox that hasn't passed
+      // a health check within the last 10 minutes from 'healthy' to 'degraded'
+      try {
+        const downgraded = await this.sandboxService.enforceStateConsistency();
+        if (downgraded > 0) {
+          this.logger.info(
+            { downgraded },
+            "State consistency enforcement complete — stale sandboxes downgraded",
+          );
+        }
+      } catch (err) {
+        this.logger.error({ err }, "Failed to enforce state consistency");
+      }
     } catch (err) {
       this.logger.error({ err }, "Failed to run scheduled health checks");
     }

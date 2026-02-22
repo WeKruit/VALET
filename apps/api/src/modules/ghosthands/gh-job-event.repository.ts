@@ -40,6 +40,26 @@ export class GhJobEventRepository {
     }));
   }
 
+  async insertEvent(event: {
+    jobId: string;
+    eventType: string;
+    fromStatus?: string | null;
+    toStatus?: string | null;
+    message?: string | null;
+    metadata?: Record<string, unknown> | null;
+    actor?: string | null;
+  }): Promise<void> {
+    await this.db.insert(ghJobEvents).values({
+      jobId: event.jobId,
+      eventType: event.eventType,
+      fromStatus: event.fromStatus ?? null,
+      toStatus: event.toStatus ?? null,
+      message: event.message ?? null,
+      metadata: event.metadata ?? null,
+      actor: event.actor ?? null,
+    });
+  }
+
   /**
    * Returns the most recent progress_update event for a job.
    * Used to compute progress from gh_job_events (single source of truth)

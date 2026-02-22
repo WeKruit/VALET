@@ -13,7 +13,7 @@
  *   pnpm --filter @valet/worker exec tsx src/scripts/load-test.ts --scenario health-only
  *
  * Environment variables:
- *   SANDBOX_IP       - Public IP of the sandbox to test (default: 34.197.248.80)
+ *   SANDBOX_IP       - Public IP of the sandbox to test (default: current ASG instance)
  *   ADSPOWER_API_URL - AdsPower API URL (default: http://${SANDBOX_IP}:50325)
  *   CONCURRENCY      - Number of concurrent sessions (default: 20)
  */
@@ -37,18 +37,10 @@ function getArg(name: string, fallback: string): string {
   return idx >= 0 && args[idx + 1] ? args[idx + 1]! : fallback;
 }
 
-const SANDBOX_IP = process.env.SANDBOX_IP ?? "34.197.248.80";
-const ADSPOWER_API_URL =
-  process.env.ADSPOWER_API_URL ?? `http://${SANDBOX_IP}:50325`;
-const CONCURRENCY = parseInt(
-  getArg("concurrency", process.env.CONCURRENCY ?? "20"),
-  10,
-);
-const SCENARIO = getArg("scenario", "all") as
-  | "all"
-  | "health-only"
-  | "browser-only"
-  | "api-stress";
+const SANDBOX_IP = process.env.SANDBOX_IP ?? "44.198.167.49";
+const ADSPOWER_API_URL = process.env.ADSPOWER_API_URL ?? `http://${SANDBOX_IP}:50325`;
+const CONCURRENCY = parseInt(getArg("concurrency", process.env.CONCURRENCY ?? "20"), 10);
+const SCENARIO = getArg("scenario", "all") as "all" | "health-only" | "browser-only" | "api-stress";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -179,15 +171,11 @@ class MetricsSampler {
       peakMemoryMb: Math.max(...memValues, 0),
       averageCpuPercent:
         cpuValues.length > 0
-          ? Math.round(
-              (cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length) * 100,
-            ) / 100
+          ? Math.round((cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length) * 100) / 100
           : 0,
       averageMemoryMb:
         memValues.length > 0
-          ? Math.round(
-              memValues.reduce((a, b) => a + b, 0) / memValues.length,
-            )
+          ? Math.round(memValues.reduce((a, b) => a + b, 0) / memValues.length)
           : 0,
       samples: this.samples,
     };
@@ -292,9 +280,7 @@ async function browserLifecycleTask(taskId: number): Promise<TaskResult> {
 
     // Stop browser
     const stopParams = new URLSearchParams({ user_id: profileId });
-    await fetch(
-      `${ADSPOWER_API_URL}/api/v1/browser/stop?${stopParams.toString()}`,
-    );
+    await fetch(`${ADSPOWER_API_URL}/api/v1/browser/stop?${stopParams.toString()}`);
 
     await sleep(300);
 
@@ -316,9 +302,9 @@ async function browserLifecycleTask(taskId: number): Promise<TaskResult> {
     if (profileId) {
       try {
         const stopParams = new URLSearchParams({ user_id: profileId });
-        await fetch(
-          `${ADSPOWER_API_URL}/api/v1/browser/stop?${stopParams.toString()}`,
-        ).catch(() => {});
+        await fetch(`${ADSPOWER_API_URL}/api/v1/browser/stop?${stopParams.toString()}`).catch(
+          () => {},
+        );
         await sleep(200);
         await fetch(`${ADSPOWER_API_URL}/api/v1/user/delete`, {
           method: "POST",
@@ -398,9 +384,7 @@ function buildReport(
       failed: failed.length,
       averageDurationMs:
         durations.length > 0
-          ? Math.round(
-              durations.reduce((a, b) => a + b, 0) / durations.length,
-            )
+          ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
           : 0,
       p50Ms: percentile(durations, 50),
       p95Ms: percentile(durations, 95),
@@ -452,11 +436,7 @@ async function main() {
   try {
     // Scenario 1: Health check stress
     if (SCENARIO === "all" || SCENARIO === "health-only") {
-      const healthResults = await runScenario(
-        "health-check",
-        healthCheckTask,
-        CONCURRENCY,
-      );
+      const healthResults = await runScenario("health-check", healthCheckTask, CONCURRENCY);
       allResults = allResults.concat(healthResults);
 
       // Brief pause between scenarios
@@ -477,11 +457,7 @@ async function main() {
 
     // Scenario 3: API stress
     if (SCENARIO === "all" || SCENARIO === "api-stress") {
-      const apiResults = await runScenario(
-        "api-stress",
-        apiStressTask,
-        CONCURRENCY,
-      );
+      const apiResults = await runScenario("api-stress", apiStressTask, CONCURRENCY);
       allResults = allResults.concat(apiResults);
     }
   } finally {
@@ -496,9 +472,15 @@ async function main() {
   // Print summary
   log("=== RESULTS ===");
   log(`Total execution time: ${report.totalExecutionMs}ms`);
-  log(`Tasks: ${report.results.total} total, ${report.results.succeeded} passed, ${report.results.failed} failed`);
-  log(`Latency: avg=${report.results.averageDurationMs}ms, p50=${report.results.p50Ms}ms, p95=${report.results.p95Ms}ms, p99=${report.results.p99Ms}ms`);
-  log(`System: peak CPU=${report.systemMetrics.peakCpuPercent}%, peak Memory=${report.systemMetrics.peakMemoryMb}MB`);
+  log(
+    `Tasks: ${report.results.total} total, ${report.results.succeeded} passed, ${report.results.failed} failed`,
+  );
+  log(
+    `Latency: avg=${report.results.averageDurationMs}ms, p50=${report.results.p50Ms}ms, p95=${report.results.p95Ms}ms, p99=${report.results.p99Ms}ms`,
+  );
+  log(
+    `System: peak CPU=${report.systemMetrics.peakCpuPercent}%, peak Memory=${report.systemMetrics.peakMemoryMb}MB`,
+  );
 
   if (report.errors.length > 0) {
     log("Errors:");

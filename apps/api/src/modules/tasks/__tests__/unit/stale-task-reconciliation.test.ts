@@ -31,6 +31,12 @@ function makeMockTaskRepo() {
   };
 }
 
+function makeMockGhJobEventRepo() {
+  return {
+    insertEvent: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 function makeMockRedis() {
   return {
     publish: vi.fn().mockResolvedValue(1),
@@ -74,6 +80,7 @@ function makeStuckTask(
 describe("StaleTaskReconciliationMonitor", () => {
   let taskService: ReturnType<typeof makeMockTaskService>;
   let taskRepo: ReturnType<typeof makeMockTaskRepo>;
+  let ghJobEventRepo: ReturnType<typeof makeMockGhJobEventRepo>;
   let redis: ReturnType<typeof makeMockRedis>;
   let logger: ReturnType<typeof makeMockLogger>;
   let monitor: StaleTaskReconciliationMonitor;
@@ -82,12 +89,14 @@ describe("StaleTaskReconciliationMonitor", () => {
     vi.useFakeTimers();
     taskService = makeMockTaskService();
     taskRepo = makeMockTaskRepo();
+    ghJobEventRepo = makeMockGhJobEventRepo();
     redis = makeMockRedis();
     logger = makeMockLogger();
     mockPublishToUser.mockClear();
     monitor = new StaleTaskReconciliationMonitor({
       taskService: taskService as never,
       taskRepo: taskRepo as never,
+      ghJobEventRepo: ghJobEventRepo as never,
       redis: redis as never,
       logger: logger as never,
     });
@@ -154,6 +163,8 @@ describe("StaleTaskReconciliationMonitor", () => {
           error: expect.objectContaining({ code: "reconciliation_timeout" }),
         }),
       );
+      // No audit event when workflowRunId is null
+      expect(ghJobEventRepo.insertEvent).not.toHaveBeenCalled();
       // Verify WebSocket notification was sent
       expect(mockPublishToUser).toHaveBeenCalledWith(
         expect.anything(),
@@ -180,6 +191,15 @@ describe("StaleTaskReconciliationMonitor", () => {
         "task-1",
         expect.objectContaining({
           ghJobId: "wf-1",
+        }),
+      );
+      // Audit event written to gh_job_events
+      expect(ghJobEventRepo.insertEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: "wf-1",
+          eventType: "status_change",
+          toStatus: "failed",
+          actor: "reconciliation_monitor",
         }),
       );
       // WebSocket notification sent

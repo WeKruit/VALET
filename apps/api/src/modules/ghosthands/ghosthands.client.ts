@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { AppError } from "../../common/errors.js";
+import type { SandboxRepository } from "../sandboxes/sandbox.repository.js";
 import type {
   GHSubmitApplicationParams,
   GHSubmitApplicationResponse,
@@ -21,11 +22,19 @@ import type {
   GHModelCatalog,
 } from "./ghosthands.types.js";
 
+/** TTL for cached resolved URLs (30 seconds) */
+const URL_CACHE_TTL_MS = 30_000;
+
 export class GhostHandsClient {
   private baseUrl: string;
   private workerBaseUrl: string;
   private serviceKey: string;
   private logger: FastifyBaseLogger;
+  private sandboxRepo: SandboxRepository | null = null;
+
+  /** Cached resolved IP — shared between resolveApiUrl and resolveWorkerUrl */
+  private _cachedIp: string | null = null;
+  private _cachedIpTimestamp = 0;
 
   constructor({
     ghosthandsApiUrl,
@@ -42,13 +51,81 @@ export class GhostHandsClient {
     this.logger = logger;
   }
 
+  /**
+   * Inject the SandboxRepository for dynamic GH API URL resolution.
+   * Called after DI container construction to avoid circular dependencies.
+   */
+  setSandboxRepository(repo: SandboxRepository): void {
+    this.sandboxRepo = repo;
+  }
+
+  /**
+   * Resolve the healthy EC2 sandbox IP, with a 30s TTL cache to avoid
+   * hitting the DB on every request.
+   */
+  private async resolveHealthyIp(): Promise<string | null> {
+    const now = Date.now();
+    if (this._cachedIp && now - this._cachedIpTimestamp < URL_CACHE_TTL_MS) {
+      return this._cachedIp;
+    }
+
+    if (!this.sandboxRepo) return null;
+
+    try {
+      const sandboxes = await this.sandboxRepo.findActive("ec2");
+      const healthy = sandboxes.find((s) => s.healthStatus === "healthy" && s.publicIp);
+      if (healthy?.publicIp) {
+        this._cachedIp = healthy.publicIp;
+        this._cachedIpTimestamp = now;
+        return healthy.publicIp;
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to resolve dynamic GH IP, falling back to static");
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve the GH API URL dynamically from the database.
+   * Prefers healthy EC2 sandbox IPs over the static env var.
+   * Falls back to the static baseUrl if no healthy sandbox is found or on error.
+   */
+  async resolveApiUrl(): Promise<string> {
+    const ip = await this.resolveHealthyIp();
+    if (ip) {
+      const dynamicUrl = `http://${ip}:3100`;
+      if (dynamicUrl !== this.baseUrl) {
+        this.logger.info(
+          { dynamicUrl, staticUrl: this.baseUrl },
+          "GhostHands using dynamic API URL from sandbox DB",
+        );
+      }
+      return dynamicUrl;
+    }
+    return this.baseUrl;
+  }
+
+  /**
+   * Resolve the GH worker URL (port 3101) dynamically from the database.
+   * Falls back to the static workerBaseUrl.
+   */
+  private async resolveWorkerUrl(): Promise<string> {
+    const ip = await this.resolveHealthyIp();
+    if (ip) {
+      return `http://${ip}:3101`;
+    }
+    return this.workerBaseUrl;
+  }
+
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
     timeoutMs = 15_000,
   ): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
+    const apiUrl = await this.resolveApiUrl();
+    const url = `${apiUrl}${path}`;
     this.logger.debug({ method, url }, "GhostHands request");
 
     const res = await fetch(url, {
@@ -69,8 +146,12 @@ export class GhostHandsClient {
       );
 
       if (res.status === 409) {
-        const parsed = JSON.parse(text) as GHSubmitApplicationResponse;
-        return parsed as T;
+        try {
+          const parsed = JSON.parse(text) as GHSubmitApplicationResponse;
+          return parsed as T;
+        } catch {
+          throw AppError.internal(`GhostHands API 409 conflict with non-JSON body`);
+        }
       }
 
       throw AppError.internal(`GhostHands API error: ${res.status} ${res.statusText}`);
@@ -80,7 +161,8 @@ export class GhostHandsClient {
   }
 
   private async workerRequest<T>(method: string, path: string, timeoutMs = 5_000): Promise<T> {
-    const url = `${this.workerBaseUrl}${path}`;
+    const workerUrl = await this.resolveWorkerUrl();
+    const url = `${workerUrl}${path}`;
     this.logger.debug({ method, url }, "GhostHands worker request");
     const res = await fetch(url, {
       method,
