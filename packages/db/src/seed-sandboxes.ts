@@ -39,7 +39,7 @@ try {
       capacity: 1,
       currentLoad: 0,
       sshKeyName: "valet-worker.pem",
-      novncUrl: "http://44.198.167.49:6080",
+      novncUrl: null,
       tags: {
         purpose: "staging",
         region: "us-east-1",
@@ -57,7 +57,7 @@ try {
         status: "active",
         healthStatus: "degraded",
         capacity: 1,
-        novncUrl: "http://44.198.167.49:6080",
+        novncUrl: null,
         tags: {
           purpose: "staging",
           region: "us-east-1",
