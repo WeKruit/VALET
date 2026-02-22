@@ -112,6 +112,8 @@ export const sandboxRouter = s.router(sandboxContract, {
         notes: body.notes,
         quality: body.quality,
         targetWorkerId: sandbox.id,
+        reasoningModel: body.reasoningModel,
+        visionModel: body.visionModel,
       },
       request.userId,
     );

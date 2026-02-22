@@ -393,6 +393,8 @@ export class TaskService {
       notes?: string;
       quality?: "speed" | "balanced" | "quality";
       targetWorkerId?: string;
+      reasoningModel?: string;
+      visionModel?: string;
     },
     userId: string,
   ) {
@@ -463,6 +465,8 @@ export class TaskService {
           tags: ["valet", "apply"],
           metadata: {
             quality_preset: body.quality ?? (body.mode === "autopilot" ? "speed" : "quality"),
+            ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
+            ...(body.visionModel ? { image_model: body.visionModel } : {}),
           },
           targetWorkerId: resolvedWorkerId ?? body.targetWorkerId,
           callbackUrl,
@@ -534,6 +538,8 @@ export class TaskService {
           qa_answers: Object.keys(qaAnswers).length > 0 ? qaAnswers : undefined,
           callback_url: callbackUrl,
           quality: body.quality ?? (body.mode === "autopilot" ? "speed" : "quality"),
+          ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
+          ...(body.visionModel ? { image_model: body.visionModel } : {}),
           max_retries: 1,
           ...(body.targetWorkerId
             ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }
