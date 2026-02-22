@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AutoScaleService } from "../auto-scale.service.js";
 import type { TaskQueueService, QueueStats } from "../../modules/tasks/task-queue.service.js";
+import type { SandboxRepository } from "../../modules/sandboxes/sandbox.repository.js";
+import type { SandboxService } from "../../modules/sandboxes/sandbox.service.js";
 import type { Database } from "@valet/db";
 import type { FastifyBaseLogger } from "fastify";
 
@@ -49,6 +51,26 @@ function makeTaskQueueService(stats: QueueStats | null = null): TaskQueueService
   } as unknown as TaskQueueService;
 }
 
+function makeSandboxRepo(): SandboxRepository {
+  return {
+    findByInstanceId: vi.fn().mockResolvedValue(null),
+    findAsgManaged: vi.fn().mockResolvedValue([]),
+    update: vi.fn().mockResolvedValue(null),
+    create: vi.fn().mockResolvedValue({ id: "new-sandbox-id" }),
+  } as unknown as SandboxRepository;
+}
+
+function makeSandboxService(): SandboxService {
+  return {
+    healthCheck: vi.fn().mockResolvedValue({
+      sandboxId: "test",
+      healthStatus: "healthy",
+      checkedAt: new Date(),
+      details: {},
+    }),
+  } as unknown as SandboxService;
+}
+
 function makeDb(
   statusRows: Array<{ status: string; count: string }> = [],
   idleCount = "0",
@@ -93,6 +115,22 @@ describe("AutoScaleService", () => {
     return mockAsgSend;
   }
 
+  function makeService(overrides?: {
+    db?: Database;
+    tqs?: TaskQueueService;
+    logger?: FastifyBaseLogger;
+    sandboxRepo?: SandboxRepository;
+    sandboxService?: SandboxService;
+  }) {
+    return new AutoScaleService({
+      logger: overrides?.logger ?? makeLogger(),
+      taskQueueService: overrides?.tqs ?? makeTaskQueueService(),
+      db: overrides?.db ?? makeDb(),
+      sandboxRepo: overrides?.sandboxRepo ?? makeSandboxRepo(),
+      sandboxService: overrides?.sandboxService ?? makeSandboxService(),
+    });
+  }
+
   describe("evaluate() — queue=10, workers=2, jobsPerWorker=3 => desired=4", () => {
     it("calls UpdateAutoScalingGroup with desired=4", async () => {
       setEnv({ JOBS_PER_WORKER: "3" });
@@ -101,7 +139,7 @@ describe("AutoScaleService", () => {
       const tqs = makeTaskQueueService({ queued: 10, active: 0, completed: 0, failed: 0, all: 10 });
       const logger = makeLogger();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService({ logger, tqs, db });
       const send = getAsgClientSend(service);
 
       // DescribeAutoScalingGroups returns current=2
@@ -134,7 +172,7 @@ describe("AutoScaleService", () => {
       const tqs = makeTaskQueueService({ queued: 0, active: 0, completed: 0, failed: 0, all: 0 });
       const logger = makeLogger();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService({ logger, tqs, db });
       const send = getAsgClientSend(service);
 
       // DescribeAutoScalingGroups returns current=3
@@ -163,7 +201,7 @@ describe("AutoScaleService", () => {
       const tqs = makeTaskQueueService({ queued: 50, active: 0, completed: 0, failed: 0, all: 50 });
       const logger = makeLogger();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService({ logger, tqs, db });
       const send = getAsgClientSend(service);
 
       // DescribeAutoScalingGroups returns current=5
@@ -192,7 +230,7 @@ describe("AutoScaleService", () => {
       const tqs = makeTaskQueueService({ queued: 3, active: 0, completed: 0, failed: 0, all: 3 });
       const logger = makeLogger();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService({ logger, tqs, db });
       const send = getAsgClientSend(service);
 
       // DescribeAutoScalingGroups returns current=1 (matches desired=1)
@@ -222,7 +260,7 @@ describe("AutoScaleService", () => {
       });
       const logger = makeLogger();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService({ logger, tqs, db });
 
       await service.evaluate();
 
@@ -247,7 +285,7 @@ describe("AutoScaleService", () => {
       const tqs = makeTaskQueueService({ queued: 5, active: 2, completed: 10, failed: 1, all: 18 });
       const logger = makeLogger();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService({ logger, tqs, db });
       const send = getAsgClientSend(service);
 
       send.mockResolvedValueOnce({
@@ -280,7 +318,7 @@ describe("AutoScaleService", () => {
       const tqs = makeTaskQueueService();
       const logger = makeLogger();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService({ logger, tqs, db });
 
       const stats = await service.getWorkerStats();
 
@@ -296,11 +334,7 @@ describe("AutoScaleService", () => {
     it("returns 0 when ASG client is not configured", async () => {
       delete process.env.AUTOSCALE_ASG_ENABLED;
 
-      const db = makeDb();
-      const tqs = makeTaskQueueService();
-      const logger = makeLogger();
-
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService();
 
       const capacity = await service.getCurrentCapacity();
       expect(capacity).toBe(0);
@@ -309,11 +343,7 @@ describe("AutoScaleService", () => {
     it("returns 0 when ASG is not found", async () => {
       setEnv();
 
-      const db = makeDb();
-      const tqs = makeTaskQueueService();
-      const logger = makeLogger();
-
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService();
       const send = getAsgClientSend(service);
 
       send.mockResolvedValueOnce({ AutoScalingGroups: [] });
@@ -324,53 +354,201 @@ describe("AutoScaleService", () => {
   });
 
   describe("syncAsgIps()", () => {
-    it("updates sandboxes and worker registry with current instance IPs", async () => {
+    it("updates existing sandbox by instanceId and triggers health check on IP change", async () => {
       setEnv();
-      process.env.GHOSTHANDS_API_URL = "http://10.0.0.1:3100";
+      process.env.GHOSTHANDS_API_URL = "http://1.2.3.4:3100";
 
       const db = makeDb();
-      // syncAsgIps calls db.execute for each instance (sandboxes + worker_registry)
       (db.execute as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-      const tqs = makeTaskQueueService();
       const logger = makeLogger();
+      const sandboxRepo = makeSandboxRepo();
+      const sandboxService = makeSandboxService();
 
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      // findAsgManaged returns sandbox with OLD IP — the sync will detect the change
+      (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "sb-1",
+          name: "gh-worker-asg-1",
+          instanceId: "i-abc123",
+          publicIp: "10.0.0.1", // old IP — EC2 now reports 1.2.3.4
+          status: "active",
+          tags: { asg_managed: true },
+        },
+      ]);
+
+      const service = makeService({ logger, db, sandboxRepo, sandboxService });
 
       mockEc2Send.mockResolvedValueOnce({
         Reservations: [
           {
-            Instances: [
-              { InstanceId: "i-abc123", PublicIpAddress: "1.2.3.4" },
-              { InstanceId: "i-def456", PublicIpAddress: "5.6.7.8" },
-            ],
+            Instances: [{ InstanceId: "i-abc123", PublicIpAddress: "1.2.3.4" }],
           },
         ],
       });
 
       await service.syncAsgIps();
 
-      // 2 instances x 2 updates each (sandboxes + worker_registry) = 4 calls
-      // Plus the 2 from makeDb setup
+      // Should have updated the sandbox with new IP
+      expect(sandboxRepo.update).toHaveBeenCalledWith("sb-1", {
+        publicIp: "1.2.3.4",
+        instanceId: "i-abc123",
+      });
+
+      // Should have triggered health check
+      expect(sandboxService.healthCheck).toHaveBeenCalledWith("sb-1");
+
+      // Worker registry update via raw SQL
       expect(db.execute).toHaveBeenCalled();
-      // Should warn about GHOSTHANDS_API_URL mismatch
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ currentIps: ["1.2.3.4", "5.6.7.8"] }),
-        expect.stringContaining("GHOSTHANDS_API_URL"),
+    });
+
+    it("creates new sandbox for unknown ASG instance", async () => {
+      setEnv();
+      process.env.GHOSTHANDS_API_URL = "http://5.6.7.8:3100";
+
+      const db = makeDb();
+      (db.execute as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const logger = makeLogger();
+      const sandboxRepo = makeSandboxRepo();
+      const sandboxService = makeSandboxService();
+
+      // No existing sandbox for this instanceId
+      (sandboxRepo.findByInstanceId as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+      // No ASG-managed sandboxes that could be updated
+      (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      // create returns a new sandbox
+      (sandboxRepo.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: "new-sb-id",
+        name: "gh-worker-asg-def456",
+        instanceId: "i-def456",
+      });
+
+      const service = makeService({ logger, db, sandboxRepo, sandboxService });
+
+      mockEc2Send.mockResolvedValueOnce({
+        Reservations: [
+          {
+            Instances: [{ InstanceId: "i-def456", PublicIpAddress: "5.6.7.8" }],
+          },
+        ],
+      });
+
+      await service.syncAsgIps();
+
+      // Should have created a new sandbox
+      expect(sandboxRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          instanceId: "i-def456",
+          publicIp: "5.6.7.8",
+          environment: "staging",
+          tags: expect.objectContaining({ asg_managed: true }),
+        }),
+      );
+
+      // Should have triggered health check on new sandbox
+      expect(sandboxService.healthCheck).toHaveBeenCalledWith("new-sb-id");
+    });
+
+    it("marks sandbox as terminated when instance disappears from ASG", async () => {
+      setEnv();
+
+      const db = makeDb();
+      (db.execute as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const logger = makeLogger();
+      const sandboxRepo = makeSandboxRepo();
+      const sandboxService = makeSandboxService();
+
+      // No instances match by instanceId (they're gone)
+      (sandboxRepo.findByInstanceId as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+      // ASG sandboxes includes one whose instance is gone
+      (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "sb-old",
+          name: "gh-worker-asg-1",
+          instanceId: "i-old-gone",
+          publicIp: "10.0.0.1",
+          status: "active",
+          tags: { asg_managed: true },
+        },
+      ]);
+
+      const service = makeService({ logger, db, sandboxRepo, sandboxService });
+
+      // ASG has a NEW instance (different from sb-old's instanceId)
+      mockEc2Send.mockResolvedValueOnce({
+        Reservations: [
+          {
+            Instances: [{ InstanceId: "i-new-123", PublicIpAddress: "9.8.7.6" }],
+          },
+        ],
+      });
+
+      await service.syncAsgIps();
+
+      // The stale sandbox should be updated with the new instance info (since it was found by findAsgManaged)
+      expect(sandboxRepo.update).toHaveBeenCalledWith(
+        "sb-old",
+        expect.objectContaining({
+          instanceId: "i-new-123",
+          publicIp: "9.8.7.6",
+          healthStatus: "degraded",
+        }),
       );
     });
 
     it("skips when disabled", async () => {
       delete process.env.AUTOSCALE_ASG_ENABLED;
 
-      const db = makeDb();
-      const tqs = makeTaskQueueService();
-      const logger = makeLogger();
-
-      const service = new AutoScaleService({ logger, taskQueueService: tqs, db });
+      const service = makeService();
 
       await service.syncAsgIps();
 
       expect(mockEc2Send).not.toHaveBeenCalled();
+    });
+
+    it("warns when GHOSTHANDS_API_URL does not match any instance", async () => {
+      setEnv();
+      process.env.GHOSTHANDS_API_URL = "http://10.0.0.1:3100";
+
+      const db = makeDb();
+      (db.execute as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const logger = makeLogger();
+      const sandboxRepo = makeSandboxRepo();
+
+      (sandboxRepo.findByInstanceId as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: "sb-1",
+        name: "test",
+        instanceId: "i-abc123",
+        publicIp: "1.2.3.4",
+        status: "active",
+        tags: { asg_managed: true },
+      });
+      (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "sb-1",
+          instanceId: "i-abc123",
+          publicIp: "1.2.3.4",
+          status: "active",
+          tags: { asg_managed: true },
+        },
+      ]);
+
+      const service = makeService({ logger, db, sandboxRepo });
+
+      mockEc2Send.mockResolvedValueOnce({
+        Reservations: [
+          {
+            Instances: [{ InstanceId: "i-abc123", PublicIpAddress: "1.2.3.4" }],
+          },
+        ],
+      });
+
+      await service.syncAsgIps();
+
+      // Now logged at debug level since dynamic routing handles this automatically
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({ currentIps: ["1.2.3.4"] }),
+        expect.stringContaining("GHOSTHANDS_API_URL"),
+      );
     });
   });
 });

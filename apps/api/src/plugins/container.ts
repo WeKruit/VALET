@@ -44,6 +44,7 @@ import { KasmClient } from "../modules/sandboxes/kasm/kasm.client.js";
 import { AuditLogRepository } from "../modules/sandboxes/audit-log.repository.js";
 import { AuditLogService } from "../modules/sandboxes/audit-log.service.js";
 import { SandboxAgentClient } from "../modules/sandboxes/agent/sandbox-agent.client.js";
+import { DeepHealthChecker } from "../modules/sandboxes/deep-health-checker.js";
 import { DeployHistoryRepository } from "../modules/sandboxes/deploy-history.repository.js";
 import { PgBossService } from "../services/pgboss.service.js";
 import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
@@ -93,6 +94,7 @@ export interface AppCradle {
   auditLogRepo: AuditLogRepository;
   auditLogService: AuditLogService;
   sandboxAgentClient: SandboxAgentClient;
+  deepHealthChecker: DeepHealthChecker;
   deployHistoryRepo: DeployHistoryRepository;
   pgBossService: PgBossService;
   taskQueueService: TaskQueueService;
@@ -182,13 +184,17 @@ export default fp(async (fastify: FastifyInstance) => {
       () => new SandboxAgentClient(process.env.GH_DEPLOY_SECRET ?? ""),
       { lifetime: Lifetime.SINGLETON },
     ),
+    deepHealthChecker: asClass(DeepHealthChecker, { lifetime: Lifetime.SINGLETON }),
     ghosthandsClient: asFunction(
-      ({ logger }) =>
-        new GhostHandsClient({
+      ({ logger, sandboxRepo }) => {
+        const client = new GhostHandsClient({
           ghosthandsApiUrl: process.env.GHOSTHANDS_API_URL ?? "http://localhost:3100",
           ghosthandsServiceKey: process.env.GH_SERVICE_SECRET ?? "",
           logger,
-        }),
+        });
+        client.setSandboxRepository(sandboxRepo);
+        return client;
+      },
       { lifetime: Lifetime.SINGLETON },
     ),
     pgBossService: asClass(PgBossService, { lifetime: Lifetime.SINGLETON }),

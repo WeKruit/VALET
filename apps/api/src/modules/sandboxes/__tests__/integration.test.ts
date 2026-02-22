@@ -20,6 +20,7 @@ import type { GhostHandsClient } from "../../ghosthands/ghosthands.client.js";
 import type { SandboxProviderFactory } from "../providers/provider-factory.js";
 import type { SandboxAgentClient } from "../agent/sandbox-agent.client.js";
 import type { SandboxRecord } from "../sandbox.repository.js";
+import type { DeepHealthChecker } from "../deep-health-checker.js";
 import { SandboxService } from "../sandbox.service.js";
 import { SandboxNotFoundError, SandboxDuplicateInstanceError } from "../sandbox.errors.js";
 
@@ -108,6 +109,21 @@ function makeMockAgentClient() {
   };
 }
 
+function makeMockDeepHealthChecker() {
+  return {
+    check: vi.fn().mockResolvedValue({
+      overall: "healthy",
+      checks: [
+        { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
+        { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
+        { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
+        { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
+      ],
+      timestamp: Date.now(),
+    }),
+  };
+}
+
 const SANDBOX_FIXTURE: SandboxRecord = {
   id: "11111111-1111-1111-1111-111111111111",
   name: "staging-sandbox-1",
@@ -154,6 +170,7 @@ describe("SandboxService", () => {
   let ghosthandsClient: ReturnType<typeof makeMockGhosthandsClient>;
   let agentClient: ReturnType<typeof makeMockAgentClient>;
   let providerFactory: ReturnType<typeof makeMockProviderFactory>;
+  let deepHealthChecker: ReturnType<typeof makeMockDeepHealthChecker>;
 
   beforeEach(() => {
     repo = makeMockRepo();
@@ -162,6 +179,7 @@ describe("SandboxService", () => {
     ghosthandsClient = makeMockGhosthandsClient();
     agentClient = makeMockAgentClient();
     providerFactory = makeMockProviderFactory();
+    deepHealthChecker = makeMockDeepHealthChecker();
     service = new SandboxService({
       sandboxRepo: repo as unknown as SandboxRepository,
       logger: logger as unknown as FastifyBaseLogger,
@@ -169,6 +187,7 @@ describe("SandboxService", () => {
       ghosthandsClient: ghosthandsClient as unknown as GhostHandsClient,
       sandboxProviderFactory: providerFactory as unknown as SandboxProviderFactory,
       sandboxAgentClient: agentClient as unknown as SandboxAgentClient,
+      deepHealthChecker: deepHealthChecker as unknown as DeepHealthChecker,
     });
   });
 
@@ -376,21 +395,50 @@ describe("SandboxService", () => {
   // ─── healthCheck ───
 
   describe("healthCheck", () => {
-    it("returns unhealthy when provider has no agent URL", async () => {
+    it("returns unhealthy when deep health checker reports all ports down", async () => {
       const noPubIp = { ...SANDBOX_FIXTURE, publicIp: null };
       repo.findById.mockResolvedValue(noPubIp);
+      repo.update.mockResolvedValue(noPubIp);
 
-      // Make provider throw when trying to get agent URL (no public IP)
-      const mockProvider = providerFactory.getProvider();
-      mockProvider.getAgentUrl.mockImplementation(() => {
-        throw new Error("Sandbox has no public IP");
+      deepHealthChecker.check.mockResolvedValue({
+        overall: "unhealthy",
+        checks: [
+          {
+            name: "GH API",
+            port: 3100,
+            status: "down",
+            responseTimeMs: 0,
+            details: { error: "No public IP configured" },
+          },
+          {
+            name: "GH Worker",
+            port: 3101,
+            status: "down",
+            responseTimeMs: 0,
+            details: { error: "No public IP configured" },
+          },
+          {
+            name: "Deploy Server",
+            port: 8000,
+            status: "down",
+            responseTimeMs: 0,
+            details: { error: "No public IP configured" },
+          },
+          {
+            name: "noVNC",
+            port: 6080,
+            status: "down",
+            responseTimeMs: 0,
+            details: { error: "No public IP configured" },
+          },
+        ],
+        timestamp: Date.now(),
       });
 
       const result = await service.healthCheck(noPubIp.id);
 
       expect(result.healthStatus).toBe("unhealthy");
-      expect(result.details).toEqual({ error: "No public IP configured" });
-      expect(repo.updateHealthStatus).toHaveBeenCalledWith(noPubIp.id, "unhealthy");
+      expect(deepHealthChecker.check).toHaveBeenCalled();
     });
 
     it("throws SandboxNotFoundError when sandbox does not exist", async () => {
@@ -399,11 +447,11 @@ describe("SandboxService", () => {
       await expect(service.healthCheck("nonexistent-id")).rejects.toThrow(SandboxNotFoundError);
     });
 
-    it("handles agent client failure gracefully", async () => {
+    it("handles deep health checker failure gracefully", async () => {
       repo.findById.mockResolvedValue(SANDBOX_FIXTURE);
       repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
 
-      agentClient.getHealth.mockRejectedValue(new Error("ECONNREFUSED"));
+      deepHealthChecker.check.mockRejectedValue(new Error("ECONNREFUSED"));
 
       const result = await service.healthCheck(SANDBOX_FIXTURE.id);
 
@@ -411,40 +459,46 @@ describe("SandboxService", () => {
       expect(result.details).toEqual({ error: "ECONNREFUSED" });
     });
 
-    it("returns healthy when worker responds ok", async () => {
+    it("returns healthy when all ports respond ok", async () => {
       repo.findById.mockResolvedValue(SANDBOX_FIXTURE);
-      repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
+      repo.update.mockResolvedValue(SANDBOX_FIXTURE);
 
-      agentClient.getHealth.mockResolvedValue({
-        status: "ok",
-        adspowerStatus: "ok",
-        activeWorkers: 1,
-        deploySafe: true,
-        apiHealthy: true,
-        workerStatus: "running",
-        currentDeploy: null,
-        uptimeMs: 3600000,
+      const ts = Date.now();
+      deepHealthChecker.check.mockResolvedValue({
+        overall: "healthy",
+        checks: [
+          { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
+          { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
+          { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
+          { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
+        ],
+        timestamp: ts,
       });
 
       const result = await service.healthCheck(SANDBOX_FIXTURE.id);
 
       expect(result.healthStatus).toBe("healthy");
-      expect(repo.updateHealthStatus).toHaveBeenCalledWith(SANDBOX_FIXTURE.id, "healthy");
+      expect(repo.update).toHaveBeenCalledWith(
+        SANDBOX_FIXTURE.id,
+        expect.objectContaining({
+          healthStatus: "healthy",
+        }),
+      );
     });
 
-    it("returns degraded when adspower is down", async () => {
+    it("returns degraded when GH API is up but other services are down", async () => {
       repo.findById.mockResolvedValue(SANDBOX_FIXTURE);
-      repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
+      repo.update.mockResolvedValue(SANDBOX_FIXTURE);
 
-      agentClient.getHealth.mockResolvedValue({
-        status: "ok",
-        adspowerStatus: "unreachable",
-        activeWorkers: 1,
-        deploySafe: true,
-        apiHealthy: true,
-        workerStatus: "running",
-        currentDeploy: null,
-        uptimeMs: 3600000,
+      deepHealthChecker.check.mockResolvedValue({
+        overall: "degraded",
+        checks: [
+          { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
+          { name: "GH Worker", port: 3101, status: "down", responseTimeMs: 0 },
+          { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
+          { name: "noVNC", port: 6080, status: "timeout", responseTimeMs: 8000 },
+        ],
+        timestamp: Date.now(),
       });
 
       const result = await service.healthCheck(SANDBOX_FIXTURE.id);
@@ -459,14 +513,25 @@ describe("SandboxService", () => {
       const sandbox2 = {
         ...SANDBOX_FIXTURE,
         id: "22222222-2222-2222-2222-222222222222",
-        name: "staging-sandbox-1",
+        name: "staging-sandbox-2",
         publicIp: null,
       };
       repo.findAllActive.mockResolvedValue([SANDBOX_FIXTURE, sandbox2]);
       repo.findById.mockResolvedValueOnce(SANDBOX_FIXTURE).mockResolvedValueOnce(sandbox2);
-      repo.updateHealthStatus.mockResolvedValue(SANDBOX_FIXTURE);
+      repo.update.mockResolvedValue(SANDBOX_FIXTURE);
 
-      agentClient.getHealth.mockRejectedValue(new Error("timeout"));
+      // Deep health checker returns healthy for first, unhealthy for second
+      deepHealthChecker.check
+        .mockResolvedValueOnce({
+          overall: "healthy",
+          checks: [{ name: "GH API", port: 3100, status: "up", responseTimeMs: 42 }],
+          timestamp: Date.now(),
+        })
+        .mockResolvedValueOnce({
+          overall: "unhealthy",
+          checks: [{ name: "GH API", port: 3100, status: "down", responseTimeMs: 0 }],
+          timestamp: Date.now(),
+        });
 
       const results = await service.checkAllSandboxes();
       expect(results).toHaveLength(2);

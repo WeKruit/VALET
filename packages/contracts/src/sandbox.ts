@@ -24,6 +24,7 @@ import {
   workerListResponse,
   auditLogListResponse,
   deployHistoryListResponse,
+  deepHealthCheckResponse,
 } from "@valet/shared/schemas";
 
 const c = initContract();
@@ -91,6 +92,16 @@ export const sandboxContract = c.router({
       404: errorResponse,
     },
     summary: "Trigger manual health check on a sandbox",
+  },
+  deepHealthCheck: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/deep-health",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: deepHealthCheckResponse,
+      404: errorResponse,
+    },
+    summary: "Deep health check probing all required services (GH API, Worker, Deploy Server, VNC)",
   },
   metrics: {
     method: "GET",

@@ -9,7 +9,7 @@ import type { SandboxAgentClient } from "./agent/sandbox-agent.client.js";
 
 const DEPLOY_PREFIX = "deploy:";
 const DEPLOY_LIST_KEY = "deploys:recent";
-const DEPLOY_TTL_SECONDS = 60 * 60 * 24; // 24 hours
+const DEPLOY_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 export interface DeployRecord {
   id: string;

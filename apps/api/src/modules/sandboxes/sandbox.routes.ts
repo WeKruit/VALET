@@ -49,6 +49,13 @@ export const sandboxRouter = s.router(sandboxContract, {
     return { status: 200, body: result };
   },
 
+  deepHealthCheck: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService } = request.diScope.cradle;
+    const result = await sandboxService.deepHealthCheck(params.id);
+    return { status: 200, body: result };
+  },
+
   metrics: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService } = request.diScope.cradle;
