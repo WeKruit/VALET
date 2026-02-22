@@ -39,10 +39,9 @@ export class AutoScaleMonitor {
     this.logger = logger;
 
     this.enabled = process.env.AUTOSCALE_ENABLED === "true";
-    this.minInstances =
-      parseInt(process.env.AUTOSCALE_MIN_INSTANCES ?? "", 10) || DEFAULT_MIN_INSTANCES;
-    this.maxInstances =
-      parseInt(process.env.AUTOSCALE_MAX_INSTANCES ?? "", 10) || DEFAULT_MAX_INSTANCES;
+    // Canonical env vars: AUTOSCALE_MIN / AUTOSCALE_MAX (set on Fly.io)
+    this.minInstances = parseInt(process.env.AUTOSCALE_MIN ?? "", 10) || DEFAULT_MIN_INSTANCES;
+    this.maxInstances = parseInt(process.env.AUTOSCALE_MAX ?? "", 10) || DEFAULT_MAX_INSTANCES;
     this.checkIntervalMs =
       parseInt(process.env.AUTOSCALE_CHECK_INTERVAL_MS ?? "", 10) || DEFAULT_CHECK_INTERVAL_MS;
     this.cooldownMs = parseInt(process.env.AUTOSCALE_COOLDOWN_MS ?? "", 10) || DEFAULT_COOLDOWN_MS;

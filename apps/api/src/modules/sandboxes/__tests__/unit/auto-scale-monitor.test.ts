@@ -101,8 +101,8 @@ describe("AutoScaleMonitor", () => {
   describe("evaluate()", () => {
     function makeEnabledMonitor(mocks: ReturnType<typeof makeMocks>) {
       process.env.AUTOSCALE_ENABLED = "true";
-      process.env.AUTOSCALE_MIN_INSTANCES = "1";
-      process.env.AUTOSCALE_MAX_INSTANCES = "3";
+      process.env.AUTOSCALE_MIN = "1";
+      process.env.AUTOSCALE_MAX = "3";
       process.env.AUTOSCALE_CHECK_INTERVAL_MS = "1000";
       process.env.AUTOSCALE_COOLDOWN_MS = "5000";
       return new AutoScaleMonitor(mocks);
