@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type {
@@ -16,6 +17,7 @@ import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.
 import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
 import { QUEUE_APPLY_JOB, type TaskQueueService } from "./task-queue.service.js";
 import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
+import type { KasmClient } from "../sandboxes/kasm/kasm.client.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -59,6 +61,7 @@ export class TaskService {
   private redis: Redis;
   private logger: FastifyBaseLogger;
   private sandboxRepo: SandboxRepository;
+  private kasmClient: KasmClient | null;
 
   constructor({
     taskRepo,
@@ -72,6 +75,7 @@ export class TaskService {
     redis,
     logger,
     sandboxRepo,
+    kasmClient,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -84,6 +88,7 @@ export class TaskService {
     redis: Redis;
     logger: FastifyBaseLogger;
     sandboxRepo: SandboxRepository;
+    kasmClient?: KasmClient;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -96,6 +101,7 @@ export class TaskService {
     this.redis = redis;
     this.logger = logger;
     this.sandboxRepo = sandboxRepo;
+    this.kasmClient = kasmClient ?? null;
   }
 
   async getById(id: string, userId: string) {
@@ -307,6 +313,64 @@ export class TaskService {
     }
   }
 
+  /**
+   * WEK-147: Create a Kasm session for a task if the sandbox is kasm-type.
+   * Non-blocking — if session creation fails, the task still works via regular dispatch.
+   */
+  private async maybeCreateKasmSession(
+    taskId: string,
+    ghJob: { id: string; metadata?: Record<string, unknown> | null },
+    sandboxId: string | undefined,
+  ): Promise<void> {
+    if (!sandboxId || !this.kasmClient) return;
+
+    try {
+      const sandbox = await this.sandboxRepo.findById(sandboxId);
+      if (sandbox?.machineType !== "kasm") return;
+
+      const kasmWorkerId = crypto.randomUUID();
+      const kasmEnv: Record<string, string> = {
+        GH_WORKER_ID: kasmWorkerId,
+        JOB_DISPATCH_MODE: "queue",
+        MAX_CONCURRENT_JOBS: "1",
+        GH_SERVICE_SECRET: process.env.GH_SERVICE_SECRET ?? "",
+        DATABASE_URL: process.env.PGBOSS_DATABASE_URL ?? process.env.DATABASE_URL ?? "",
+        GHOSTHANDS_CALLBACK_URL: buildCallbackUrl(),
+      };
+
+      const kasmResponse = await this.kasmClient.requestKasm({
+        image_id:
+          ((sandbox.tags as Record<string, unknown>)?.kasm_image_id as string) ??
+          process.env.KASM_DEFAULT_IMAGE_ID ??
+          "",
+        user_id:
+          ((sandbox.tags as Record<string, unknown>)?.kasm_user_id as string) ??
+          process.env.KASM_DEFAULT_USER_ID ??
+          "",
+        environment: kasmEnv,
+      });
+
+      // Store Kasm session info in gh_automation_jobs metadata
+      await this.ghJobRepo.updateStatus(ghJob.id, {
+        status: "queued",
+        metadata: {
+          ...(ghJob.metadata ?? {}),
+          kasm_id: kasmResponse.kasm_id,
+          kasm_url: kasmResponse.kasm_url,
+          kasm_session_token: kasmResponse.session_token,
+          kasm_worker_id: kasmWorkerId,
+        },
+      });
+
+      this.logger.info(
+        { taskId, kasmId: kasmResponse.kasm_id, kasmWorkerId },
+        "Created Kasm session for task",
+      );
+    } catch (err) {
+      this.logger.error({ err, taskId }, "Failed to create Kasm session (non-blocking)");
+    }
+  }
+
   async list(
     userId: string,
     query: {
@@ -504,6 +568,9 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
         await this.taskRepo.updateStatus(task.id, "queued");
+
+        // WEK-147: Create Kasm session if sandbox is kasm-type
+        await this.maybeCreateKasmSession(task.id, ghJob, body.targetWorkerId);
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
@@ -715,6 +782,9 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
         await this.taskRepo.updateStatus(task.id, "queued");
+
+        // WEK-147: Create Kasm session if sandbox is kasm-type
+        await this.maybeCreateKasmSession(task.id, ghJob, body.targetWorkerId);
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
@@ -1255,10 +1325,27 @@ export class TaskService {
   async getVncUrl(
     taskId: string,
     userId: string,
-  ): Promise<{ url: string; readOnly: boolean } | null> {
+  ): Promise<{ url: string; readOnly: boolean; type: "novnc" | "kasm" } | null> {
     const task = await this.taskRepo.findById(taskId, userId);
     if (!task) throw new TaskNotFoundError(taskId);
 
+    // Allow interactive control when task is waiting for human intervention
+    const readOnly = task.status !== "waiting_human";
+
+    // WEK-147: Check for Kasm session URL in gh_automation_jobs metadata
+    if (task.workflowRunId) {
+      try {
+        const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
+        const kasmUrl = ghJob?.metadata?.kasm_url as string | undefined;
+        if (kasmUrl) {
+          return { url: kasmUrl, readOnly, type: "kasm" };
+        }
+      } catch {
+        // Fall through to sandbox-based lookup
+      }
+    }
+
+    // Fallback: noVNC URL from sandbox record
     if (!task.sandboxId) {
       this.logger.debug({ taskId }, "Task has no sandboxId, cannot resolve VNC URL");
       return null;
@@ -1273,9 +1360,6 @@ export class TaskService {
       return null;
     }
 
-    // Allow interactive control when task is waiting for human intervention
-    const readOnly = task.status !== "waiting_human";
-
-    return { url: sandbox.novncUrl, readOnly };
+    return { url: sandbox.novncUrl, readOnly, type: "novnc" };
   }
 }
