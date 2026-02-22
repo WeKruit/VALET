@@ -26,7 +26,9 @@ import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/features/auth/hooks/use-auth";
 import { QualitySelector } from "./quality-selector";
+import { WorkerSelector } from "./worker-selector";
 
 type PlatformInfo = {
   name: string;
@@ -98,7 +100,10 @@ export function ApplyForm() {
   const [notes, setNotes] = useState("");
   const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
   const [selectedResumeId, setSelectedResumeId] = useState<string>("");
+  const [targetWorkerId, setTargetWorkerId] = useState<string>("");
   const navigate = useNavigate();
+  const user = useAuth((s) => s.user);
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
 
   const { data: resumesData, isLoading: resumesLoading } = api.resumes.list.useQuery({
     queryKey: ["resumes"],
@@ -153,6 +158,7 @@ export function ApplyForm() {
         resumeId: activeResume.id,
         quality,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
+        ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
       },
     });
   }
@@ -335,6 +341,9 @@ export function ApplyForm() {
           <QualitySelector value={quality} onChange={setQuality} />
         </CardContent>
       </Card>
+
+      {/* Worker selector (admin only) */}
+      {isAdmin && <WorkerSelector value={targetWorkerId} onChange={setTargetWorkerId} />}
 
       {/* Notes card */}
       <Card>
