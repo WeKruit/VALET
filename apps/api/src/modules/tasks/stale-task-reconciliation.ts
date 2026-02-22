@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type { TaskService } from "./task.service.js";
 import type { TaskRepository } from "./task.repository.js";
+import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
 import { publishToUser } from "../../websocket/handler.js";
 
 const RECONCILIATION_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
@@ -19,6 +20,7 @@ export interface ReconciliationSummary {
 export class StaleTaskReconciliationMonitor {
   private taskService: TaskService;
   private taskRepo: TaskRepository;
+  private ghJobEventRepo: GhJobEventRepository;
   private redis: Redis;
   private logger: FastifyBaseLogger;
   private intervalId: ReturnType<typeof setInterval> | null = null;
@@ -27,16 +29,19 @@ export class StaleTaskReconciliationMonitor {
   constructor({
     taskService,
     taskRepo,
+    ghJobEventRepo,
     redis,
     logger,
   }: {
     taskService: TaskService;
     taskRepo: TaskRepository;
+    ghJobEventRepo: GhJobEventRepository;
     redis: Redis;
     logger: FastifyBaseLogger;
   }) {
     this.taskService = taskService;
     this.taskRepo = taskRepo;
+    this.ghJobEventRepo = ghJobEventRepo;
     this.redis = redis;
     this.logger = logger;
   }
@@ -168,6 +173,18 @@ export class StaleTaskReconciliationMonitor {
       },
       completedAt: null,
     });
+
+    // Write audit trail to gh_job_events (WEK-141)
+    if (task.workflowRunId) {
+      await this.ghJobEventRepo.insertEvent({
+        jobId: task.workflowRunId,
+        eventType: "status_change",
+        toStatus: "failed",
+        message: errorMessage,
+        metadata: { source: "reconciliation_timeout", reason },
+        actor: "reconciliation_monitor",
+      });
+    }
 
     // Notify the frontend via WebSocket so the UI updates in real-time
     await publishToUser(this.redis, task.userId, {
