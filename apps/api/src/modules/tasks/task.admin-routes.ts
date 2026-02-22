@@ -93,4 +93,17 @@ export async function taskAdminRoutes(fastify: FastifyInstance) {
       });
     },
   );
+
+  // ── Manually trigger stale task reconciliation ───────────────
+  fastify.post(
+    "/api/v1/admin/tasks/reconcile",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      await adminOnly(request);
+
+      const { staleTaskReconciliation } = request.diScope.cradle;
+      const summary = await staleTaskReconciliation.reconcileStaleJobs();
+
+      return reply.status(200).send(summary);
+    },
+  );
 }
