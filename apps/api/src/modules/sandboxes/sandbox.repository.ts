@@ -303,6 +303,9 @@ export class SandboxRepository {
     )) as Array<{ worker_id: string }>;
 
     return rows[0]?.worker_id ?? null;
+  }
+
+  /**
    * Find active sandboxes whose last health check is older than `staleThresholdMs`
    * or who have never been health-checked (lastHealthCheckAt is null).
    */
