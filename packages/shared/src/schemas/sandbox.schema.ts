@@ -181,6 +181,8 @@ export const adminTriggerTaskResponse = z.object({
 // ─── Admin Trigger Test (Quick Integration Test) ───
 export const adminTriggerTestRequest = z.object({
   searchQuery: z.string().max(500).optional().default("valet integration test"),
+  reasoningModel: z.string().max(100).optional(),
+  visionModel: z.string().max(100).optional(),
 });
 
 export const adminTriggerTestResponse = z.object({

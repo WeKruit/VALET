@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +68,132 @@ const OTHER_MODELS: ModelOption[] = [
   { value: "deepseek-reasoner", label: "DeepSeek Reasoner (text-only)", vision: false },
 ];
 
+// ─── Shared model selector component ───
+
+function ModelSelectors({
+  reasoningModel,
+  onReasoningModelChange,
+  visionModel,
+  onVisionModelChange,
+}: {
+  reasoningModel: string;
+  onReasoningModelChange: (v: string) => void;
+  visionModel: string;
+  onVisionModelChange: (v: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-[var(--wk-text-primary)]">Reasoning Model</label>
+        <Select value={reasoningModel} onValueChange={onReasoningModelChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Auto (default)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Auto (default)</SelectItem>
+            <SelectGroup>
+              <SelectLabel>Recommended</SelectLabel>
+              {RECOMMENDED_MODELS.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>Budget</SelectLabel>
+              {BUDGET_MODELS.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>Other</SelectLabel>
+              {OTHER_MODELS.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-[var(--wk-text-primary)]">Vision Model</label>
+        <Select value={visionModel} onValueChange={onVisionModelChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Auto (default)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Auto (default)</SelectItem>
+            <SelectGroup>
+              <SelectLabel>Recommended</SelectLabel>
+              {RECOMMENDED_MODELS.filter((m) => m.vision).map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>Budget (vision)</SelectLabel>
+              {BUDGET_MODELS.filter((m) => m.vision).map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>Other (vision)</SelectLabel>
+              {OTHER_MODELS.filter((m) => m.vision).map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+// ─── Inline copy button for IDs ───
+
+function InlineCopyId({ value, label }: { value: string; label?: string }) {
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(value);
+    toast.success("Copied to clipboard");
+  }, [value]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 rounded px-1 py-0.5 font-mono text-xs text-[var(--wk-text-secondary)] hover:bg-[var(--wk-surface-hover)] hover:text-[var(--wk-text-primary)] transition-colors"
+      title="Click to copy"
+    >
+      {label && <span className="text-[var(--wk-text-tertiary)]">{label}</span>}
+      <span>{value}</span>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="opacity-50"
+      >
+        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+      </svg>
+    </button>
+  );
+}
+
 interface TriggerTaskDialogProps {
   sandboxId: string;
   sandboxName: string;
@@ -82,6 +209,7 @@ export function TriggerTaskDialog({
   onOpenChange,
   onTestTriggered,
 }: TriggerTaskDialogProps) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<string>("test");
 
   // Quick Test state
@@ -93,6 +221,8 @@ export function TriggerTaskDialog({
   const [mode, setMode] = useState<"autopilot" | "copilot">("autopilot");
   const [notes, setNotes] = useState("");
   const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
+
+  // Shared model state (used by both tabs)
   const [reasoningModel, setReasoningModel] = useState<string>("auto");
   const [visionModel, setVisionModel] = useState<string>("auto");
 
@@ -110,16 +240,39 @@ export function TriggerTaskDialog({
   const activeResumeId =
     resumeId || readyResumes.find((r) => r.isDefault)?.id || readyResumes[0]?.id || "";
 
+  function showTaskCreatedToast(taskId: string, label: string) {
+    toast.success(
+      <div className="flex flex-col gap-1">
+        <span>{label}</span>
+        <code className="rounded bg-[var(--wk-surface-sunken)] px-1.5 py-0.5 font-mono text-xs">
+          {taskId}
+        </code>
+        <button
+          type="button"
+          className="mt-1 text-xs font-medium text-[var(--wk-brand-primary)] hover:underline text-left"
+          onClick={() => navigate(`/tasks/${taskId}`)}
+        >
+          View Task →
+        </button>
+      </div>,
+      { duration: 8000 },
+    );
+  }
+
   function handleTestSubmit() {
     triggerTest.mutate(
       {
         params: { id: sandboxId },
-        body: { searchQuery: searchQuery.trim() || undefined },
+        body: {
+          searchQuery: searchQuery.trim() || undefined,
+          ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
+          ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
+        },
       },
       {
         onSuccess: (data) => {
           if (data.status === 201) {
-            toast.success(`Test task created: ${data.body.taskId.slice(0, 8)}...`);
+            showTaskCreatedToast(data.body.taskId, "Test task created");
             onOpenChange(false);
             onTestTriggered?.();
           }
@@ -150,7 +303,7 @@ export function TriggerTaskDialog({
       {
         onSuccess: (data) => {
           if (data.status === 201) {
-            toast.success(`Job task created: ${data.body.taskId.slice(0, 8)}...`);
+            showTaskCreatedToast(data.body.taskId, "Job task created");
             onOpenChange(false);
             setJobUrl("");
             setNotes("");
@@ -177,12 +330,10 @@ export function TriggerTaskDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-sunken)] px-3 py-2 text-xs text-[var(--wk-text-secondary)]">
-          Target: This task will run on{" "}
+        <div className="flex items-center gap-2 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-sunken)] px-3 py-2 text-xs text-[var(--wk-text-secondary)]">
+          <span>Target:</span>
           <span className="font-semibold text-[var(--wk-text-primary)]">{sandboxName}</span>
-          <span className="ml-1.5 text-[var(--wk-text-tertiary)]">
-            ({sandboxId.slice(0, 8)}...)
-          </span>
+          <InlineCopyId value={sandboxId} />
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -212,6 +363,13 @@ export function TriggerTaskDialog({
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+
+              <ModelSelectors
+                reasoningModel={reasoningModel}
+                onReasoningModelChange={setReasoningModel}
+                visionModel={visionModel}
+                onVisionModelChange={setVisionModel}
+              />
             </div>
             <DialogFooter className="mt-4">
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
@@ -291,83 +449,12 @@ export function TriggerTaskDialog({
                 <QualitySelector value={quality} onChange={setQuality} compact />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-[var(--wk-text-primary)]">
-                    Reasoning Model
-                  </label>
-                  <Select value={reasoningModel} onValueChange={setReasoningModel}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Auto (default)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Auto (default)</SelectItem>
-                      <SelectGroup>
-                        <SelectLabel>Recommended</SelectLabel>
-                        {RECOMMENDED_MODELS.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Budget</SelectLabel>
-                        {BUDGET_MODELS.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Other</SelectLabel>
-                        {OTHER_MODELS.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-[var(--wk-text-primary)]">
-                    Vision Model
-                  </label>
-                  <Select value={visionModel} onValueChange={setVisionModel}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Auto (default)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Auto (default)</SelectItem>
-                      <SelectGroup>
-                        <SelectLabel>Recommended</SelectLabel>
-                        {RECOMMENDED_MODELS.filter((m) => m.vision).map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Budget (vision)</SelectLabel>
-                        {BUDGET_MODELS.filter((m) => m.vision).map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Other (vision)</SelectLabel>
-                        {OTHER_MODELS.filter((m) => m.vision).map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              <ModelSelectors
+                reasoningModel={reasoningModel}
+                onReasoningModelChange={setReasoningModel}
+                visionModel={visionModel}
+                onVisionModelChange={setVisionModel}
+              />
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-[var(--wk-text-primary)]">Notes</label>

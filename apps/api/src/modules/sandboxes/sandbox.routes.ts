@@ -144,6 +144,8 @@ export const sandboxRouter = s.router(sandboxContract, {
       {
         searchQuery: body.searchQuery ?? "valet integration test",
         targetWorkerId: sandbox.id,
+        reasoningModel: body.reasoningModel,
+        visionModel: body.visionModel,
       },
       request.userId,
     );

@@ -632,7 +632,15 @@ export class TaskService {
     };
   }
 
-  async createTestTask(body: { searchQuery: string; targetWorkerId: string }, userId: string) {
+  async createTestTask(
+    body: {
+      searchQuery: string;
+      targetWorkerId: string;
+      reasoningModel?: string;
+      visionModel?: string;
+    },
+    userId: string,
+  ) {
     // Create a task record for tracking the test
     const task = await this.taskRepo.create({
       userId,
@@ -667,6 +675,10 @@ export class TaskService {
           inputData: { platform: "google", tier: "free" },
           maxRetries: 1,
           tags: ["valet", "test"],
+          metadata: {
+            ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
+            ...(body.visionModel ? { image_model: body.visionModel } : {}),
+          },
           targetWorkerId: resolvedWorkerId ?? body.targetWorkerId,
           callbackUrl,
           valetTaskId: task.id,
@@ -735,6 +747,8 @@ export class TaskService {
           max_retries: 1,
           target_worker_id: body.targetWorkerId,
           worker_affinity: "strict",
+          ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
+          ...(body.visionModel ? { image_model: body.visionModel } : {}),
         });
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
