@@ -114,17 +114,16 @@ export class SandboxHealthMonitor {
             );
           }
         } else {
-          // Reset failure counter on healthy check
-          const sandbox = await this.sandboxRepo.findById(result.sandboxId);
-          if (sandbox && sandbox.healthCheckFailureCount > 0) {
+          // Reset failure counter on healthy check (single call, no findById needed)
+          const prevCount = await this.sandboxRepo.resetHealthFailureCount(result.sandboxId);
+          if (prevCount > 0) {
             this.logger.info(
               {
                 sandboxId: result.sandboxId,
-                recoveredAfter: sandbox.healthCheckFailureCount,
+                recoveredAfter: prevCount,
               },
               "Sandbox recovered — consecutive failure counter reset",
             );
-            await this.sandboxRepo.resetHealthFailureCount(result.sandboxId);
           }
         }
 

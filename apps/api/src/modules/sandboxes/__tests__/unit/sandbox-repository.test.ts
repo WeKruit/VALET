@@ -48,6 +48,11 @@ vi.mock("drizzle-orm", () => ({
   asc: vi.fn((col: unknown) => ({ type: "asc", col })),
   ilike: vi.fn((...args: unknown[]) => ({ type: "ilike", args })),
   or: vi.fn((...args: unknown[]) => ({ type: "or", args })),
+  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+    type: "sql",
+    strings,
+    values,
+  }),
 }));
 
 import { SandboxRepository } from "../../sandbox.repository.js";
@@ -184,6 +189,96 @@ describe("SandboxRepository", () => {
         browserEngine: "chromium",
         machineType: "kasm",
       });
+    });
+  });
+
+  describe("incrementHealthFailureCount()", () => {
+    it("calls db.update with SQL increment and returns the new count", async () => {
+      const returningMock = vi.fn().mockResolvedValue([{ healthCheckFailureCount: 3 }]);
+      const whereMock = vi.fn().mockReturnValue({ returning: returningMock });
+      const setMock = vi.fn().mockReturnValue({ where: whereMock });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: setMock }),
+      };
+
+      const repo = new SandboxRepository({ db: db as never });
+      const result = await repo.incrementHealthFailureCount("sandbox-1");
+
+      expect(db.update).toHaveBeenCalledOnce();
+      expect(setMock).toHaveBeenCalledOnce();
+      expect(whereMock).toHaveBeenCalledOnce();
+      expect(returningMock).toHaveBeenCalledOnce();
+      expect(result).toBe(3);
+    });
+
+    it("returns 0 when sandbox does not exist (empty returning)", async () => {
+      const returningMock = vi.fn().mockResolvedValue([]);
+      const whereMock = vi.fn().mockReturnValue({ returning: returningMock });
+      const setMock = vi.fn().mockReturnValue({ where: whereMock });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: setMock }),
+      };
+
+      const repo = new SandboxRepository({ db: db as never });
+      const result = await repo.incrementHealthFailureCount("nonexistent");
+
+      expect(result).toBe(0);
+    });
+  });
+
+  describe("resetHealthFailureCount()", () => {
+    it("returns 0 and skips UPDATE when count is already 0", async () => {
+      const limitMock = vi.fn().mockResolvedValue([{ count: 0 }]);
+      const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
+      const fromMock = vi.fn().mockReturnValue({ where: whereMock });
+      const db = {
+        select: vi.fn().mockReturnValue({ from: fromMock }),
+        update: vi.fn(),
+      };
+
+      const repo = new SandboxRepository({ db: db as never });
+      const result = await repo.resetHealthFailureCount("sandbox-1");
+
+      expect(result).toBe(0);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("resets count and returns previous value when count > 0", async () => {
+      // SELECT chain
+      const limitMock = vi.fn().mockResolvedValue([{ count: 5 }]);
+      const selectWhereMock = vi.fn().mockReturnValue({ limit: limitMock });
+      const fromMock = vi.fn().mockReturnValue({ where: selectWhereMock });
+
+      // UPDATE chain
+      const updateWhereMock = vi.fn().mockResolvedValue(undefined);
+      const setMock = vi.fn().mockReturnValue({ where: updateWhereMock });
+
+      const db = {
+        select: vi.fn().mockReturnValue({ from: fromMock }),
+        update: vi.fn().mockReturnValue({ set: setMock }),
+      };
+
+      const repo = new SandboxRepository({ db: db as never });
+      const result = await repo.resetHealthFailureCount("sandbox-1");
+
+      expect(result).toBe(5);
+      expect(db.update).toHaveBeenCalledOnce();
+    });
+
+    it("returns 0 when sandbox does not exist", async () => {
+      const limitMock = vi.fn().mockResolvedValue([]);
+      const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
+      const fromMock = vi.fn().mockReturnValue({ where: whereMock });
+      const db = {
+        select: vi.fn().mockReturnValue({ from: fromMock }),
+        update: vi.fn(),
+      };
+
+      const repo = new SandboxRepository({ db: db as never });
+      const result = await repo.resetHealthFailureCount("nonexistent");
+
+      expect(result).toBe(0);
+      expect(db.update).not.toHaveBeenCalled();
     });
   });
 });

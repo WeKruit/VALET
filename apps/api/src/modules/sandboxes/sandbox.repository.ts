@@ -342,17 +342,26 @@ export class SandboxRepository {
   }
 
   /**
-   * Reset health check failure count to 0.
-   * Called when a sandbox passes a health check after previous failures.
+   * Reset health check failure count to 0 and return the previous value.
+   * Only issues an UPDATE when the count is actually > 0.
    */
-  async resetHealthFailureCount(id: string): Promise<void> {
-    await this.db
-      .update(sandboxes)
-      .set({
-        healthCheckFailureCount: 0,
-        updatedAt: new Date(),
-      })
-      .where(eq(sandboxes.id, id));
+  async resetHealthFailureCount(id: string): Promise<number> {
+    const rows = await this.db
+      .select({ count: sandboxes.healthCheckFailureCount })
+      .from(sandboxes)
+      .where(eq(sandboxes.id, id))
+      .limit(1);
+
+    const previousCount = rows[0]?.count ?? 0;
+
+    if (previousCount > 0) {
+      await this.db
+        .update(sandboxes)
+        .set({ healthCheckFailureCount: 0, updatedAt: new Date() })
+        .where(eq(sandboxes.id, id));
+    }
+
+    return previousCount;
   }
 
   /**
