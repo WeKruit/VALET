@@ -22,12 +22,19 @@ import type {
   GHModelCatalog,
 } from "./ghosthands.types.js";
 
+/** TTL for cached resolved URLs (30 seconds) */
+const URL_CACHE_TTL_MS = 30_000;
+
 export class GhostHandsClient {
   private baseUrl: string;
   private workerBaseUrl: string;
   private serviceKey: string;
   private logger: FastifyBaseLogger;
   private sandboxRepo: SandboxRepository | null = null;
+
+  /** Cached resolved IP — shared between resolveApiUrl and resolveWorkerUrl */
+  private _cachedIp: string | null = null;
+  private _cachedIpTimestamp = 0;
 
   constructor({
     ghosthandsApiUrl,
@@ -53,28 +60,48 @@ export class GhostHandsClient {
   }
 
   /**
+   * Resolve the healthy EC2 sandbox IP, with a 30s TTL cache to avoid
+   * hitting the DB on every request.
+   */
+  private async resolveHealthyIp(): Promise<string | null> {
+    const now = Date.now();
+    if (this._cachedIp && now - this._cachedIpTimestamp < URL_CACHE_TTL_MS) {
+      return this._cachedIp;
+    }
+
+    if (!this.sandboxRepo) return null;
+
+    try {
+      const sandboxes = await this.sandboxRepo.findActive("ec2");
+      const healthy = sandboxes.find((s) => s.healthStatus === "healthy" && s.publicIp);
+      if (healthy?.publicIp) {
+        this._cachedIp = healthy.publicIp;
+        this._cachedIpTimestamp = now;
+        return healthy.publicIp;
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to resolve dynamic GH IP, falling back to static");
+    }
+
+    return null;
+  }
+
+  /**
    * Resolve the GH API URL dynamically from the database.
    * Prefers healthy EC2 sandbox IPs over the static env var.
    * Falls back to the static baseUrl if no healthy sandbox is found or on error.
    */
   async resolveApiUrl(): Promise<string> {
-    if (this.sandboxRepo) {
-      try {
-        const sandboxes = await this.sandboxRepo.findActive("ec2");
-        const healthy = sandboxes.find((s) => s.healthStatus === "healthy" && s.publicIp);
-        if (healthy) {
-          const dynamicUrl = `http://${healthy.publicIp}:3100`;
-          if (dynamicUrl !== this.baseUrl) {
-            this.logger.info(
-              { dynamicUrl, staticUrl: this.baseUrl },
-              "GhostHands using dynamic API URL from sandbox DB",
-            );
-          }
-          return dynamicUrl;
-        }
-      } catch (err) {
-        this.logger.warn({ err }, "Failed to resolve dynamic GH API URL, falling back to static");
+    const ip = await this.resolveHealthyIp();
+    if (ip) {
+      const dynamicUrl = `http://${ip}:3100`;
+      if (dynamicUrl !== this.baseUrl) {
+        this.logger.info(
+          { dynamicUrl, staticUrl: this.baseUrl },
+          "GhostHands using dynamic API URL from sandbox DB",
+        );
       }
+      return dynamicUrl;
     }
     return this.baseUrl;
   }
@@ -84,16 +111,9 @@ export class GhostHandsClient {
    * Falls back to the static workerBaseUrl.
    */
   private async resolveWorkerUrl(): Promise<string> {
-    if (this.sandboxRepo) {
-      try {
-        const sandboxes = await this.sandboxRepo.findActive("ec2");
-        const healthy = sandboxes.find((s) => s.healthStatus === "healthy" && s.publicIp);
-        if (healthy) {
-          return `http://${healthy.publicIp}:3101`;
-        }
-      } catch {
-        // Fall through to static URL
-      }
+    const ip = await this.resolveHealthyIp();
+    if (ip) {
+      return `http://${ip}:3101`;
     }
     return this.workerBaseUrl;
   }
@@ -126,8 +146,12 @@ export class GhostHandsClient {
       );
 
       if (res.status === 409) {
-        const parsed = JSON.parse(text) as GHSubmitApplicationResponse;
-        return parsed as T;
+        try {
+          const parsed = JSON.parse(text) as GHSubmitApplicationResponse;
+          return parsed as T;
+        } catch {
+          throw AppError.internal(`GhostHands API 409 conflict with non-JSON body`);
+        }
       }
 
       throw AppError.internal(`GhostHands API error: ${res.status} ${res.statusText}`);

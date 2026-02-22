@@ -25,7 +25,6 @@ const EC2_PORTS = [
   { name: "GH API", port: 3100, path: "/health", critical: true },
   { name: "GH Worker", port: 3101, path: "/health", critical: false },
   { name: "Deploy Server", port: 8000, path: "/health", critical: false },
-  { name: "noVNC", port: 6080, path: "/", critical: false },
 ] as const;
 
 const PROBE_TIMEOUT_MS = 8_000;
@@ -33,7 +32,7 @@ const PROBE_TIMEOUT_MS = 8_000;
 /**
  * Performs multi-port health probes against sandbox instances.
  *
- * EC2 sandboxes: probes ports 3100, 3101, 8000, 6080
+ * EC2 sandboxes: probes ports 3100, 3101, 8000
  * Kasm sandboxes: checks Kasm session status + probes the mapped GH API port
  */
 export class DeepHealthChecker {

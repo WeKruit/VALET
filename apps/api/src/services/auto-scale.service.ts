@@ -194,15 +194,18 @@ export class AutoScaleService {
         }
       }
 
-      // ── Step 1+2: Upsert instances ──
+      // ── Step 0: Fetch all ASG-managed sandboxes ONCE before the loop ──
       const asgInstanceIds = new Set(instances.map((i) => i.instanceId));
+      const asgSandboxes = await this.sandboxRepo.findAsgManaged();
+      const sandboxByInstanceId = new Map(asgSandboxes.map((s) => [s.instanceId, s]));
+      // Track which stale sandbox IDs have been claimed by a new instance
+      const claimedSandboxIds = new Set<string>();
       const healthCheckNeeded: string[] = [];
 
+      // ── Step 1+2: Upsert instances ──
       for (const { instanceId, publicIp } of instances) {
-        const novncUrl = `http://${publicIp}:6080`;
-
         // Try to find an existing sandbox by this instanceId
-        const existingByInstanceId = await this.sandboxRepo.findByInstanceId(instanceId);
+        const existingByInstanceId = sandboxByInstanceId.get(instanceId);
 
         if (existingByInstanceId) {
           // Known instance — check if IP changed
@@ -223,24 +226,22 @@ export class AutoScaleService {
 
             await this.sandboxRepo.update(existingByInstanceId.id, {
               publicIp,
-              novncUrl,
               instanceId,
             });
 
-            // Schedule health check for IP-changed sandbox
             healthCheckNeeded.push(existingByInstanceId.id);
           }
         } else {
           // NEW instance not matching any sandbox by instanceId.
-          // Check if there's an existing ASG-managed sandbox we should update
-          // (e.g., the original "gh-worker-asg-1" record whose instance was replaced)
-          const asgSandboxes = await this.sandboxRepo.findAsgManaged();
-
-          // Find one whose instanceId is NOT in the current ASG set
-          // (meaning its old instance was replaced)
-          const staleAsgSandbox = asgSandboxes.find((s) => !asgInstanceIds.has(s.instanceId));
+          // Find a stale ASG-managed sandbox (one whose instanceId is not in the current ASG
+          // and hasn't been claimed yet)
+          const staleAsgSandbox = asgSandboxes.find(
+            (s) => !asgInstanceIds.has(s.instanceId) && !claimedSandboxIds.has(s.id),
+          );
 
           if (staleAsgSandbox) {
+            claimedSandboxIds.add(staleAsgSandbox.id);
+
             this.logger.info(
               {
                 sandboxId: staleAsgSandbox.id,
@@ -256,7 +257,6 @@ export class AutoScaleService {
             await this.sandboxRepo.update(staleAsgSandbox.id, {
               instanceId,
               publicIp,
-              novncUrl,
               ec2Status: "running",
               healthStatus: "degraded", // Must prove health
             });
@@ -278,7 +278,6 @@ export class AutoScaleService {
                 publicIp,
                 capacity: 1,
                 sshKeyName: "valet-worker.pem",
-                novncUrl,
                 tags: {
                   purpose: "staging",
                   region: "us-east-1",
@@ -309,56 +308,51 @@ export class AutoScaleService {
       }
 
       // ── Step 3: Mark terminated instances ──
-      // Find ASG-managed sandboxes whose instanceId no longer appears in the ASG
-      const asgSandboxes = await this.sandboxRepo.findAsgManaged();
+      // Use the already-fetched asgSandboxes list (no extra DB query)
       for (const sandbox of asgSandboxes) {
-        if (!asgInstanceIds.has(sandbox.instanceId)) {
-          // Only mark as terminated if we have running instances (ASG is functional)
-          // and this sandbox's instance is genuinely gone
-          if (instances.length > 0) {
-            this.logger.warn(
-              {
-                sandboxId: sandbox.id,
-                sandboxName: sandbox.name,
-                instanceId: sandbox.instanceId,
-                publicIp: sandbox.publicIp,
-              },
-              "ASG sync: instance no longer in ASG — marking sandbox as terminated",
-            );
+        if (
+          !asgInstanceIds.has(sandbox.instanceId) &&
+          !claimedSandboxIds.has(sandbox.id) &&
+          instances.length > 0
+        ) {
+          this.logger.warn(
+            {
+              sandboxId: sandbox.id,
+              sandboxName: sandbox.name,
+              instanceId: sandbox.instanceId,
+              publicIp: sandbox.publicIp,
+            },
+            "ASG sync: instance no longer in ASG — marking sandbox as terminated",
+          );
 
-            await this.sandboxRepo.update(sandbox.id, {
-              status: "terminated",
-              ec2Status: "terminated",
-              healthStatus: "unhealthy",
-            });
-          }
+          await this.sandboxRepo.update(sandbox.id, {
+            status: "terminated",
+            ec2Status: "terminated",
+            healthStatus: "unhealthy",
+          });
         }
       }
 
-      // ── Step 4: Trigger health checks on IP-changed sandboxes ──
-      for (const sandboxId of healthCheckNeeded) {
-        try {
+      // ── Step 4: Trigger health checks on IP-changed sandboxes (parallel) ──
+      await Promise.allSettled(
+        healthCheckNeeded.map(async (sandboxId) => {
           this.logger.info(
             { sandboxId },
             "ASG sync: triggering immediate health check after IP change",
           );
           await this.sandboxService.healthCheck(sandboxId);
-        } catch (err) {
-          this.logger.warn(
-            { sandboxId, err },
-            "ASG sync: post-IP-change health check failed (will retry on next cycle)",
-          );
-        }
-      }
+        }),
+      );
 
       // Warn if GHOSTHANDS_API_URL doesn't match any current instance IP
+      // (advisory only — dynamic routing handles this automatically)
       const ghApiUrl = process.env.GHOSTHANDS_API_URL ?? "";
       const currentIps = instances.map((i) => i.publicIp);
       const urlMatchesInstance = currentIps.some((ip) => ghApiUrl.includes(ip));
       if (!urlMatchesInstance && currentIps.length > 0) {
-        this.logger.warn(
+        this.logger.debug(
           { ghApiUrl, currentIps },
-          "GHOSTHANDS_API_URL does not match any running ASG instance IP — update Fly secret",
+          "GHOSTHANDS_API_URL does not match ASG instances — dynamic routing will resolve from DB",
         );
       }
     } catch (err) {

@@ -364,23 +364,13 @@ describe("AutoScaleService", () => {
       const sandboxRepo = makeSandboxRepo();
       const sandboxService = makeSandboxService();
 
-      // findByInstanceId returns an existing sandbox with a different IP
-      (sandboxRepo.findByInstanceId as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: "sb-1",
-        name: "gh-worker-asg-1",
-        instanceId: "i-abc123",
-        publicIp: "10.0.0.1", // old IP
-        status: "active",
-        tags: { asg_managed: true },
-      });
-
-      // findAsgManaged returns all known ASG sandboxes — after update, all are in ASG
+      // findAsgManaged returns sandbox with OLD IP — the sync will detect the change
       (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
           id: "sb-1",
           name: "gh-worker-asg-1",
           instanceId: "i-abc123",
-          publicIp: "1.2.3.4",
+          publicIp: "10.0.0.1", // old IP — EC2 now reports 1.2.3.4
           status: "active",
           tags: { asg_managed: true },
         },
@@ -401,7 +391,6 @@ describe("AutoScaleService", () => {
       // Should have updated the sandbox with new IP
       expect(sandboxRepo.update).toHaveBeenCalledWith("sb-1", {
         publicIp: "1.2.3.4",
-        novncUrl: "http://1.2.3.4:6080",
         instanceId: "i-abc123",
       });
 
@@ -555,7 +544,8 @@ describe("AutoScaleService", () => {
 
       await service.syncAsgIps();
 
-      expect(logger.warn).toHaveBeenCalledWith(
+      // Now logged at debug level since dynamic routing handles this automatically
+      expect(logger.debug).toHaveBeenCalledWith(
         expect.objectContaining({ currentIps: ["1.2.3.4"] }),
         expect.stringContaining("GHOSTHANDS_API_URL"),
       );
