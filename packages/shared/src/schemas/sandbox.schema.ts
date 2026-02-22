@@ -165,6 +165,10 @@ export const adminTriggerTaskRequest = z.object({
   mode: z.enum(["copilot", "autopilot"]).optional().default("autopilot"),
   notes: z.string().max(2000).optional(),
   quality: z.enum(["speed", "balanced", "quality"]).optional(),
+  /** LLM model alias for reasoning (e.g. "qwen-72b", "gpt-4.1"). Empty = GH default. */
+  reasoningModel: z.string().max(100).optional(),
+  /** Separate vision model for screenshots. Empty = same as reasoning model. */
+  visionModel: z.string().max(100).optional(),
 });
 
 export const adminTriggerTaskResponse = z.object({

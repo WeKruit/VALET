@@ -52,6 +52,10 @@ export interface GHSubmitApplicationParams {
   qa_answers?: Record<string, string>;
   callback_url?: string;
   quality?: "speed" | "balanced" | "quality";
+  /** LLM model alias for reasoning (e.g. "qwen-72b", "gpt-4.1"). See integration contract. */
+  model?: string;
+  /** Separate vision model for screenshots. Must have vision support. */
+  image_model?: string;
   priority?: number;
   timeout_seconds?: number;
   max_retries?: number;

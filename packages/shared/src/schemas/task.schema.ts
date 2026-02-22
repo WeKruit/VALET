@@ -71,6 +71,10 @@ export const createTaskRequest = z.object({
   quality: qualityPreset.optional(),
   /** Optional sandbox UUID — routes the job to a specific GH worker. */
   targetWorkerId: z.string().uuid().optional(),
+  /** LLM model alias for reasoning (e.g. "qwen-72b", "gpt-4.1"). Empty = GH default. */
+  reasoningModel: z.string().max(100).optional(),
+  /** Separate vision model for screenshots. Empty = same as reasoning model. */
+  visionModel: z.string().max(100).optional(),
 });
 
 export const taskListQuery = z.object({
