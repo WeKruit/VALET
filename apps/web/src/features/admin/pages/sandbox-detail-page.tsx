@@ -56,6 +56,7 @@ import { SandboxConnectionInfo } from "../components/sandbox-connection-info";
 import { LiveView } from "@/features/tasks/components/live-view";
 import { TriggerTaskDialog } from "../components/trigger-task-dialog";
 import { WorkerStatusCard } from "../components/worker-status-card";
+import { DeepHealthCard } from "../components/deep-health-card";
 import { MachineTypeBadge } from "../components/machine-type-badge";
 import { SandboxWorkersTab } from "../components/sandbox-workers-tab";
 import { SandboxContainersTab } from "../components/sandbox-containers-tab";
@@ -488,6 +489,9 @@ export function SandboxDetailPage() {
 
       {/* Worker Status */}
       <WorkerStatusCard sandboxId={id!} ec2Running={ec2Status === "running"} />
+
+      {/* Deep Health Check */}
+      <DeepHealthCard sandboxId={id!} ec2Running={ec2Status === "running"} />
 
       {/* Management Tabs */}
       <Card>

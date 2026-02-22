@@ -188,6 +188,19 @@ export function useWorkerStatus(id: string, enabled = true) {
   });
 }
 
+export function useDeepHealthCheck(id: string, enabled = true) {
+  return api.sandboxes.deepHealthCheck.useQuery({
+    queryKey: ["admin", "sandboxes", id, "deep-health"],
+    queryData: {
+      params: { id },
+    },
+    enabled: Boolean(id) && enabled,
+    staleTime: 1000 * 10,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
 // ─── Deploy Management ───
 
 export function useDeploys() {
