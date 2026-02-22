@@ -180,9 +180,11 @@ export class AutoScaleService {
       if (instances.length === 0) return;
 
       for (const { instanceId, publicIp } of instances) {
-        // Update sandboxes table (match on instance_id)
+        const novncUrl = `http://${publicIp}:6080`;
+
+        // Update sandboxes table (match on instance_id) — sync both public_ip and novnc_url
         await this.db.execute(
-          sql`UPDATE sandboxes SET public_ip = ${publicIp} WHERE instance_id = ${instanceId} AND (public_ip IS NULL OR public_ip != ${publicIp})`,
+          sql`UPDATE sandboxes SET public_ip = ${publicIp}, novnc_url = ${novncUrl} WHERE instance_id = ${instanceId} AND (public_ip IS NULL OR public_ip != ${publicIp})`,
         );
 
         // Update gh_worker_registry (match on ec2_instance_id)

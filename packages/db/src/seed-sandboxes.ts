@@ -4,7 +4,9 @@ import * as schema from "./schema/index.js";
 import { sandboxes } from "./schema/sandboxes.js";
 
 /**
- * Seed script to register existing EC2 sandbox instances
+ * Seed script to register the GhostHands ASG sandbox.
+ * NOTE: ASG instances get dynamic IPs. This seed uses the current instance
+ * as a starting point. For dynamic IP sync, see WEK-138.
  * Run with: DATABASE_URL=... pnpm --filter @valet/db exec tsx src/seed-sandboxes.ts
  */
 
@@ -21,45 +23,46 @@ const db = drizzle(sql, { schema });
 console.log("🌱 Seeding sandboxes...");
 
 try {
-  // Register the EC2 instance as staging sandbox
-  // (replaces old dev-sandbox-1 via onConflictDoUpdate on instanceId)
+  // Register the ASG-managed worker as staging sandbox
+  // NOTE: instanceId and publicIp change when ASG replaces instances.
+  // WEK-138 will add dynamic IP sync. For now, update manually after ASG refresh.
   const [stagingSandbox] = await db
     .insert(sandboxes)
     .values({
-      name: "gh-worker-stg-1",
+      name: "gh-worker-asg-1",
       environment: "staging",
-      instanceId: "i-0428f12557f075129",
+      instanceId: "i-0baf28dd8bb630810",
       instanceType: "t3.large",
-      publicIp: "34.197.248.80",
+      publicIp: "44.198.167.49",
       status: "active",
       healthStatus: "healthy",
-      capacity: 5,
+      capacity: 1,
       currentLoad: 0,
       sshKeyName: "valet-worker.pem",
-      novncUrl: "http://34.197.248.80:6080",
-      adspowerVersion: "7.12.29",
+      novncUrl: "http://44.198.167.49:6080",
       tags: {
         purpose: "staging",
         region: "us-east-1",
-        terraform_managed: true,
+        asg_managed: true,
+        asg_name: "ghosthands-worker-asg",
       },
     })
     .onConflictDoUpdate({
       target: sandboxes.instanceId,
       set: {
-        name: "gh-worker-stg-1",
+        name: "gh-worker-asg-1",
         environment: "staging",
         instanceType: "t3.large",
-        publicIp: "34.197.248.80",
+        publicIp: "44.198.167.49",
         status: "active",
         healthStatus: "healthy",
-        capacity: 5,
-        novncUrl: "http://34.197.248.80:6080",
-        adspowerVersion: "7.12.29",
+        capacity: 1,
+        novncUrl: "http://44.198.167.49:6080",
         tags: {
           purpose: "staging",
           region: "us-east-1",
-          terraform_managed: true,
+          asg_managed: true,
+          asg_name: "ghosthands-worker-asg",
         },
         updatedAt: new Date(),
       },
