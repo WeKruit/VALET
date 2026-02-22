@@ -1,6 +1,10 @@
 -- Migration 0015: Enable Supabase Realtime on gh_job_events and gh_automation_jobs
 -- Required for VALET frontend to subscribe to live job status + event streams
 --
+-- NOTE: This migration modifies GH-owned tables (gh_automation_jobs, gh_job_events)
+-- from the VALET repo. This is acceptable because VALET runs all Drizzle migrations
+-- against the shared Supabase database — GH does not have its own migration runner.
+--
 -- GH migration 012 may have already added gh_job_events to the publication.
 -- This migration is idempotent — safe to run regardless.
 
@@ -39,6 +43,7 @@ ALTER TABLE gh_automation_jobs ENABLE ROW LEVEL SECURITY;
 -- ============================================================================
 
 -- Service role: full access (used by API server and worker processes)
+DROP POLICY IF EXISTS "Service role full access on gh_automation_jobs" ON gh_automation_jobs;
 CREATE POLICY "Service role full access on gh_automation_jobs"
     ON gh_automation_jobs
     FOR ALL
@@ -46,18 +51,20 @@ CREATE POLICY "Service role full access on gh_automation_jobs"
     USING (true)
     WITH CHECK (true);
 
--- Authenticated users: SELECT own jobs via metadata->>'valet_user_id'
+-- Authenticated users: SELECT own jobs via indexed user_id column
+DROP POLICY IF EXISTS "Users can read own automation jobs" ON gh_automation_jobs;
 CREATE POLICY "Users can read own automation jobs"
     ON gh_automation_jobs
     FOR SELECT
     TO authenticated
-    USING (metadata->>'valet_user_id' = auth.uid()::text);
+    USING (user_id = auth.uid());
 
 -- ============================================================================
 -- 4. RLS policies — gh_job_events
 -- ============================================================================
 
 -- Service role: full access
+DROP POLICY IF EXISTS "Service role full access on gh_job_events" ON gh_job_events;
 CREATE POLICY "Service role full access on gh_job_events"
     ON gh_job_events
     FOR ALL
@@ -65,7 +72,8 @@ CREATE POLICY "Service role full access on gh_job_events"
     USING (true)
     WITH CHECK (true);
 
--- Authenticated users: SELECT events for their own jobs
+-- Authenticated users: SELECT events for their own jobs via indexed user_id
+DROP POLICY IF EXISTS "Users can read own job events" ON gh_job_events;
 CREATE POLICY "Users can read own job events"
     ON gh_job_events
     FOR SELECT
@@ -73,6 +81,6 @@ CREATE POLICY "Users can read own job events"
     USING (
       job_id IN (
         SELECT id FROM gh_automation_jobs
-        WHERE metadata->>'valet_user_id' = auth.uid()::text
+        WHERE user_id = auth.uid()
       )
     );
