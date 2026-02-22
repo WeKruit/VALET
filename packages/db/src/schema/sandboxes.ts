@@ -70,6 +70,7 @@ export const sandboxes = pgTable(
     ghImageTag: varchar("gh_image_tag", { length: 255 }),
     ghImageUpdatedAt: timestamp("gh_image_updated_at", { withTimezone: true }),
     deployedCommitSha: varchar("deployed_commit_sha", { length: 40 }),
+    healthCheckFailureCount: integer("health_check_failure_count").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
