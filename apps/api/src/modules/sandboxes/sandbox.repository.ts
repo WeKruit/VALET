@@ -1,4 +1,4 @@
-import { eq, and, count, desc, asc, ilike, or, type SQL } from "drizzle-orm";
+import { eq, and, count, desc, asc, ilike, or, sql, type SQL } from "drizzle-orm";
 import { sandboxes, type Database } from "@valet/db";
 import type {
   SandboxStatus,
@@ -266,5 +266,24 @@ export class SandboxRepository {
         ),
       );
     return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
+  }
+
+  /**
+   * Resolve a sandbox ID to the active GH worker ID registered on that instance.
+   * Returns null if no active worker is found for the sandbox.
+   */
+  async resolveWorkerId(sandboxId: string): Promise<string | null> {
+    const sandbox = await this.findById(sandboxId);
+    if (!sandbox?.instanceId) return null;
+
+    const rows = (await this.db.execute(
+      sql`SELECT worker_id FROM gh_worker_registry
+          WHERE ec2_instance_id = ${sandbox.instanceId}
+            AND status = 'active'
+          ORDER BY last_heartbeat DESC
+          LIMIT 1`,
+    )) as Array<{ worker_id: string }>;
+
+    return rows[0]?.worker_id ?? null;
   }
 }

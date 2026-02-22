@@ -412,6 +412,18 @@ export class TaskService {
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // ── Queue dispatch path (pg-boss) ──
       try {
+        // Resolve sandbox ID → actual GH worker ID for queue routing
+        const resolvedWorkerId = body.targetWorkerId
+          ? await this.sandboxRepo.resolveWorkerId(body.targetWorkerId)
+          : undefined;
+
+        if (body.targetWorkerId && !resolvedWorkerId) {
+          this.logger.warn(
+            { sandboxId: body.targetWorkerId },
+            "No active worker found for sandbox — falling back to general queue",
+          );
+        }
+
         const ghJob = await this.ghJobRepo.insertPendingJob({
           userId,
           jobType: "apply",
@@ -429,7 +441,7 @@ export class TaskService {
           metadata: {
             quality_preset: body.quality ?? (body.mode === "autopilot" ? "speed" : "quality"),
           },
-          targetWorkerId: body.targetWorkerId,
+          targetWorkerId: resolvedWorkerId ?? body.targetWorkerId,
           callbackUrl,
           valetTaskId: task.id,
           workerAffinity: body.targetWorkerId ? "strict" : undefined,
@@ -445,12 +457,12 @@ export class TaskService {
             jobType: "apply",
             callbackUrl,
           },
-          { targetWorkerId: body.targetWorkerId },
+          { targetWorkerId: resolvedWorkerId ?? undefined },
         );
 
         // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = body.targetWorkerId
-          ? `${QUEUE_APPLY_JOB}/${body.targetWorkerId}`
+        const pgBossQueueName = resolvedWorkerId
+          ? `${QUEUE_APPLY_JOB}/${resolvedWorkerId}`
           : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
@@ -608,6 +620,16 @@ export class TaskService {
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // ── Queue dispatch path (pg-boss) ──
       try {
+        // Resolve sandbox ID → actual GH worker ID for queue routing
+        const resolvedWorkerId = await this.sandboxRepo.resolveWorkerId(body.targetWorkerId);
+
+        if (!resolvedWorkerId) {
+          this.logger.warn(
+            { sandboxId: body.targetWorkerId },
+            "No active worker found for sandbox — falling back to general queue",
+          );
+        }
+
         const ghJob = await this.ghJobRepo.insertPendingJob({
           userId,
           jobType: "custom",
@@ -616,7 +638,7 @@ export class TaskService {
           inputData: { platform: "google", tier: "free" },
           maxRetries: 1,
           tags: ["valet", "test"],
-          targetWorkerId: body.targetWorkerId,
+          targetWorkerId: resolvedWorkerId ?? body.targetWorkerId,
           callbackUrl,
           valetTaskId: task.id,
           workerAffinity: "strict",
@@ -632,12 +654,12 @@ export class TaskService {
             taskDescription,
             callbackUrl,
           },
-          { targetWorkerId: body.targetWorkerId },
+          { targetWorkerId: resolvedWorkerId ?? undefined },
         );
 
         // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = body.targetWorkerId
-          ? `${QUEUE_APPLY_JOB}/${body.targetWorkerId}`
+        const pgBossQueueName = resolvedWorkerId
+          ? `${QUEUE_APPLY_JOB}/${resolvedWorkerId}`
           : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
@@ -755,7 +777,11 @@ export class TaskService {
         },
       });
 
-      const targetWorkerId = task.sandboxId || undefined;
+      // Resolve sandbox ID → actual GH worker ID for queue routing
+      const resolvedWorkerId = task.sandboxId
+        ? await this.sandboxRepo.resolveWorkerId(task.sandboxId)
+        : undefined;
+
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
           ghJobId: ghJob.id,
@@ -766,12 +792,12 @@ export class TaskService {
           jobType: "apply",
           callbackUrl,
         },
-        { targetWorkerId },
+        { targetWorkerId: resolvedWorkerId ?? undefined },
       );
 
       // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-      const pgBossQueueName = targetWorkerId
-        ? `${QUEUE_APPLY_JOB}/${targetWorkerId}`
+      const pgBossQueueName = resolvedWorkerId
+        ? `${QUEUE_APPLY_JOB}/${resolvedWorkerId}`
         : QUEUE_APPLY_JOB;
       if (pgBossJobId) {
         await this.ghJobRepo.updateStatus(ghJob.id, {
