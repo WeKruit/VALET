@@ -24,7 +24,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
-import { useTriggerTask, useTriggerTest } from "../hooks/use-sandboxes";
+import { useTriggerTask, useTriggerTest, useAgentWorkers } from "../hooks/use-sandboxes";
 import { QualitySelector } from "../../apply/components/quality-selector";
 
 // ─── Model options from GH integration contract (Section 4.1.1) ───
@@ -229,6 +229,13 @@ export function TriggerTaskDialog({
   const triggerTask = useTriggerTask();
   const triggerTest = useTriggerTest();
 
+  // Fetch workers for this sandbox to show target worker ID
+  const { data: workersData } = useAgentWorkers(sandboxId, open);
+  const workers = workersData?.status === 200 ? workersData.body.data : [];
+  const activeWorker = workers.find(
+    (w) => w.status === "running" || w.status === "idle" || w.status === "busy",
+  );
+
   const { data: resumesData, isLoading: resumesLoading } = api.resumes.list.useQuery({
     queryKey: ["resumes", "trigger-task"],
     queryData: {},
@@ -330,10 +337,23 @@ export function TriggerTaskDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-sunken)] px-3 py-2 text-xs text-[var(--wk-text-secondary)]">
-          <span>Target:</span>
-          <span className="font-semibold text-[var(--wk-text-primary)]">{sandboxName}</span>
-          <InlineCopyId value={sandboxId} />
+        <div className="space-y-1.5 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-sunken)] px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 text-[var(--wk-text-secondary)]">
+            <span>Sandbox:</span>
+            <span className="font-semibold text-[var(--wk-text-primary)]">{sandboxName}</span>
+            <InlineCopyId value={sandboxId} />
+          </div>
+          <div className="flex items-center gap-2 text-[var(--wk-text-secondary)]">
+            <span>Worker:</span>
+            {activeWorker ? (
+              <>
+                <span className="inline-flex h-1.5 w-1.5 rounded-full bg-[var(--wk-status-success)]" />
+                <InlineCopyId value={activeWorker.workerId} />
+              </>
+            ) : (
+              <span className="text-[var(--wk-status-warning)]">No active worker found</span>
+            )}
+          </div>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
