@@ -345,6 +345,23 @@ export const deployHistoryListResponse = z.object({
   pagination: paginationMeta,
 });
 
+// ─── Deep Health Check ───
+
+export const portCheckResult = z.object({
+  name: z.string(),
+  port: z.number(),
+  status: z.enum(["up", "down", "timeout"]),
+  responseTimeMs: z.number(),
+  details: z.record(z.unknown()).optional(),
+});
+
+export const deepHealthCheckResponse = z.object({
+  sandboxId: z.string().uuid(),
+  overall: z.enum(["healthy", "degraded", "unhealthy"]),
+  checks: z.array(portCheckResult),
+  timestamp: z.number(),
+});
+
 // ─── Agent Health (for 502 responses) ───
 
 export const agentHealthResponse = z.object({
@@ -470,3 +487,5 @@ export type DeployHistoryEntry = z.infer<typeof deployHistoryEntry>;
 export type DeployHistoryListResponse = z.infer<typeof deployHistoryListResponse>;
 export type AgentHealthResponseType = z.infer<typeof agentHealthResponse>;
 export type PaginationMeta = z.infer<typeof paginationMeta>;
+export type PortCheckResult = z.infer<typeof portCheckResult>;
+export type DeepHealthCheckResponse = z.infer<typeof deepHealthCheckResponse>;

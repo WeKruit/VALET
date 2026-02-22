@@ -11,6 +11,7 @@ import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { SandboxProviderFactory } from "./providers/provider-factory.js";
 import type { SandboxAgentClient } from "./agent/sandbox-agent.client.js";
 import type { MachineStatus } from "./providers/sandbox-provider.interface.js";
+import type { DeepHealthChecker, DeepHealthResult } from "./deep-health-checker.js";
 import {
   SandboxNotFoundError,
   SandboxDuplicateInstanceError,
@@ -25,6 +26,7 @@ export class SandboxService {
   private ghosthandsClient: GhostHandsClient;
   private providerFactory: SandboxProviderFactory;
   private sandboxAgentClient: SandboxAgentClient;
+  private deepHealthChecker: DeepHealthChecker;
 
   constructor({
     sandboxRepo,
@@ -33,6 +35,7 @@ export class SandboxService {
     ghosthandsClient,
     sandboxProviderFactory,
     sandboxAgentClient,
+    deepHealthChecker,
   }: {
     sandboxRepo: SandboxRepository;
     logger: FastifyBaseLogger;
@@ -40,6 +43,7 @@ export class SandboxService {
     ghosthandsClient: GhostHandsClient;
     sandboxProviderFactory: SandboxProviderFactory;
     sandboxAgentClient: SandboxAgentClient;
+    deepHealthChecker: DeepHealthChecker;
   }) {
     this.sandboxRepo = sandboxRepo;
     this.logger = logger;
@@ -47,6 +51,7 @@ export class SandboxService {
     this.ghosthandsClient = ghosthandsClient;
     this.providerFactory = sandboxProviderFactory;
     this.sandboxAgentClient = sandboxAgentClient;
+    this.deepHealthChecker = deepHealthChecker;
   }
 
   async getById(id: string) {
@@ -177,45 +182,94 @@ export class SandboxService {
       };
     }
 
-    const provider = this.providerFactory.getProvider(sandbox);
-    let agentUrl: string;
+    // Use deep health check to probe all required services
+    let deepResult: DeepHealthResult;
     try {
-      agentUrl = provider.getAgentUrl(sandbox);
-    } catch {
+      deepResult = await this.deepHealthChecker.check(sandbox);
+    } catch (err) {
+      this.logger.warn({ sandboxId: id, err }, "Deep health check threw unexpectedly");
       await this.sandboxRepo.updateHealthStatus(id, "unhealthy");
       return {
         sandboxId: id,
         healthStatus: "unhealthy" as SandboxHealthStatus,
         checkedAt: new Date(),
-        details: { error: "No public IP configured" },
+        details: { error: err instanceof Error ? err.message : "Unknown error" },
       };
     }
 
-    let healthStatus: SandboxHealthStatus = "unhealthy";
-    let details: Record<string, unknown> = {};
+    const healthStatus = deepResult.overall as SandboxHealthStatus;
 
-    try {
-      const body = await this.sandboxAgentClient.getHealth(agentUrl);
-      healthStatus = "healthy";
-      details = body as unknown as Record<string, unknown>;
+    // Store the full deep health result in browserConfig so the UI can display per-port status
+    const updatedBrowserConfig = {
+      ...(sandbox.browserConfig ?? {}),
+      deepHealth: {
+        overall: deepResult.overall,
+        checks: deepResult.checks,
+        timestamp: deepResult.timestamp,
+      },
+    };
 
-      const rawBody = body as unknown as Record<string, unknown>;
-      if (rawBody.adspowerStatus !== "ok") {
-        healthStatus = "degraded";
-      }
-    } catch (err) {
-      healthStatus = "unhealthy";
-      details = { error: err instanceof Error ? err.message : "Unknown error" };
-      this.logger.warn({ sandboxId: id, agentUrl, err }, "Health check failed for sandbox");
-    }
-
-    await this.sandboxRepo.updateHealthStatus(id, healthStatus);
+    await this.sandboxRepo.update(id, {
+      healthStatus,
+      lastHealthCheckAt: new Date(),
+      browserConfig: updatedBrowserConfig,
+    });
 
     return {
       sandboxId: id,
       healthStatus,
       checkedAt: new Date(),
-      details,
+      details: {
+        overall: deepResult.overall,
+        checks: deepResult.checks,
+        timestamp: deepResult.timestamp,
+      },
+    };
+  }
+
+  /**
+   * Perform a deep health check that probes ALL required services on a sandbox
+   * and returns structured per-port results.
+   */
+  async deepHealthCheck(id: string): Promise<DeepHealthResult & { sandboxId: string }> {
+    const sandbox = await this.sandboxRepo.findById(id);
+    if (!sandbox) throw new SandboxNotFoundError(id);
+
+    // For stopped/terminated instances, return all-down immediately
+    if (
+      sandbox.ec2Status === "stopped" ||
+      sandbox.ec2Status === "terminated" ||
+      sandbox.ec2Status === "stopping"
+    ) {
+      return {
+        sandboxId: id,
+        overall: "unhealthy",
+        checks: [],
+        timestamp: Date.now(),
+      };
+    }
+
+    const result = await this.deepHealthChecker.check(sandbox);
+
+    // Persist the result
+    const updatedBrowserConfig = {
+      ...(sandbox.browserConfig ?? {}),
+      deepHealth: {
+        overall: result.overall,
+        checks: result.checks,
+        timestamp: result.timestamp,
+      },
+    };
+
+    await this.sandboxRepo.update(id, {
+      healthStatus: result.overall as SandboxHealthStatus,
+      lastHealthCheckAt: new Date(),
+      browserConfig: updatedBrowserConfig,
+    });
+
+    return {
+      sandboxId: id,
+      ...result,
     };
   }
 
@@ -453,6 +507,43 @@ export class SandboxService {
         "Timed out waiting for machine status",
       );
     }
+  }
+
+  /**
+   * Enforce state consistency: any sandbox marked 'active' + 'healthy' that
+   * has NOT passed a health check within the last 10 minutes gets downgraded
+   * to healthStatus='degraded'. A sandbox must continuously prove health.
+   */
+  async enforceStateConsistency(): Promise<number> {
+    const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+    const staleSandboxes = await this.sandboxRepo.findStaleActive(STALE_THRESHOLD_MS);
+
+    for (const sandbox of staleSandboxes) {
+      const minutesSinceCheck = sandbox.lastHealthCheckAt
+        ? Math.round((Date.now() - sandbox.lastHealthCheckAt.getTime()) / 60_000)
+        : "never";
+
+      this.logger.warn(
+        {
+          sandboxId: sandbox.id,
+          sandboxName: sandbox.name,
+          lastHealthCheckAt: sandbox.lastHealthCheckAt?.toISOString() ?? null,
+          minutesSinceCheck,
+        },
+        "Downgrading sandbox health: no successful health check within 10 minutes",
+      );
+
+      await this.sandboxRepo.updateHealthStatus(sandbox.id, "degraded");
+    }
+
+    if (staleSandboxes.length > 0) {
+      this.logger.info(
+        { count: staleSandboxes.length },
+        "State consistency enforced — downgraded stale healthy sandboxes to degraded",
+      );
+    }
+
+    return staleSandboxes.length;
   }
 
   async checkAllSandboxes() {

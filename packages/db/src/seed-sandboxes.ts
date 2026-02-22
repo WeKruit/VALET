@@ -35,7 +35,7 @@ try {
       instanceType: "t3.large",
       publicIp: "44.198.167.49",
       status: "active",
-      healthStatus: "healthy",
+      healthStatus: "degraded",
       capacity: 1,
       currentLoad: 0,
       sshKeyName: "valet-worker.pem",
@@ -55,7 +55,7 @@ try {
         instanceType: "t3.large",
         publicIp: "44.198.167.49",
         status: "active",
-        healthStatus: "healthy",
+        healthStatus: "degraded",
         capacity: 1,
         novncUrl: "http://44.198.167.49:6080",
         tags: {
