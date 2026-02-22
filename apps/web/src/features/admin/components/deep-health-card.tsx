@@ -67,7 +67,13 @@ export function DeepHealthCard({ sandboxId, ec2Running }: DeepHealthCardProps) {
               </Badge>
             )}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
             {isFetching ? <LoadingSpinner size="sm" /> : <RefreshCw className="h-4 w-4" />}
             {isFetching ? "Checking..." : "Run Check"}
           </Button>
@@ -84,53 +90,63 @@ export function DeepHealthCard({ sandboxId, ec2Running }: DeepHealthCardProps) {
           </p>
         ) : result ? (
           <div className="space-y-4">
-            {/* Per-port status table */}
-            <div className="overflow-hidden rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)]">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--wk-border-subtle)] bg-[var(--wk-surface-sunken)]">
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-                      Service
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-                      Port
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-                      Status
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-                      Response
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.checks.map((check) => (
-                    <tr
-                      key={check.name}
-                      className="border-b border-[var(--wk-border-subtle)] last:border-0"
-                    >
-                      <td className="px-4 py-2.5 font-medium text-[var(--wk-text-primary)]">
-                        {check.name}
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-[var(--wk-text-secondary)]">
-                        {check.port}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-1.5">
-                          {portStatusIcon[check.status]}
-                          <span className={`capitalize ${portStatusColor[check.status]}`}>
-                            {check.status}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-[var(--wk-text-secondary)]">
-                        {check.responseTimeMs}ms
-                      </td>
+            {result.checks.length === 0 ? (
+              <p className="text-sm text-[var(--wk-text-tertiary)] text-center py-4">
+                No port checks returned. The instance may still be starting up.
+              </p>
+            ) : (
+              /* Per-port status table */
+              <div className="overflow-hidden rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)]">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--wk-border-subtle)] bg-[var(--wk-surface-sunken)]">
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+                        Service
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+                        Port
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+                        Status
+                      </th>
+                      <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+                        Response
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {result.checks.map((check) => (
+                      <tr
+                        key={check.name}
+                        className="border-b border-[var(--wk-border-subtle)] last:border-0"
+                      >
+                        <td className="px-4 py-2.5 font-medium text-[var(--wk-text-primary)]">
+                          {check.name}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-[var(--wk-text-secondary)]">
+                          {check.port}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            {portStatusIcon[check.status]}
+                            <span className={`capitalize ${portStatusColor[check.status]}`}>
+                              {check.status}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-[var(--wk-text-secondary)]">
+                          {check.status === "timeout"
+                            ? "timeout"
+                            : check.status === "down" && check.responseTimeMs === 0
+                              ? "-"
+                              : `${check.responseTimeMs}ms`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* Last check timestamp */}
             <p className="text-xs text-[var(--wk-text-tertiary)]">

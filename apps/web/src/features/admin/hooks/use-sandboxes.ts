@@ -197,6 +197,7 @@ export function useDeepHealthCheck(id: string, enabled = true) {
     enabled: Boolean(id) && enabled,
     staleTime: 1000 * 10,
     retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
