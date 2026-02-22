@@ -40,6 +40,13 @@ const TASK_WITH_VNC = {
   status: "in_progress",
 };
 
+const TASK_WAITING_HUMAN = {
+  id: randomUUID(),
+  userId: ALICE_ID,
+  sandboxId: SANDBOX_ID,
+  status: "waiting_human",
+};
+
 const TASK_NO_SANDBOX = {
   id: randomUUID(),
   userId: ALICE_ID,
@@ -69,6 +76,9 @@ function createMockTaskService() {
       // Task not found or wrong user
       if (taskId === TASK_WITH_VNC.id && userId === ALICE_ID) {
         return { url: SANDBOX_VNC_URL, readOnly: true };
+      }
+      if (taskId === TASK_WAITING_HUMAN.id && userId === ALICE_ID) {
+        return { url: SANDBOX_VNC_URL, readOnly: false };
       }
       if (taskId === TASK_NO_SANDBOX.id && userId === ALICE_ID) {
         return null;
@@ -278,5 +288,31 @@ describe("GET /api/v1/tasks/:id/vnc-url", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().url).toBe(SANDBOX_VNC_URL);
+  });
+
+  it("returns readOnly: true for in_progress task", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${TASK_WITH_VNC.id}/vnc-url`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.url).toBe(SANDBOX_VNC_URL);
+    expect(body.readOnly).toBe(true);
+  });
+
+  it("returns readOnly: false for waiting_human task (Take Control)", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${TASK_WAITING_HUMAN.id}/vnc-url`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.url).toBe(SANDBOX_VNC_URL);
+    expect(body.readOnly).toBe(false);
   });
 });
