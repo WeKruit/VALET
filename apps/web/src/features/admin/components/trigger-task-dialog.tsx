@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@valet/ui/components/select";
 import { toast } from "sonner";
+import { Copy, Check } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useTriggerTask, useTriggerTest } from "../hooks/use-sandboxes";
@@ -67,6 +68,137 @@ const OTHER_MODELS: ModelOption[] = [
   { value: "deepseek-reasoner", label: "DeepSeek Reasoner (text-only)", vision: false },
 ];
 
+// ─── Reusable model selector dropdowns ───
+
+function ReasoningModelSelect({
+  value,
+  onValueChange,
+}: {
+  value: string;
+  onValueChange: (v: string) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger>
+        <SelectValue placeholder="Auto (default)" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="auto">Auto (default)</SelectItem>
+        <SelectGroup>
+          <SelectLabel>Recommended</SelectLabel>
+          {RECOMMENDED_MODELS.map((m) => (
+            <SelectItem key={m.value} value={m.value}>
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectGroup>
+          <SelectLabel>Budget</SelectLabel>
+          {BUDGET_MODELS.map((m) => (
+            <SelectItem key={m.value} value={m.value}>
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectGroup>
+          <SelectLabel>Other</SelectLabel>
+          {OTHER_MODELS.map((m) => (
+            <SelectItem key={m.value} value={m.value}>
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function VisionModelSelect({
+  value,
+  onValueChange,
+}: {
+  value: string;
+  onValueChange: (v: string) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger>
+        <SelectValue placeholder="Auto (default)" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="auto">Auto (default)</SelectItem>
+        <SelectGroup>
+          <SelectLabel>Recommended</SelectLabel>
+          {RECOMMENDED_MODELS.filter((m) => m.vision).map((m) => (
+            <SelectItem key={m.value} value={m.value}>
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectGroup>
+          <SelectLabel>Budget (vision)</SelectLabel>
+          {BUDGET_MODELS.filter((m) => m.vision).map((m) => (
+            <SelectItem key={m.value} value={m.value}>
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectGroup>
+          <SelectLabel>Other (vision)</SelectLabel>
+          {OTHER_MODELS.filter((m) => m.vision).map((m) => (
+            <SelectItem key={m.value} value={m.value}>
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+// ─── Inline copy button ───
+
+function InlineCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="ml-1.5 inline-flex items-center justify-center rounded p-0.5 hover:bg-[var(--wk-surface-hover)] transition-colors"
+      title={copied ? "Copied!" : "Copy to clipboard"}
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-[var(--wk-status-success)]" />
+      ) : (
+        <Copy className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
+      )}
+    </button>
+  );
+}
+
+// ─── Task success toast helper ───
+
+function showTaskCreatedToast(taskId: string, label: string) {
+  toast.success(`${label} created`, {
+    description: taskId,
+    action: {
+      label: "View Task",
+      onClick: () => {
+        window.open(`/tasks/${taskId}`, "_blank");
+      },
+    },
+    duration: 8000,
+  });
+}
+
 interface TriggerTaskDialogProps {
   sandboxId: string;
   sandboxName: string;
@@ -93,6 +225,8 @@ export function TriggerTaskDialog({
   const [mode, setMode] = useState<"autopilot" | "copilot">("autopilot");
   const [notes, setNotes] = useState("");
   const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
+
+  // Shared model state (used by both tabs)
   const [reasoningModel, setReasoningModel] = useState<string>("auto");
   const [visionModel, setVisionModel] = useState<string>("auto");
 
@@ -114,12 +248,16 @@ export function TriggerTaskDialog({
     triggerTest.mutate(
       {
         params: { id: sandboxId },
-        body: { searchQuery: searchQuery.trim() || undefined },
+        body: {
+          searchQuery: searchQuery.trim() || undefined,
+          ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
+          ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
+        },
       },
       {
         onSuccess: (data) => {
           if (data.status === 201) {
-            toast.success(`Test task created: ${data.body.taskId.slice(0, 8)}...`);
+            showTaskCreatedToast(data.body.taskId, "Test task");
             onOpenChange(false);
             onTestTriggered?.();
           }
@@ -150,7 +288,7 @@ export function TriggerTaskDialog({
       {
         onSuccess: (data) => {
           if (data.status === 201) {
-            toast.success(`Job task created: ${data.body.taskId.slice(0, 8)}...`);
+            showTaskCreatedToast(data.body.taskId, "Job task");
             onOpenChange(false);
             setJobUrl("");
             setNotes("");
@@ -177,12 +315,18 @@ export function TriggerTaskDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* ─── Sandbox info banner with full ID + copy ─── */}
         <div className="rounded-[var(--wk-radius-md)] border border-[var(--wk-border-default)] bg-[var(--wk-surface-sunken)] px-3 py-2 text-xs text-[var(--wk-text-secondary)]">
-          Target: This task will run on{" "}
-          <span className="font-semibold text-[var(--wk-text-primary)]">{sandboxName}</span>
-          <span className="ml-1.5 text-[var(--wk-text-tertiary)]">
-            ({sandboxId.slice(0, 8)}...)
-          </span>
+          <div>
+            Target:{" "}
+            <span className="font-semibold text-[var(--wk-text-primary)]">{sandboxName}</span>
+          </div>
+          <div className="mt-1 flex items-center">
+            <span className="font-mono text-[10px] text-[var(--wk-text-tertiary)] select-all">
+              {sandboxId}
+            </span>
+            <InlineCopyButton text={sandboxId} />
+          </div>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -211,6 +355,22 @@ export function TriggerTaskDialog({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+                    Reasoning Model
+                  </label>
+                  <ReasoningModelSelect value={reasoningModel} onValueChange={setReasoningModel} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+                    Vision Model
+                  </label>
+                  <VisionModelSelect value={visionModel} onValueChange={setVisionModel} />
+                </div>
               </div>
             </div>
             <DialogFooter className="mt-4">
@@ -296,76 +456,14 @@ export function TriggerTaskDialog({
                   <label className="text-sm font-medium text-[var(--wk-text-primary)]">
                     Reasoning Model
                   </label>
-                  <Select value={reasoningModel} onValueChange={setReasoningModel}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Auto (default)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Auto (default)</SelectItem>
-                      <SelectGroup>
-                        <SelectLabel>Recommended</SelectLabel>
-                        {RECOMMENDED_MODELS.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Budget</SelectLabel>
-                        {BUDGET_MODELS.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Other</SelectLabel>
-                        {OTHER_MODELS.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                  <ReasoningModelSelect value={reasoningModel} onValueChange={setReasoningModel} />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-[var(--wk-text-primary)]">
                     Vision Model
                   </label>
-                  <Select value={visionModel} onValueChange={setVisionModel}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Auto (default)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Auto (default)</SelectItem>
-                      <SelectGroup>
-                        <SelectLabel>Recommended</SelectLabel>
-                        {RECOMMENDED_MODELS.filter((m) => m.vision).map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Budget (vision)</SelectLabel>
-                        {BUDGET_MODELS.filter((m) => m.vision).map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Other (vision)</SelectLabel>
-                        {OTHER_MODELS.filter((m) => m.vision).map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                  <VisionModelSelect value={visionModel} onValueChange={setVisionModel} />
                 </div>
               </div>
 

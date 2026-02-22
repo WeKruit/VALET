@@ -181,6 +181,10 @@ export const adminTriggerTaskResponse = z.object({
 // ─── Admin Trigger Test (Quick Integration Test) ───
 export const adminTriggerTestRequest = z.object({
   searchQuery: z.string().max(500).optional().default("valet integration test"),
+  /** LLM model alias for reasoning (e.g. "qwen-72b", "gpt-4.1"). Empty = GH default. */
+  reasoningModel: z.string().max(100).optional(),
+  /** Separate vision model for screenshots. Empty = same as reasoning model. */
+  visionModel: z.string().max(100).optional(),
 });
 
 export const adminTriggerTestResponse = z.object({
