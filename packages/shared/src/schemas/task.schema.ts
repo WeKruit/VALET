@@ -69,6 +69,8 @@ export const createTaskRequest = z.object({
   resumeId: z.string().uuid(),
   notes: z.string().max(1000).optional(),
   quality: qualityPreset.optional(),
+  /** Optional sandbox UUID — routes the job to a specific GH worker. */
+  targetWorkerId: z.string().uuid().optional(),
 });
 
 export const taskListQuery = z.object({

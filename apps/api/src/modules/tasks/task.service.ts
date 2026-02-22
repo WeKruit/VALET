@@ -362,6 +362,29 @@ export class TaskService {
     return task;
   }
 
+  /**
+   * Create a new application task and dispatch it to GhostHands.
+   *
+   * ## Worker routing (targetWorkerId)
+   *
+   * - **Path 1 — Normal user (no targetWorkerId):** Job is enqueued to the
+   *   general pg-boss queue (`gh_apply_job`). Any available GH worker picks it
+   *   up. This works today because the ASG fleet has min=1 (single-worker), so
+   *   all jobs land on the same instance.
+   *
+   *   TODO (multi-worker scaling): When the fleet grows beyond 1 worker, normal
+   *   users will need per-user sandbox isolation. Implement a `user_sandboxes`
+   *   join table that maps each user to a dedicated sandbox/worker assignment.
+   *   On task creation, look up the user's assigned sandbox, resolve its worker
+   *   ID, and route via the worker-specific queue (`gh_apply_job/{workerId}`).
+   *
+   * - **Path 2 — Explicit targetWorkerId (sandbox UUID):** The caller passes a
+   *   sandbox UUID (e.g. from the admin test page or future sandbox picker UI).
+   *   We resolve it to an actual GH worker UUID via
+   *   `sandboxRepo.resolveWorkerId()` and enqueue to the worker-specific queue
+   *   (`gh_apply_job/{resolvedWorkerId}`). If resolution fails, falls back to
+   *   the general queue with a warning log.
+   */
   async create(
     body: {
       jobUrl: string;
