@@ -70,7 +70,7 @@ function getModeStyle(mode: string | null | undefined): {
 }
 
 export function ActivityFeed({ taskId, isTerminal }: ActivityFeedProps) {
-  const { data, isLoading } = useTaskEvents(taskId, true);
+  const { data, isLoading } = useTaskEvents(taskId, !isTerminal);
   const events = data?.events ?? [];
 
   if (isLoading && events.length === 0) {
