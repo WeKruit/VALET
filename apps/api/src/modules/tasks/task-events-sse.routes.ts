@@ -6,6 +6,29 @@ import { streamKey, parseStreamFields } from "../../lib/redis-streams.js";
 export const activeConnections = new Map<string, number>();
 const MAX_CONNECTIONS_PER_USER = 5;
 
+function getAllowedOrigins(): string[] {
+  const envOrigins = process.env.CORS_ORIGIN;
+  if (envOrigins) {
+    return envOrigins
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+  }
+  return ["http://localhost:5173"];
+}
+
+function getCorsHeaders(request: FastifyRequest): Record<string, string> {
+  const origin = request.headers.origin;
+  const allowed = getAllowedOrigins();
+  if (origin && allowed.includes(origin)) {
+    return {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+    };
+  }
+  return {};
+}
+
 export async function taskEventsSSERoutes(fastify: FastifyInstance) {
   fastify.get(
     "/api/v1/tasks/:taskId/events/stream",
@@ -62,6 +85,7 @@ export async function taskEventsSSERoutes(fastify: FastifyInstance) {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
+          ...getCorsHeaders(request),
         });
         reply.raw.write(": no GH job associated with this task\n\n");
         reply.raw.end();
@@ -74,6 +98,7 @@ export async function taskEventsSSERoutes(fastify: FastifyInstance) {
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
         "X-Accel-Buffering": "no",
+        ...getCorsHeaders(request),
       });
 
       // 5. Duplicate Redis for blocking XREAD
