@@ -1,7 +1,15 @@
-import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+  PutSecretValueCommand,
+} from "@aws-sdk/client-secrets-manager";
+import sodium from "libsodium-wrappers";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { sql, desc } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
+import type { Database } from "@valet/db";
+import { auditTrail } from "@valet/db";
 
 // --- Types ---
 export interface TargetDiff {
@@ -31,11 +39,31 @@ export interface SecretsDiffResponse {
   };
 }
 
+export interface SyncTargetResult {
+  target: string;
+  success: boolean;
+  pushed: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
+}
+
 export interface SyncResult {
   environment: string;
-  results: Array<{ target: string; success: boolean; error?: string }>;
+  results: SyncTargetResult[];
+  totalPushed: number;
+  totalFailed: number;
   triggeredAt: string;
   triggeredBy: string;
+  durationMs: number;
+}
+
+export interface SyncAuditEntry {
+  id: string;
+  userId: string;
+  action: string;
+  details: Record<string, unknown>;
+  createdAt: string;
 }
 
 // --- Constants ---
@@ -155,45 +183,53 @@ function computeDiff(
   return { missing, extra, matched };
 }
 
+// --- Helper: get env file paths ---
+function getEnvPaths(env: string) {
+  const monorepoRoot = process.env.MONOREPO_ROOT ?? resolve(process.cwd(), "..");
+  return {
+    valetEnvPath: resolve(monorepoRoot, `.env.${env}`),
+    ghEnvPath: resolve(monorepoRoot, `GHOST-HANDS/.env.${env}`),
+  };
+}
+
+// --- Helper: Fly app config ---
+function getFlyApps(env: string) {
+  return env === "staging"
+    ? [
+        { name: "valet-api-stg", role: "api" },
+        { name: "valet-worker-stg", role: "worker" },
+        { name: "valet-web-stg", role: "web" },
+      ]
+    : [
+        { name: "valet-api", role: "api" },
+        { name: "valet-worker", role: "worker" },
+        { name: "valet-web", role: "web" },
+      ];
+}
+
 // --- Service ---
 export class SecretsSyncService {
   private readonly logger: FastifyBaseLogger;
+  private readonly db: Database;
 
-  constructor({ logger }: { logger: FastifyBaseLogger }) {
+  constructor({ logger, db }: { logger: FastifyBaseLogger; db: Database }) {
     this.logger = logger;
+    this.db = db;
   }
 
-  async getDiff(env: "staging" | "production"): Promise<SecretsDiffResponse> {
-    const monorepoRoot = process.env.MONOREPO_ROOT ?? resolve(process.cwd(), "..");
-    const valetEnvPath = resolve(monorepoRoot, `.env.${env}`);
-    const ghEnvPath = resolve(monorepoRoot, `GHOST-HANDS/.env.${env}`);
+  // ─── Diff ──────────────────────────────────────────────────────────
 
+  async getDiff(env: "staging" | "production"): Promise<SecretsDiffResponse> {
+    const { valetEnvPath, ghEnvPath } = getEnvPaths(env);
     const valetVars = parseEnvFile(valetEnvPath);
     const ghVars = parseEnvFile(ghEnvPath);
 
     this.logger.info(
-      {
-        env,
-        valetEnvPath,
-        ghEnvPath,
-        valetKeyCount: valetVars.size,
-        ghKeyCount: ghVars.size,
-      },
+      { env, valetEnvPath, ghEnvPath, valetKeyCount: valetVars.size, ghKeyCount: ghVars.size },
       "Computing secrets diff",
     );
 
-    const flyApps =
-      env === "staging"
-        ? [
-            { name: "valet-api-stg", role: "api" },
-            { name: "valet-worker-stg", role: "worker" },
-            { name: "valet-web-stg", role: "web" },
-          ]
-        : [
-            { name: "valet-api", role: "api" },
-            { name: "valet-worker", role: "worker" },
-            { name: "valet-web", role: "web" },
-          ];
+    const flyApps = getFlyApps(env);
 
     const results = await Promise.allSettled([
       ...flyApps.map((app) => this.diffFlyApp(env, valetVars, app.name, app.role)),
@@ -203,23 +239,10 @@ export class SecretsSyncService {
 
     const targets: TargetDiff[] = results.map((r, i) => {
       if (r.status === "fulfilled") return r.value;
-      // Build a fallback error target for rejected promises
       const allTargets = [
-        ...flyApps.map((a) => ({
-          target: a.name,
-          targetType: "fly" as const,
-          role: a.role,
-        })),
-        {
-          target: "WeKruit/GHOST-HANDS",
-          targetType: "gh-actions" as const,
-          role: "ci",
-        },
-        {
-          target: `ghosthands/${env}`,
-          targetType: "aws-sm" as const,
-          role: "all",
-        },
+        ...flyApps.map((a) => ({ target: a.name, targetType: "fly" as const, role: a.role })),
+        { target: "WeKruit/GHOST-HANDS", targetType: "gh-actions" as const, role: "ci" },
+        { target: `ghosthands/${env}`, targetType: "aws-sm" as const, role: "all" },
       ];
       const info = allTargets[i]!;
       return {
@@ -249,25 +272,445 @@ export class SecretsSyncService {
     return { environment: env, targets, summary };
   }
 
+  // ─── Sync ──────────────────────────────────────────────────────────
+
   async sync(
     env: "staging" | "production",
     userId: string,
     targets?: string[],
   ): Promise<SyncResult> {
-    this.logger.info({ env, userId, targets }, "Secrets sync requested");
-    // Sync via API is complex (fly secrets set, gh secrets set, etc.)
-    // For now, return not-implemented — use CLI workflows
-    return {
+    const startTime = Date.now();
+    this.logger.info({ env, userId, targets }, "Starting secrets sync");
+
+    const { valetEnvPath, ghEnvPath } = getEnvPaths(env);
+    const valetVars = parseEnvFile(valetEnvPath);
+    const ghVars = parseEnvFile(ghEnvPath);
+
+    // Get diff to know what's drifted
+    const diff = await this.getDiff(env);
+
+    const results: SyncTargetResult[] = [];
+
+    for (const target of diff.targets) {
+      // Skip if specific targets requested and this isn't one
+      if (targets && targets.length > 0 && !targets.includes(target.target)) {
+        continue;
+      }
+
+      // Skip already-synced targets
+      if (target.status === "synced") {
+        results.push({
+          target: target.target,
+          success: true,
+          pushed: 0,
+          skipped: target.matched,
+          failed: 0,
+          errors: [],
+        });
+        continue;
+      }
+
+      // Skip unavailable targets
+      if (target.status === "unavailable") {
+        results.push({
+          target: target.target,
+          success: false,
+          pushed: 0,
+          skipped: 0,
+          failed: 0,
+          errors: [target.error ?? "Target unavailable"],
+        });
+        continue;
+      }
+
+      // Skip errored targets (diff itself failed — can't push)
+      if (target.status === "error") {
+        results.push({
+          target: target.target,
+          success: false,
+          pushed: 0,
+          skipped: 0,
+          failed: 0,
+          errors: [target.error ?? "Target errored during diff"],
+        });
+        continue;
+      }
+
+      try {
+        const result = await this.pushToTarget(env, target, valetVars, ghVars);
+        results.push(result);
+      } catch (err) {
+        this.logger.error({ err, target: target.target }, "Sync to target failed");
+        results.push({
+          target: target.target,
+          success: false,
+          pushed: 0,
+          skipped: 0,
+          failed: target.missing.length,
+          errors: [err instanceof Error ? err.message : String(err)],
+        });
+      }
+    }
+
+    const syncResult: SyncResult = {
       environment: env,
-      results: (targets ?? ["all"]).map((t) => ({
-        target: t,
-        success: false,
-        error: "Sync not yet implemented — use CLI (fly secrets set / gh secret set)",
-      })),
+      results,
+      totalPushed: results.reduce((s, r) => s + r.pushed, 0),
+      totalFailed: results.reduce((s, r) => s + r.failed, 0),
       triggeredAt: new Date().toISOString(),
       triggeredBy: userId,
+      durationMs: Date.now() - startTime,
+    };
+
+    // Audit log
+    await this.logAudit(userId, "secrets_sync", {
+      environment: env,
+      targetCount: results.length,
+      totalPushed: syncResult.totalPushed,
+      totalFailed: syncResult.totalFailed,
+      targets: results.map((r) => ({
+        target: r.target,
+        pushed: r.pushed,
+        failed: r.failed,
+        success: r.success,
+      })),
+      durationMs: syncResult.durationMs,
+    });
+
+    return syncResult;
+  }
+
+  // ─── Audit log ─────────────────────────────────────────────────────
+
+  async getAuditLog(env?: string, limit = 50): Promise<SyncAuditEntry[]> {
+    const rows = await this.db
+      .select()
+      .from(auditTrail)
+      .where(
+        env
+          ? sql`${auditTrail.action} LIKE 'secrets_%' AND ${auditTrail.details}->>'environment' = ${env}`
+          : sql`${auditTrail.action} LIKE 'secrets_%'`,
+      )
+      .orderBy(desc(auditTrail.createdAt))
+      .limit(limit);
+
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      action: r.action,
+      details: (r.details as Record<string, unknown>) ?? {},
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  // ─── Private: push to specific target ──────────────────────────────
+
+  private async pushToTarget(
+    env: string,
+    target: TargetDiff,
+    valetVars: Map<string, string>,
+    ghVars: Map<string, string>,
+  ): Promise<SyncTargetResult> {
+    switch (target.targetType) {
+      case "fly":
+        return this.syncFlyApp(valetVars, target);
+      case "gh-actions":
+        return this.syncGhActions(ghVars, target);
+      case "aws-sm":
+        return this.syncAwsSm(env, ghVars, target);
+      default:
+        return {
+          target: target.target,
+          success: false,
+          pushed: 0,
+          skipped: 0,
+          failed: 0,
+          errors: [`Unknown target type: ${target.targetType}`],
+        };
+    }
+  }
+
+  // ─── Fly.io sync ───────────────────────────────────────────────────
+
+  private async syncFlyApp(
+    refVars: Map<string, string>,
+    target: TargetDiff,
+  ): Promise<SyncTargetResult> {
+    const flyToken = process.env.FLY_API_TOKEN;
+    if (!flyToken) {
+      return {
+        target: target.target,
+        success: false,
+        pushed: 0,
+        skipped: 0,
+        failed: 0,
+        errors: ["FLY_API_TOKEN not set"],
+      };
+    }
+
+    const filtered = filterByRole(refVars, target.role);
+    // Only push keys that are missing or mismatched
+    const keysToPush = target.missing;
+    if (keysToPush.length === 0) {
+      return {
+        target: target.target,
+        success: true,
+        pushed: 0,
+        skipped: target.matched,
+        failed: 0,
+        errors: [],
+      };
+    }
+
+    const secrets = keysToPush
+      .filter((k) => filtered.has(k))
+      .map((k) => ({ label: k, type: "secret" as const, value: filtered.get(k)! }));
+
+    if (secrets.length === 0) {
+      return {
+        target: target.target,
+        success: true,
+        pushed: 0,
+        skipped: target.matched,
+        failed: 0,
+        errors: [],
+      };
+    }
+
+    try {
+      const res = await fetch(`https://api.machines.dev/v1/apps/${target.target}/secrets`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${flyToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(secrets),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Fly API ${res.status}: ${body}`);
+      }
+
+      this.logger.info(
+        { target: target.target, pushed: secrets.length, keys: keysToPush },
+        "Fly secrets synced",
+      );
+
+      return {
+        target: target.target,
+        success: true,
+        pushed: secrets.length,
+        skipped: target.matched,
+        failed: 0,
+        errors: [],
+      };
+    } catch (err) {
+      this.logger.error({ err, target: target.target }, "Fly sync failed");
+      return {
+        target: target.target,
+        success: false,
+        pushed: 0,
+        skipped: 0,
+        failed: keysToPush.length,
+        errors: [err instanceof Error ? err.message : String(err)],
+      };
+    }
+  }
+
+  // ─── GitHub Actions sync ───────────────────────────────────────────
+
+  private async syncGhActions(
+    refVars: Map<string, string>,
+    target: TargetDiff,
+  ): Promise<SyncTargetResult> {
+    const ghToken = process.env.GITHUB_TOKEN;
+    if (!ghToken) {
+      return {
+        target: target.target,
+        success: false,
+        pushed: 0,
+        skipped: 0,
+        failed: 0,
+        errors: ["GITHUB_TOKEN not set"],
+      };
+    }
+
+    const filtered = filterByRole(refVars, "ci");
+    const keysToPush = target.missing;
+    if (keysToPush.length === 0) {
+      return {
+        target: target.target,
+        success: true,
+        pushed: 0,
+        skipped: target.matched,
+        failed: 0,
+        errors: [],
+      };
+    }
+
+    // Get repo public key for encryption
+    const repo = target.target; // e.g. "WeKruit/GHOST-HANDS"
+    let publicKey: { key: string; key_id: string };
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/public-key`, {
+        headers: {
+          Authorization: `Bearer ${ghToken}`,
+          Accept: "application/vnd.github+json",
+        },
+      });
+      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
+      publicKey = (await res.json()) as { key: string; key_id: string };
+    } catch (err) {
+      return {
+        target: target.target,
+        success: false,
+        pushed: 0,
+        skipped: 0,
+        failed: keysToPush.length,
+        errors: [
+          `Failed to get repo public key: ${err instanceof Error ? err.message : String(err)}`,
+        ],
+      };
+    }
+
+    // Ensure libsodium is ready
+    await sodium.ready;
+
+    let pushed = 0;
+    const errors: string[] = [];
+
+    for (const key of keysToPush) {
+      const value = filtered.get(key);
+      if (!value) continue;
+
+      try {
+        // Encrypt value using libsodium sealed box
+        const keyBytes = sodium.from_base64(publicKey.key, sodium.base64_variants.ORIGINAL);
+        const messageBytes = sodium.from_string(value);
+        const encryptedBytes = sodium.crypto_box_seal(messageBytes, keyBytes);
+        const encryptedValue = sodium.to_base64(encryptedBytes, sodium.base64_variants.ORIGINAL);
+
+        // Push encrypted secret
+        const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/${key}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${ghToken}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            encrypted_value: encryptedValue,
+            key_id: publicKey.key_id,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new Error(`GitHub API ${res.status}: ${body}`);
+        }
+        pushed++;
+      } catch (err) {
+        errors.push(`${key}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    this.logger.info(
+      { target: target.target, pushed, failed: errors.length, keys: keysToPush },
+      "GitHub Actions secrets synced",
+    );
+
+    return {
+      target: target.target,
+      success: errors.length === 0,
+      pushed,
+      skipped: target.matched,
+      failed: errors.length,
+      errors,
     };
   }
+
+  // ─── AWS Secrets Manager sync ──────────────────────────────────────
+
+  private async syncAwsSm(
+    env: string,
+    refVars: Map<string, string>,
+    target: TargetDiff,
+  ): Promise<SyncTargetResult> {
+    const secretId = `ghosthands/${env}`;
+
+    // For AWS SM, we read the full current secret, merge in changes, write back
+    const client = new SecretsManagerClient({
+      region: process.env.AWS_REGION ?? "us-east-1",
+    });
+
+    try {
+      // Read existing secret (may not exist)
+      let existing: Record<string, string> = {};
+      try {
+        const getCmd = new GetSecretValueCommand({ SecretId: secretId });
+        const getResult = await client.send(getCmd);
+        if (getResult.SecretString) {
+          existing = JSON.parse(getResult.SecretString) as Record<string, string>;
+        }
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (!errMsg.includes("ResourceNotFoundException")) {
+          throw err;
+        }
+        // Secret doesn't exist yet — will create
+      }
+
+      // Merge canonical values into existing (canonical wins)
+      const merged = { ...existing };
+      let pushed = 0;
+      for (const [key, value] of refVars) {
+        if (merged[key] !== value) {
+          merged[key] = value;
+          pushed++;
+        }
+      }
+
+      if (pushed === 0) {
+        return {
+          target: target.target,
+          success: true,
+          pushed: 0,
+          skipped: target.matched,
+          failed: 0,
+          errors: [],
+        };
+      }
+
+      // Write merged secret
+      const putCmd = new PutSecretValueCommand({
+        SecretId: secretId,
+        SecretString: JSON.stringify(merged),
+      });
+      await client.send(putCmd);
+
+      this.logger.info({ target: target.target, secretId, pushed }, "AWS Secrets Manager synced");
+
+      return {
+        target: target.target,
+        success: true,
+        pushed,
+        skipped: refVars.size - pushed,
+        failed: 0,
+        errors: [],
+      };
+    } catch (err) {
+      this.logger.error({ err, secretId }, "AWS SM sync failed");
+      return {
+        target: target.target,
+        success: false,
+        pushed: 0,
+        skipped: 0,
+        failed: target.missing.length + target.mismatched,
+        errors: [err instanceof Error ? err.message : String(err)],
+      };
+    }
+  }
+
+  // ─── Diff: private methods (unchanged) ─────────────────────────────
 
   private async diffFlyApp(
     _env: string,
@@ -465,6 +908,24 @@ export class SecretsSyncService {
         error: errMsg,
         lastChecked: new Date().toISOString(),
       };
+    }
+  }
+
+  // ─── Private: audit helper ─────────────────────────────────────────
+
+  private async logAudit(
+    userId: string,
+    action: string,
+    details: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.db.insert(auditTrail).values({
+        userId,
+        action,
+        details,
+      });
+    } catch (err) {
+      this.logger.error({ err, action }, "Failed to write secrets audit log");
     }
   }
 }

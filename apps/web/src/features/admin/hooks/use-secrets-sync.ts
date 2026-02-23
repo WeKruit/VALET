@@ -29,11 +29,45 @@ export interface SecretsDiffResponse {
   };
 }
 
+export interface SyncTargetResult {
+  target: string;
+  success: boolean;
+  pushed: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
+}
+
 export interface SyncResult {
   environment: string;
-  results: Array<{ target: string; success: boolean; error?: string }>;
+  results: SyncTargetResult[];
+  totalPushed: number;
+  totalFailed: number;
   triggeredAt: string;
   triggeredBy: string;
+  durationMs: number;
+}
+
+export interface FleetRefreshResult {
+  refreshed: Array<{ sandboxId: string; name: string; ip: string | null; status: string }>;
+  failed: Array<{ sandboxId: string; name: string; ip: string | null; error: string }>;
+  skipped: Array<{ sandboxId: string; name: string; reason: string }>;
+}
+
+export interface SandboxRefreshResult {
+  sandboxId: string;
+  name: string;
+  ip: string;
+  success: boolean;
+  message: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  userId: string;
+  action: string;
+  details: Record<string, unknown>;
+  createdAt: string;
 }
 
 async function fetchWithAuth(url: string, init?: globalThis.RequestInit) {
@@ -74,6 +108,40 @@ export function useSyncSecrets() {
       qc.invalidateQueries({
         queryKey: ["admin", "secrets", "diff", variables.env],
       });
+      qc.invalidateQueries({
+        queryKey: ["admin", "secrets", "audit"],
+      });
     },
+  });
+}
+
+export function useRefreshFleet() {
+  return useMutation<FleetRefreshResult, Error>({
+    mutationFn: () =>
+      fetchWithAuth(`${API_BASE_URL}/api/v1/admin/secrets/refresh-fleet`, {
+        method: "POST",
+      }),
+  });
+}
+
+export function useRefreshSandbox() {
+  return useMutation<SandboxRefreshResult, Error, { sandboxId: string }>({
+    mutationFn: ({ sandboxId }) =>
+      fetchWithAuth(`${API_BASE_URL}/api/v1/admin/secrets/refresh-sandbox/${sandboxId}`, {
+        method: "POST",
+      }),
+  });
+}
+
+export function useSecretsAudit(env?: string, limit = 50) {
+  return useQuery<{ entries: AuditEntry[] }>({
+    queryKey: ["admin", "secrets", "audit", env, limit],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (env) params.set("env", env);
+      params.set("limit", String(limit));
+      return fetchWithAuth(`${API_BASE_URL}/api/v1/admin/secrets/audit?${params.toString()}`);
+    },
+    staleTime: 1000 * 30,
   });
 }

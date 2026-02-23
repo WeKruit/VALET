@@ -11,19 +11,44 @@ import {
   DialogTitle,
 } from "@valet/ui/components/dialog";
 import { Skeleton } from "@valet/ui/components/skeleton";
-import { RefreshCw, Upload, KeyRound, ChevronRight, AlertCircle } from "lucide-react";
+import {
+  RefreshCw,
+  Upload,
+  KeyRound,
+  ChevronRight,
+  AlertCircle,
+  Server,
+  CheckCircle2,
+  XCircle,
+  Clock,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useSecretsDiff, useSyncSecrets } from "../hooks/use-secrets-sync";
-import type { TargetDiff } from "../hooks/use-secrets-sync";
+import {
+  useSecretsDiff,
+  useSyncSecrets,
+  useRefreshFleet,
+  useRefreshSandbox,
+  useSecretsAudit,
+} from "../hooks/use-secrets-sync";
+import type {
+  TargetDiff,
+  SyncResult,
+  FleetRefreshResult,
+  AuditEntry,
+} from "../hooks/use-secrets-sync";
 
 export function SecretsStatusPage() {
   const [env, setEnv] = useState<"staging" | "production">("staging");
   const [expandedTargets, setExpandedTargets] = useState<Set<string>>(new Set());
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
+  const [lastFleetResult, setLastFleetResult] = useState<FleetRefreshResult | null>(null);
 
   const { data, isFetching, isError, refetch } = useSecretsDiff(env);
   const syncMutation = useSyncSecrets();
+  const fleetRefreshMutation = useRefreshFleet();
+  const { data: auditData } = useSecretsAudit(env);
 
   const toggleExpand = (target: string) => {
     setExpandedTargets((prev) => {
@@ -39,11 +64,34 @@ export function SecretsStatusPage() {
 
   const handleSync = async () => {
     try {
-      await syncMutation.mutateAsync({ env });
-      toast.success(`Secrets synced for ${env}.`);
+      const result = await syncMutation.mutateAsync({ env });
+      setLastSyncResult(result);
       setSyncDialogOpen(false);
+      if (result.totalFailed === 0) {
+        toast.success(`Secrets synced for ${env}. ${result.totalPushed} pushed.`);
+      } else {
+        toast.warning(
+          `Sync completed with errors: ${result.totalPushed} pushed, ${result.totalFailed} failed.`,
+        );
+      }
     } catch {
       toast.error("Failed to sync secrets.");
+    }
+  };
+
+  const handleFleetRefresh = async () => {
+    try {
+      const result = await fleetRefreshMutation.mutateAsync();
+      setLastFleetResult(result);
+      const ok = result.refreshed.length;
+      const fail = result.failed.length;
+      if (fail === 0) {
+        toast.success(`Fleet refreshed: ${ok} sandbox${ok !== 1 ? "es" : ""} updated.`);
+      } else {
+        toast.warning(`Fleet refresh: ${ok} ok, ${fail} failed.`);
+      }
+    } catch {
+      toast.error("Failed to refresh fleet secrets.");
     }
   };
 
@@ -79,6 +127,15 @@ export function SecretsStatusPage() {
           <Button variant="secondary" size="sm" onClick={() => refetch()} disabled={isFetching}>
             <RefreshCw className={cn("mr-2 h-4 w-4", isFetching && "animate-spin")} />
             Check Drift
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleFleetRefresh}
+            disabled={fleetRefreshMutation.isPending}
+          >
+            <Server className="mr-2 h-4 w-4" />
+            {fleetRefreshMutation.isPending ? "Refreshing..." : "Refresh Fleet"}
           </Button>
           <Button
             variant="primary"
@@ -153,6 +210,17 @@ export function SecretsStatusPage() {
         </>
       )}
 
+      {/* Last sync result */}
+      {lastSyncResult && <SyncResultCard result={lastSyncResult} />}
+
+      {/* Last fleet refresh result */}
+      {lastFleetResult && (
+        <FleetRefreshCard result={lastFleetResult} onFleetUpdate={setLastFleetResult} />
+      )}
+
+      {/* Audit log */}
+      {auditData && auditData.entries.length > 0 && <AuditLogCard entries={auditData.entries} />}
+
       {/* Sync confirmation dialog */}
       <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
         <DialogContent>
@@ -163,6 +231,24 @@ export function SecretsStatusPage() {
             This will push canonical .env values to all deployed targets for <strong>{env}</strong>.
             This action cannot be undone.
           </p>
+          {data && data.summary.drifted > 0 && (
+            <div className="mt-2 text-sm">
+              <p className="font-medium text-amber-500">
+                {data.summary.drifted} target{data.summary.drifted !== 1 ? "s" : ""} will be
+                updated:
+              </p>
+              <ul className="mt-1 ml-4 list-disc text-[var(--wk-text-secondary)]">
+                {data.targets
+                  .filter((t) => t.status === "drifted")
+                  .map((t) => (
+                    <li key={t.target}>
+                      {t.target} ({t.missing.length} missing
+                      {t.mismatched > 0 ? `, ${t.mismatched} mismatched` : ""})
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="secondary" onClick={() => setSyncDialogOpen(false)}>
               Cancel
@@ -352,4 +438,194 @@ function StatusBadge({ status, missing }: { status: string; missing: number }) {
     default:
       return <Badge variant="secondary">{status}</Badge>;
   }
+}
+
+function SyncResultCard({ result }: { result: SyncResult }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-medium flex items-center gap-2">
+          {result.totalFailed === 0 ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-amber-500" />
+          )}
+          Last Sync Result
+          <span className="text-xs text-[var(--wk-text-tertiary)] font-normal ml-auto">
+            {new Date(result.triggeredAt).toLocaleString()} · {result.durationMs}ms
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex gap-4 text-sm">
+          <span className="text-emerald-500">{result.totalPushed} pushed</span>
+          {result.totalFailed > 0 && (
+            <span className="text-red-500">{result.totalFailed} failed</span>
+          )}
+        </div>
+        {result.results.map((r) => (
+          <div
+            key={r.target}
+            className="flex items-center justify-between text-xs border border-[var(--wk-border-subtle)] rounded px-3 py-2"
+          >
+            <span className="font-medium">{r.target}</span>
+            <div className="flex items-center gap-2">
+              {r.pushed > 0 && <span className="text-emerald-500">{r.pushed} pushed</span>}
+              {r.skipped > 0 && (
+                <span className="text-[var(--wk-text-tertiary)]">{r.skipped} skipped</span>
+              )}
+              {r.failed > 0 && <span className="text-red-500">{r.failed} failed</span>}
+              {r.success ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5 text-red-500" />
+              )}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FleetRefreshCard({
+  result,
+  onFleetUpdate,
+}: {
+  result: FleetRefreshResult;
+  onFleetUpdate: (r: FleetRefreshResult) => void;
+}) {
+  const refreshSandbox = useRefreshSandbox();
+  const total = result.refreshed.length + result.failed.length + result.skipped.length;
+
+  const handleRetry = async (sandboxId: string) => {
+    try {
+      const res = await refreshSandbox.mutateAsync({ sandboxId });
+      if (res.success) {
+        toast.success(`${res.name} refreshed successfully.`);
+        // Move from failed to refreshed
+        onFleetUpdate({
+          ...result,
+          refreshed: [
+            ...result.refreshed,
+            { sandboxId: res.sandboxId, name: res.name, ip: res.ip, status: "ok" },
+          ],
+          failed: result.failed.filter((f) => f.sandboxId !== sandboxId),
+        });
+      } else {
+        toast.error(`${res.name}: ${res.message}`);
+      }
+    } catch {
+      toast.error("Retry failed.");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-medium flex items-center gap-2">
+          <Server className="h-4 w-4" />
+          Fleet Refresh Result
+          <span className="text-xs text-[var(--wk-text-tertiary)] font-normal ml-auto">
+            {total} sandbox{total !== 1 ? "es" : ""}
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {result.refreshed.map((s) => (
+          <div
+            key={s.sandboxId}
+            className="flex items-center justify-between text-xs border border-[var(--wk-border-subtle)] rounded px-3 py-2"
+          >
+            <span className="font-medium">
+              {s.name} <span className="text-[var(--wk-text-tertiary)]">({s.ip})</span>
+            </span>
+            <div className="flex items-center gap-1 text-emerald-500">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Refreshed
+            </div>
+          </div>
+        ))}
+        {result.failed.map((s) => (
+          <div
+            key={s.sandboxId}
+            className="flex items-center justify-between text-xs border border-red-500/20 rounded px-3 py-2"
+          >
+            <span className="font-medium">
+              {s.name} <span className="text-[var(--wk-text-tertiary)]">({s.ip})</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-red-500 flex items-center gap-1">
+                <XCircle className="h-3.5 w-3.5" />
+                {s.error}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                onClick={() => handleRetry(s.sandboxId)}
+                disabled={refreshSandbox.isPending}
+              >
+                <RefreshCw
+                  className={cn("h-3 w-3 mr-1", refreshSandbox.isPending && "animate-spin")}
+                />
+                Retry
+              </Button>
+            </div>
+          </div>
+        ))}
+        {result.skipped.map((s) => (
+          <div
+            key={s.sandboxId}
+            className="flex items-center justify-between text-xs border border-[var(--wk-border-subtle)] rounded px-3 py-2"
+          >
+            <span className="font-medium">{s.name}</span>
+            <span className="text-[var(--wk-text-tertiary)]">Skipped: {s.reason}</span>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AuditLogCard({ entries }: { entries: AuditEntry[] }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-medium flex items-center gap-2">
+          <Clock className="h-4 w-4" />
+          Sync History
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {entries.slice(0, 10).map((entry) => {
+          const details = entry.details;
+          return (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between text-xs border border-[var(--wk-border-subtle)] rounded px-3 py-2"
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{entry.action}</span>
+                {typeof details.environment === "string" && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {details.environment}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-3 text-[var(--wk-text-tertiary)]">
+                {typeof details.totalPushed === "number" && (
+                  <span className="text-emerald-500">{details.totalPushed} pushed</span>
+                )}
+                {typeof details.totalFailed === "number" && (details.totalFailed as number) > 0 && (
+                  <span className="text-red-500">{details.totalFailed} failed</span>
+                )}
+                <span>{new Date(entry.createdAt).toLocaleString()}</span>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
 }
