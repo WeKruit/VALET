@@ -325,7 +325,33 @@ export class DeployService {
     imageTag: string,
   ): Promise<{ success: boolean; message: string }> {
     const agentUrl = `http://${publicIp}:8000`;
-    return this.sandboxAgentClient.deploy(agentUrl, imageTag);
+    const maxRetries = 3;
+    const baseDelayMs = 10_000; // 10 seconds
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.sandboxAgentClient.deploy(agentUrl, imageTag);
+      } catch (err) {
+        if (attempt === maxRetries) throw err;
+
+        const delay = baseDelayMs * attempt; // 10s, 20s, 30s
+        this.logger.warn(
+          {
+            attempt,
+            maxRetries,
+            delayMs: delay,
+            publicIp,
+            imageTag,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          "Deploy to sandbox failed, retrying after delay",
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+
+    // TypeScript: unreachable but satisfies return type
+    throw new Error("Deploy retry exhausted");
   }
 
   private async notifyAdmins(record: DeployRecord): Promise<void> {
