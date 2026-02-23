@@ -33,6 +33,7 @@ function makeSandboxRepo() {
     findActive: vi.fn().mockResolvedValue([]),
     findById: vi.fn().mockResolvedValue(null),
     findAsgManaged: vi.fn().mockResolvedValue([]),
+    findByMachineTypeWithStatuses: vi.fn().mockResolvedValue([]),
     create: vi.fn().mockImplementation((data: Record<string, unknown>) =>
       Promise.resolve({
         id: `sandbox-${Math.random().toString(36).slice(2, 8)}`,
@@ -82,6 +83,12 @@ function makeDb() {
   };
 }
 
+function makeRedis() {
+  return {
+    publish: vi.fn().mockResolvedValue(1),
+  };
+}
+
 function makeSandbox(overrides: Partial<SandboxRecord> = {}): SandboxRecord {
   return {
     id: `sandbox-${Math.random().toString(36).slice(2, 8)}`,
@@ -124,6 +131,7 @@ function makeMocks() {
   return {
     logger: makeLogger(),
     db: makeDb(),
+    redis: makeRedis(),
     sandboxRepo: makeSandboxRepo(),
     deepHealthChecker: makeDeepHealthChecker(),
     auditLogService: makeAuditLogService(),
@@ -135,6 +143,17 @@ function makeMocks() {
 /** Cast service to access private methods for unit testing */
 function priv(service: InstanceDiscoveryService): PrivateMethods {
   return service as unknown as PrivateMethods;
+}
+
+function makeAsgInstance(overrides: Partial<AsgInstance> = {}): AsgInstance {
+  return {
+    instanceId: "i-new123",
+    publicIp: "10.0.0.5",
+    instanceType: "t3.large",
+    lifecycleState: "InService",
+    healthStatus: "Healthy",
+    ...overrides,
+  };
 }
 
 // ─── Tests ───
@@ -223,17 +242,7 @@ describe("InstanceDiscoveryService", () => {
       const mocks = makeMocks();
       const service = new InstanceDiscoveryService(mocks as never);
 
-      const diff = priv(service).computeDiff(
-        [
-          {
-            instanceId: "i-new123",
-            publicIp: "10.0.0.5",
-            lifecycleState: "InService",
-            healthStatus: "Healthy",
-          },
-        ],
-        [],
-      );
+      const diff = priv(service).computeDiff([makeAsgInstance()], []);
 
       expect(diff.newInstances).toHaveLength(1);
       expect(diff.newInstances[0]?.instanceId).toBe("i-new123");
@@ -281,14 +290,7 @@ describe("InstanceDiscoveryService", () => {
       });
 
       const diff = priv(service).computeDiff(
-        [
-          {
-            instanceId: "i-match789",
-            publicIp: "10.0.0.99",
-            lifecycleState: "InService",
-            healthStatus: "Healthy",
-          },
-        ],
+        [makeAsgInstance({ instanceId: "i-match789", publicIp: "10.0.0.99" })],
         [sandbox],
       );
 
@@ -308,14 +310,7 @@ describe("InstanceDiscoveryService", () => {
       });
 
       const diff = priv(service).computeDiff(
-        [
-          {
-            instanceId: "i-stable",
-            publicIp: "10.0.0.1",
-            lifecycleState: "InService",
-            healthStatus: "Healthy",
-          },
-        ],
+        [makeAsgInstance({ instanceId: "i-stable", publicIp: "10.0.0.1" })],
         [sandbox],
       );
 
@@ -325,25 +320,21 @@ describe("InstanceDiscoveryService", () => {
   });
 
   describe("registerNewInstance", () => {
-    it("creates a sandbox record with correct defaults", async () => {
+    it("creates a sandbox record with environment from env var", async () => {
+      process.env.VALET_ENVIRONMENT = "prod";
       const mocks = makeMocks();
       mocks.sandboxRepo.findAsgManaged.mockResolvedValue([]);
 
       const service = new InstanceDiscoveryService(mocks as never);
 
-      await priv(service).registerNewInstance({
-        instanceId: "i-new123",
-        publicIp: "10.0.0.5",
-        lifecycleState: "InService",
-        healthStatus: "Healthy",
-      });
+      await priv(service).registerNewInstance(makeAsgInstance({ instanceType: "t3.xlarge" }));
 
       expect(mocks.sandboxRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           name: "gh-worker-asg-1",
-          environment: "staging",
+          environment: "prod",
           instanceId: "i-new123",
-          instanceType: "t3.large",
+          instanceType: "t3.xlarge",
           publicIp: "10.0.0.5",
           capacity: 1,
           sshKeyName: "valet-worker.pem",
@@ -381,12 +372,7 @@ describe("InstanceDiscoveryService", () => {
 
       const service = new InstanceDiscoveryService(mocks as never);
 
-      await priv(service).registerNewInstance({
-        instanceId: "i-new456",
-        publicIp: "10.0.0.6",
-        lifecycleState: "InService",
-        healthStatus: "Healthy",
-      });
+      await priv(service).registerNewInstance(makeAsgInstance({ instanceId: "i-new456" }));
 
       expect(mocks.sandboxRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -397,7 +383,7 @@ describe("InstanceDiscoveryService", () => {
   });
 
   describe("deregisterStaleSandbox", () => {
-    it("marks sandbox as terminated and unhealthy", async () => {
+    it("uses stopping as intermediate status then terminates", async () => {
       const mocks = makeMocks();
       mocks.sandboxRepo.resolveWorkerId.mockResolvedValue(null);
 
@@ -406,10 +392,16 @@ describe("InstanceDiscoveryService", () => {
       const sandbox = makeSandbox({ id: "sb-stale" });
       await priv(service).deregisterStaleSandbox(sandbox);
 
+      // First call: stopping (intermediate)
       expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-stale", {
-        status: "terminated",
+        status: "stopping",
         ec2Status: "terminated",
         healthStatus: "unhealthy",
+      });
+
+      // Second call: terminated (final)
+      expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-stale", {
+        status: "terminated",
       });
 
       expect(mocks.auditLogService.log).toHaveBeenCalledWith(
@@ -442,7 +434,9 @@ describe("InstanceDiscoveryService", () => {
       // First call returns pending jobs, second returns running jobs, third is worker update
       mocks.db.execute
         .mockResolvedValueOnce([{ id: "job-pending-1", valet_task_id: "task-1" }])
-        .mockResolvedValueOnce([{ id: "job-running-1", valet_task_id: "task-2" }])
+        .mockResolvedValueOnce([
+          { id: "job-running-1", valet_task_id: "task-2", user_id: "user-abc" },
+        ])
         .mockResolvedValueOnce([]); // Worker registry update
 
       const service = new InstanceDiscoveryService(mocks as never);
@@ -472,6 +466,61 @@ describe("InstanceDiscoveryService", () => {
       // VALET task also failed
       expect(mocks.taskRepo.updateStatus).toHaveBeenCalledWith("task-2", "failed");
     });
+
+    it("publishes WebSocket notification when failing orphaned running jobs", async () => {
+      const mocks = makeMocks();
+      mocks.sandboxRepo.resolveWorkerId.mockResolvedValue("worker-123");
+
+      mocks.db.execute
+        .mockResolvedValueOnce([]) // No pending jobs
+        .mockResolvedValueOnce([
+          { id: "job-running-1", valet_task_id: "task-2", user_id: "user-abc" },
+        ])
+        .mockResolvedValueOnce([]); // Worker registry update
+
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      await priv(service).recoverOrphanedJobs(makeSandbox());
+
+      // Verify Redis publish was called for WebSocket notification
+      expect(mocks.redis.publish).toHaveBeenCalledWith(
+        "tasks:user-abc",
+        expect.stringContaining('"type":"task_update"'),
+      );
+
+      // Parse the published message to verify structure
+      const publishCall = mocks.redis.publish.mock.calls[0] as [string, string];
+      const message = JSON.parse(publishCall[1]) as Record<string, unknown>;
+      expect(message).toMatchObject({
+        type: "task_update",
+        taskId: "task-2",
+        status: "failed",
+        error: {
+          code: "worker_terminated",
+          message: expect.stringContaining("terminated"),
+        },
+      });
+    });
+
+    it("does not publish WebSocket when no user_id on task", async () => {
+      const mocks = makeMocks();
+      mocks.sandboxRepo.resolveWorkerId.mockResolvedValue("worker-123");
+
+      mocks.db.execute
+        .mockResolvedValueOnce([]) // No pending jobs
+        .mockResolvedValueOnce([{ id: "job-running-1", valet_task_id: "task-2", user_id: null }])
+        .mockResolvedValueOnce([]); // Worker registry update
+
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      await priv(service).recoverOrphanedJobs(makeSandbox());
+
+      // Task should still be failed
+      expect(mocks.taskRepo.updateStatus).toHaveBeenCalledWith("task-2", "failed");
+
+      // But no WebSocket publish (no user_id)
+      expect(mocks.redis.publish).not.toHaveBeenCalled();
+    });
   });
 
   describe("updateSandboxIp", () => {
@@ -481,12 +530,10 @@ describe("InstanceDiscoveryService", () => {
       const service = new InstanceDiscoveryService(mocks as never);
 
       const sandbox = makeSandbox({ id: "sb-1", publicIp: "10.0.0.1" });
-      await priv(service).updateSandboxIp(sandbox, {
-        instanceId: "i-abc",
-        publicIp: "10.0.0.99",
-        lifecycleState: "InService",
-        healthStatus: "Healthy",
-      });
+      await priv(service).updateSandboxIp(
+        sandbox,
+        makeAsgInstance({ instanceId: "i-abc", publicIp: "10.0.0.99" }),
+      );
 
       expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-1", {
         publicIp: "10.0.0.99",
@@ -568,6 +615,27 @@ describe("InstanceDiscoveryService", () => {
       await priv(service).probeAndActivate("sb-nonexistent");
 
       expect(mocks.deepHealthChecker.check).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("stop()", () => {
+    it("clears pending health probe timeouts", async () => {
+      const mocks = makeMocks();
+      mocks.sandboxRepo.findAsgManaged.mockResolvedValue([]);
+
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      // Register a new instance which schedules a health probe timeout
+      await priv(service).registerNewInstance(makeAsgInstance());
+
+      // Stop should clear the pending timeout
+      service.stop();
+
+      // Advance timers past the health probe delay — should NOT trigger the probe
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      // findById should NOT have been called (the timeout was cleared)
+      expect(mocks.sandboxRepo.findById).not.toHaveBeenCalled();
     });
   });
 });

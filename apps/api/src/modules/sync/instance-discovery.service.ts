@@ -5,18 +5,22 @@ import {
 import { EC2Client, DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { sql } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
+import type Redis from "ioredis";
 import type { Database } from "@valet/db";
+import type { SandboxEnvironment } from "@valet/shared/schemas";
 import type { SandboxRepository, SandboxRecord } from "../sandboxes/sandbox.repository.js";
 import type { DeepHealthChecker, DeepHealthResult } from "../sandboxes/deep-health-checker.js";
 import type { AuditLogService } from "../sandboxes/audit-log.service.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { TaskRepository } from "../tasks/task.repository.js";
+import { publishToUser } from "../../websocket/handler.js";
 
 // ─── Types ───
 
 export interface AsgInstance {
   instanceId: string;
   publicIp: string;
+  instanceType: string;
   lifecycleState: string;
   healthStatus: string;
 }
@@ -47,9 +51,23 @@ export interface ReconciliationResult {
 const DISCOVERY_INTERVAL_MS = 60_000; // 60 seconds
 const HEALTH_PROBE_DELAY_MS = 15_000; // Wait 15s before probing new instances
 
+const ENV_MAP: Record<string, SandboxEnvironment> = {
+  production: "prod",
+  prod: "prod",
+  staging: "staging",
+  development: "dev",
+  dev: "dev",
+};
+
+function resolveEnvironment(): SandboxEnvironment {
+  const raw = process.env.VALET_ENVIRONMENT ?? process.env.NODE_ENV ?? "staging";
+  return ENV_MAP[raw] ?? "staging";
+}
+
 export class InstanceDiscoveryService {
   private logger: FastifyBaseLogger;
   private db: Database;
+  private redis: Redis;
   private sandboxRepo: SandboxRepository;
   private deepHealthChecker: DeepHealthChecker;
   private auditLogService: AuditLogService;
@@ -59,14 +77,17 @@ export class InstanceDiscoveryService {
   private asgClient: AutoScalingClient | null;
   private ec2Client: EC2Client | null;
   private asgName: string;
+  private environment: SandboxEnvironment;
   private enabled: boolean;
 
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private pendingTimeouts = new Set<ReturnType<typeof setTimeout>>();
   private running = false;
 
   constructor({
     logger,
     db,
+    redis,
     sandboxRepo,
     deepHealthChecker,
     auditLogService,
@@ -75,6 +96,7 @@ export class InstanceDiscoveryService {
   }: {
     logger: FastifyBaseLogger;
     db: Database;
+    redis: Redis;
     sandboxRepo: SandboxRepository;
     deepHealthChecker: DeepHealthChecker;
     auditLogService: AuditLogService;
@@ -83,6 +105,7 @@ export class InstanceDiscoveryService {
   }) {
     this.logger = logger;
     this.db = db;
+    this.redis = redis;
     this.sandboxRepo = sandboxRepo;
     this.deepHealthChecker = deepHealthChecker;
     this.auditLogService = auditLogService;
@@ -90,6 +113,7 @@ export class InstanceDiscoveryService {
     this.taskRepo = taskRepo;
 
     this.asgName = process.env.AWS_ASG_NAME ?? "";
+    this.environment = resolveEnvironment();
     this.enabled = process.env.AUTOSCALE_ASG_ENABLED === "true" && this.asgName.length > 0;
 
     if (this.enabled) {
@@ -134,8 +158,15 @@ export class InstanceDiscoveryService {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      this.logger.info("Instance discovery service stopped");
     }
+
+    // Clear any pending health probe timeouts
+    for (const id of this.pendingTimeouts) {
+      clearTimeout(id);
+    }
+    this.pendingTimeouts.clear();
+
+    this.logger.info("Instance discovery service stopped");
   }
 
   // ─── Public API ───
@@ -283,52 +314,43 @@ export class InstanceDiscoveryService {
 
     if (asgInstanceIds.length === 0) return [];
 
-    // Step 2: Get public IPs from EC2
+    // Step 2: Get public IPs and instance types from EC2
     const ec2Result = await this.ec2Client.send(
       new DescribeInstancesCommand({
         InstanceIds: asgInstanceIds.map((i) => i.instanceId),
       }),
     );
 
-    const ipMap = new Map<string, string>();
+    const ec2Info = new Map<string, { publicIp: string; instanceType: string }>();
     for (const reservation of ec2Result.Reservations ?? []) {
       for (const inst of reservation.Instances ?? []) {
         if (inst.InstanceId && inst.PublicIpAddress) {
-          ipMap.set(inst.InstanceId, inst.PublicIpAddress);
+          ec2Info.set(inst.InstanceId, {
+            publicIp: inst.PublicIpAddress,
+            instanceType: inst.InstanceType ?? "t3.large",
+          });
         }
       }
     }
 
     return asgInstanceIds
-      .filter((i) => ipMap.has(i.instanceId))
-      .map((i) => ({
-        ...i,
-        publicIp: ipMap.get(i.instanceId)!,
-      }));
+      .filter((i) => ec2Info.has(i.instanceId))
+      .map((i) => {
+        const info = ec2Info.get(i.instanceId)!;
+        return {
+          ...i,
+          publicIp: info.publicIp,
+          instanceType: info.instanceType,
+        };
+      });
   }
 
   private async fetchEc2Sandboxes(): Promise<SandboxRecord[]> {
-    // Get sandboxes that are EC2 machine type and not already terminated
-    const all = await this.sandboxRepo.findActive("ec2");
-    // Also include provisioning sandboxes
-    const provisioning = await this.db.execute(
-      sql`SELECT * FROM sandboxes WHERE machine_type = 'ec2' AND status = 'provisioning'`,
-    );
-    const provisioningRecords = (provisioning as Array<Record<string, unknown>>).map(
-      (r) =>
-        ({
-          id: r.id as string,
-          name: r.name as string,
-          instanceId: r.instance_id as string,
-          publicIp: r.public_ip as string | null,
-          status: r.status as string,
-          healthStatus: r.health_status as string,
-          machineType: r.machine_type as string,
-          tags: r.tags as Record<string, unknown> | null,
-        }) as unknown as SandboxRecord,
-    );
-
-    return [...all, ...provisioningRecords];
+    return this.sandboxRepo.findByMachineTypeWithStatuses("ec2", [
+      "active",
+      "provisioning",
+      "stopping",
+    ]);
   }
 
   // ─── Private: Diff Logic ───
@@ -386,9 +408,9 @@ export class InstanceDiscoveryService {
 
     const sandbox = await this.sandboxRepo.create({
       name: `gh-worker-asg-${maxN + 1}`,
-      environment: "staging",
+      environment: this.environment,
       instanceId: instance.instanceId,
-      instanceType: "t3.large",
+      instanceType: instance.instanceType,
       publicIp: instance.publicIp,
       capacity: 1,
       sshKeyName: "valet-worker.pem",
@@ -415,18 +437,21 @@ export class InstanceDiscoveryService {
       details: {
         instanceId: instance.instanceId,
         publicIp: instance.publicIp,
+        instanceType: instance.instanceType,
         lifecycleState: instance.lifecycleState,
         source: "instance_discovery",
       },
       result: "success",
     });
 
-    // Schedule health probe after delay
-    setTimeout(() => {
+    // Schedule health probe after delay (tracked for cleanup on stop)
+    const timeoutId = setTimeout(() => {
+      this.pendingTimeouts.delete(timeoutId);
       this.probeAndActivate(sandbox.id).catch((err) => {
         this.logger.error({ err, sandboxId: sandbox.id }, "Health probe after registration failed");
       });
     }, HEALTH_PROBE_DELAY_MS);
+    this.pendingTimeouts.add(timeoutId);
   }
 
   private async probeAndActivate(sandboxId: string): Promise<void> {
@@ -485,9 +510,9 @@ export class InstanceDiscoveryService {
       "Auto-deregistering stale sandbox (instance no longer in ASG)",
     );
 
-    // Step 1: Mark as terminating
+    // Step 1: Mark as stopping (intermediate status during orphan recovery)
     await this.sandboxRepo.update(sandbox.id, {
-      status: "terminated",
+      status: "stopping",
       ec2Status: "terminated",
       healthStatus: "unhealthy",
     });
@@ -495,7 +520,12 @@ export class InstanceDiscoveryService {
     // Step 2: Recover orphaned jobs
     const orphanCount = await this.recoverOrphanedJobs(sandbox);
 
-    // Step 3: Audit log
+    // Step 3: Mark as terminated (final status)
+    await this.sandboxRepo.update(sandbox.id, {
+      status: "terminated",
+    });
+
+    // Step 4: Audit log
     await this.auditLogService.log({
       sandboxId: sandbox.id,
       action: "instance_deregistered",
@@ -515,6 +545,7 @@ export class InstanceDiscoveryService {
    * Find orphaned jobs assigned to a terminated sandbox's worker and recover them.
    * - pending jobs: clear worker_id, re-queue
    * - running jobs >5 min: mark failed with error_code 'worker_terminated'
+   *   and publish WebSocket notification so the user's frontend updates
    */
   private async recoverOrphanedJobs(sandbox: SandboxRecord): Promise<number> {
     // Resolve the worker_id for this sandbox
@@ -556,13 +587,18 @@ export class InstanceDiscoveryService {
     }
 
     // Find running jobs assigned to this worker that have been running >5 min
+    // Include user_id from linked VALET task for WebSocket notification
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
     const runningRows = (await this.db.execute(
-      sql`SELECT id, valet_task_id FROM gh_automation_jobs
-          WHERE worker_id = ${workerId}
-            AND status = 'running'
-            AND started_at < ${fiveMinAgo}`,
-    )) as Array<{ id: string; valet_task_id: string | null }>;
+      sql`SELECT j.id, j.valet_task_id, t.user_id
+          FROM gh_automation_jobs j
+          LEFT JOIN tasks t ON t.id = j.valet_task_id
+          WHERE j.worker_id = ${workerId}
+            AND j.status = 'running'
+            AND j.started_at < ${fiveMinAgo}`,
+    )) as Array<{ id: string; valet_task_id: string | null; user_id: string | null }>;
+
+    const errorMessage = "Worker instance terminated while job was running";
 
     for (const row of runningRows) {
       try {
@@ -570,7 +606,7 @@ export class InstanceDiscoveryService {
           status: "failed",
           errorCode: "worker_terminated",
           errorDetails: {
-            reason: "Worker instance terminated while job was running",
+            reason: errorMessage,
             sandboxId: sandbox.id,
             instanceId: sandbox.instanceId,
           },
@@ -580,6 +616,20 @@ export class InstanceDiscoveryService {
         // Also fail the linked VALET task if one exists
         if (row.valet_task_id) {
           await this.taskRepo.updateStatus(row.valet_task_id, "failed");
+
+          // Publish WebSocket event so the user's frontend updates immediately
+          if (row.user_id) {
+            await publishToUser(this.redis, row.user_id, {
+              type: "task_update",
+              taskId: row.valet_task_id,
+              status: "failed",
+              currentStep: `Failed: ${errorMessage}`,
+              error: {
+                code: "worker_terminated",
+                message: errorMessage,
+              },
+            });
+          }
         }
 
         recovered++;

@@ -1,4 +1,17 @@
-import { eq, and, count, desc, asc, ilike, or, lt, sql, isNull, type SQL } from "drizzle-orm";
+import {
+  eq,
+  and,
+  count,
+  desc,
+  asc,
+  ilike,
+  or,
+  lt,
+  sql,
+  isNull,
+  inArray,
+  type SQL,
+} from "drizzle-orm";
 import { sandboxes, type Database } from "@valet/db";
 import type {
   SandboxStatus,
@@ -362,6 +375,21 @@ export class SandboxRepository {
     }
 
     return previousCount;
+  }
+
+  /**
+   * Find sandboxes by machine type with one or more statuses.
+   * Used by InstanceDiscoveryService to get all EC2 sandboxes including provisioning.
+   */
+  async findByMachineTypeWithStatuses(
+    machineType: string,
+    statuses: SandboxStatus[],
+  ): Promise<SandboxRecord[]> {
+    const data = await this.db
+      .select()
+      .from(sandboxes)
+      .where(and(eq(sandboxes.machineType, machineType), inArray(sandboxes.status, statuses)));
+    return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
   }
 
   /**
