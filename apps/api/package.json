@@ -38,6 +38,7 @@
     "fastify-plugin": "^5.0.0",
     "ioredis": "^5.4.0",
     "jose": "^5.9.0",
+    "libsodium-wrappers": "^0.8.2",
     "mammoth": "^1.11.0",
     "pdf-parse": "^2.4.5",
     "pg-boss": "^12.13.0",
@@ -49,6 +50,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/libsodium-wrappers": "^0.8.2",
     "@types/node": "^22.0.0",
     "@types/pdf-parse": "^1.1.5",
     "@types/ws": "^8.5.0",

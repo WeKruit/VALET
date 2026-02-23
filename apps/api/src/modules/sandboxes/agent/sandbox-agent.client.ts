@@ -73,6 +73,22 @@ export class SandboxAgentClient {
     }
   }
 
+  async refreshSecrets(agentUrl: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const resp = await this.post<{ success?: boolean; message?: string }>(
+        `${agentUrl}/admin/refresh-secrets`,
+        undefined,
+        15_000,
+      );
+      return { success: resp.success !== false, message: resp.message ?? "OK" };
+    } catch (err) {
+      if (err instanceof AgentError) {
+        return { success: false, message: `Agent ${err.statusCode}: ${err.responseBody}` };
+      }
+      return { success: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   // -- Phase 2: Stubs --------------------------------------------------------
 
   async getLogs(_agentUrl: string, _options: LogOptions): Promise<LogResult> {
