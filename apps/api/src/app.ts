@@ -33,6 +33,7 @@ import { sandboxRouter } from "./modules/sandboxes/sandbox.routes.js";
 import { modelRouter } from "./modules/models/model.routes.js";
 import { taskAdminRoutes } from "./modules/tasks/task.admin-routes.js";
 import { deployAdminRoutes } from "./modules/sandboxes/deploy.admin-routes.js";
+import { secretsAdminRoutes } from "./modules/secrets/secrets.admin-routes.js";
 import { taskUserRoutes } from "./modules/tasks/task.user-routes.js";
 import { taskEventsSSERoutes } from "./modules/tasks/task-events-sse.routes.js";
 
@@ -135,6 +136,7 @@ export async function buildApp() {
   await fastify.register(ghosthandsMonitoringRoutes);
   await fastify.register(workerAdminRoutes);
   await fastify.register(deployAdminRoutes);
+  await fastify.register(secretsAdminRoutes);
 
   // User-facing standalone routes (outside ts-rest, needs auth)
   await fastify.register(taskUserRoutes);
