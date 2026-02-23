@@ -34,6 +34,7 @@ import { modelRouter } from "./modules/models/model.routes.js";
 import { taskAdminRoutes } from "./modules/tasks/task.admin-routes.js";
 import { deployAdminRoutes } from "./modules/sandboxes/deploy.admin-routes.js";
 import { secretsAdminRoutes } from "./modules/secrets/secrets.admin-routes.js";
+import { syncAdminRoutes } from "./modules/sync/sync.routes.js";
 import { taskUserRoutes } from "./modules/tasks/task.user-routes.js";
 import { taskEventsSSERoutes } from "./modules/tasks/task-events-sse.routes.js";
 
@@ -137,6 +138,7 @@ export async function buildApp() {
   await fastify.register(workerAdminRoutes);
   await fastify.register(deployAdminRoutes);
   await fastify.register(secretsAdminRoutes);
+  await fastify.register(syncAdminRoutes);
 
   // User-facing standalone routes (outside ts-rest, needs auth)
   await fastify.register(taskUserRoutes);
@@ -155,11 +157,13 @@ export async function buildApp() {
       autoScaleMonitor,
       pgBossService,
       staleTaskReconciliation,
+      instanceDiscoveryService,
     } = diContainer.cradle;
     sandboxHealthMonitor.start();
     autoStopMonitor.start();
     autoScaleMonitor.start();
     staleTaskReconciliation.start();
+    instanceDiscoveryService.start();
     // Start pg-boss (non-blocking — logs warning if DATABASE_DIRECT_URL not set)
     await pgBossService.start().catch((err) => {
       fastify.log.error({ err }, "pg-boss failed to start — queue dispatch disabled");
@@ -174,11 +178,13 @@ export async function buildApp() {
       autoScaleMonitor,
       pgBossService,
       staleTaskReconciliation,
+      instanceDiscoveryService,
     } = diContainer.cradle;
     sandboxHealthMonitor.stop();
     autoStopMonitor.stop();
     autoScaleMonitor.stop();
     staleTaskReconciliation.stop();
+    instanceDiscoveryService.stop();
     await pgBossService.stop();
   });
 
