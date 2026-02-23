@@ -51,6 +51,7 @@ import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
 import { AutoScaleService } from "../services/auto-scale.service.js";
 import { StaleTaskReconciliationMonitor } from "../modules/tasks/stale-task-reconciliation.js";
 import { SecretsSyncService } from "../modules/secrets/secrets-sync.service.js";
+import { InstanceDiscoveryService } from "../modules/sync/instance-discovery.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -102,6 +103,7 @@ export interface AppCradle {
   autoScaleService: AutoScaleService;
   staleTaskReconciliation: StaleTaskReconciliationMonitor;
   secretsSyncService: SecretsSyncService;
+  instanceDiscoveryService: InstanceDiscoveryService;
 }
 
 declare module "@fastify/awilix" {
@@ -206,6 +208,9 @@ export default fp(async (fastify: FastifyInstance) => {
       lifetime: Lifetime.SINGLETON,
     }),
     secretsSyncService: asClass(SecretsSyncService, {
+      lifetime: Lifetime.SINGLETON,
+    }),
+    instanceDiscoveryService: asClass(InstanceDiscoveryService, {
       lifetime: Lifetime.SINGLETON,
     }),
   });
