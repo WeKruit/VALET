@@ -21,7 +21,15 @@ import { useTaskEvents } from "../hooks/use-task-events";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { toast } from "sonner";
-import { ExternalLink, RefreshCw, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  ExternalLink,
+  RefreshCw,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Monitor,
+  MousePointer,
+} from "lucide-react";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
@@ -286,6 +294,56 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* WEK-163: Prominent Watch Live / Take Control CTA */}
+      {!isTerminal && vncUrl && !showLiveView && (
+        <div
+          className={`rounded-[var(--wk-radius-lg)] border-2 p-4 flex items-center justify-between ${
+            isWaitingReview
+              ? "border-[var(--wk-status-warning)] bg-amber-50/50 dark:bg-amber-950/10"
+              : "border-[var(--wk-copilot)] bg-blue-50/50 dark:bg-blue-950/10"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Monitor className="h-5 w-5 text-[var(--wk-copilot)] shrink-0" />
+            <div>
+              <p className="text-sm font-medium">
+                {isWaitingReview
+                  ? "Browser session needs your attention"
+                  : "Browser automation is running"}
+              </p>
+              <p className="text-xs text-[var(--wk-text-secondary)] mt-0.5">
+                {isWaitingReview
+                  ? "Take control of the browser to resolve the blocker"
+                  : "Watch the automation in real time"}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant={isWaitingReview ? "primary" : "secondary"}
+            size="sm"
+            onClick={() => {
+              if (vncType === "kasm") {
+                window.open(vncUrl, "_blank", "noopener,noreferrer");
+              } else {
+                setShowLiveView(true);
+              }
+            }}
+          >
+            {isWaitingReview ? (
+              <>
+                <MousePointer className="h-4 w-4 mr-1.5" />
+                Take Control
+              </>
+            ) : (
+              <>
+                <Monitor className="h-4 w-4 mr-1.5" />
+                Watch Live
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Live View - only for active tasks with VNC URL */}
       {!isTerminal && vncUrl && (

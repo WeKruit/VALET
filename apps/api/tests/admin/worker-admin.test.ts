@@ -50,6 +50,9 @@ const mockGh = {
   }),
 };
 const mockSbRepo = { findAllActive: vi.fn().mockResolvedValue(mockSandboxes) };
+const mockGhJobRepo = {
+  findByIds: vi.fn().mockResolvedValue([{ id: "job-1", valetTaskId: "valet-task-abc" }]),
+};
 const mockLog = {
   error: vi.fn(),
   info: vi.fn(),
@@ -59,7 +62,9 @@ const mockLog = {
 
 function mkReq(o: Record<string, unknown> = {}): unknown {
   return {
-    diScope: { cradle: { ghosthandsClient: mockGh, sandboxRepo: mockSbRepo } },
+    diScope: {
+      cradle: { ghosthandsClient: mockGh, sandboxRepo: mockSbRepo, ghJobRepo: mockGhJobRepo },
+    },
     log: mockLog,
     ...o,
   };
@@ -111,6 +116,18 @@ describe("Worker Admin Routes", () => {
     await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
     const b = rp._b as { workers: Array<{ sandbox_name: string }> };
     expect(b.workers[0]!.sandbox_name).toBe("sandbox-prod-1");
+  });
+
+  it("GET list enriches with valet_task_id from gh_automation_jobs", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as {
+      workers: Array<{ worker_id: string; valet_task_id: string | null }>;
+    };
+    // Worker with current_job_id "job-1" should resolve to "valet-task-abc"
+    expect(b.workers[0]!.valet_task_id).toBe("valet-task-abc");
+    // Worker with no current_job_id should have null valet_task_id
+    expect(b.workers[1]!.valet_task_id).toBeNull();
   });
 
   it("GET list returns 502 on GH error", async () => {

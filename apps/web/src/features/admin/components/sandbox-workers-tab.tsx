@@ -1,8 +1,16 @@
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
 import { Skeleton } from "@valet/ui/components/skeleton";
-import { Users, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@valet/ui/components/tooltip";
+import { Users, AlertCircle, RefreshCw, ExternalLink, Monitor } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useAgentWorkers } from "../hooks/use-sandboxes";
+import { useWorkerFleet } from "../hooks/use-workers";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "default" | "info"> = {
   running: "success",
@@ -27,6 +35,11 @@ interface SandboxWorkersTabProps {
 
 export function SandboxWorkersTab({ sandboxId }: SandboxWorkersTabProps) {
   const { data, isLoading, isError, refetch } = useAgentWorkers(sandboxId);
+  const fleetQuery = useWorkerFleet();
+
+  // Cross-reference agent workers with fleet registry to get current_job_id + valet_task_id
+  const fleetWorkers = fleetQuery.data?.workers ?? [];
+  const fleetByWorkerId = new Map(fleetWorkers.map((w) => [w.worker_id, w]));
 
   if (isLoading) {
     return (
@@ -93,28 +106,90 @@ export function SandboxWorkersTab({ sandboxId }: SandboxWorkersTabProps) {
               <th className="pb-2 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
                 Active Jobs
               </th>
+              <th className="pb-2 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
+                Current Task
+              </th>
               <th className="pb-2 text-left font-medium text-[var(--wk-text-secondary)]">Uptime</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--wk-border-subtle)]">
-            {workers.map((w) => (
-              <tr
-                key={w.workerId}
-                className="hover:bg-[var(--wk-surface-raised)] transition-colors"
-              >
-                <td className="py-2.5 pr-4 font-mono text-xs">{w.workerId}</td>
-                <td className="py-2.5 pr-4 font-mono text-xs text-[var(--wk-text-secondary)]">
-                  {w.containerName}
-                </td>
-                <td className="py-2.5 pr-4">
-                  <Badge variant={statusVariant[w.status] ?? "default"} className="capitalize">
-                    {w.status}
-                  </Badge>
-                </td>
-                <td className="py-2.5 pr-4 tabular-nums">{w.activeJobs}</td>
-                <td className="py-2.5 text-[var(--wk-text-secondary)]">{formatUptime(w.uptime)}</td>
-              </tr>
-            ))}
+            {workers.map((w) => {
+              const fleet = fleetByWorkerId.get(w.workerId);
+              const jobId = fleet?.current_job_id;
+              const taskId = fleet?.valet_task_id;
+              const hasActiveJob = Boolean(jobId);
+
+              return (
+                <tr
+                  key={w.workerId}
+                  className="hover:bg-[var(--wk-surface-raised)] transition-colors"
+                >
+                  <td className="py-2.5 pr-4 font-mono text-xs">{w.workerId}</td>
+                  <td className="py-2.5 pr-4 font-mono text-xs text-[var(--wk-text-secondary)]">
+                    {w.containerName}
+                  </td>
+                  <td className="py-2.5 pr-4">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant={statusVariant[w.status] ?? "default"} className="capitalize">
+                        {w.status}
+                      </Badge>
+                      {hasActiveJob && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Monitor className="h-3.5 w-3.5 text-[var(--wk-copilot)]" />
+                            </TooltipTrigger>
+                            <TooltipContent>Kasm session active</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-2.5 pr-4 tabular-nums">{w.activeJobs}</td>
+                  <td className="py-2.5 pr-4">
+                    {!jobId ? (
+                      <span className="text-[var(--wk-text-tertiary)]">{"\u2014"}</span>
+                    ) : taskId ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Link
+                              to={`/tasks/${taskId}`}
+                              className="inline-flex items-center gap-1 font-mono text-xs text-[var(--wk-copilot)] hover:underline"
+                            >
+                              {taskId.slice(0, 8)}&hellip;
+                              <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-mono text-xs">Task: {taskId}</p>
+                            <p className="font-mono text-xs text-[var(--wk-text-secondary)]">
+                              Job: {jobId}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <span className="font-mono text-xs text-[var(--wk-text-secondary)]">
+                              {jobId.slice(0, 8)}&hellip;
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-mono text-xs">Job: {jobId}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </td>
+                  <td className="py-2.5 text-[var(--wk-text-secondary)]">
+                    {formatUptime(w.uptime)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -84,6 +84,15 @@ export class GhAutomationJobRepository {
     return row ? toRecord(row as Record<string, unknown>) : null;
   }
 
+  async findByIds(ids: string[]): Promise<GhJobRecord[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(ghAutomationJobs)
+      .where(inArray(ghAutomationJobs.id, ids));
+    return rows.map((r) => toRecord(r as Record<string, unknown>));
+  }
+
   async findByValetTaskId(valetTaskId: string): Promise<GhJobRecord | null> {
     const rows = await this.db
       .select()

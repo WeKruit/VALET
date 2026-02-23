@@ -183,6 +183,8 @@ export interface GHCallbackPayload {
   cost_breakdown?: GHCallbackCostBreakdown;
   // HITL interaction data (when status is "needs_human")
   interaction?: GHInteractionData;
+  /** Kasm session URL for live browser view (WEK-162) */
+  kasm_url?: string;
   // Legacy format support (if GH is updated to match original spec)
   result?: GHJobResult;
   error?: GHJobError;

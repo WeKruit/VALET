@@ -217,6 +217,14 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         updatedAt: new Date(),
       };
 
+      // WEK-162: Store kasm_url from callback in job metadata
+      if (payload.kasm_url) {
+        ghJobUpdate.metadata = {
+          ...((ghJobUpdate.metadata as Record<string, unknown>) ?? {}),
+          kasm_url: payload.kasm_url,
+        };
+      }
+
       {
         const now = new Date();
         if (payload.status === "running") {
@@ -295,13 +303,18 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         const wsMappedType =
           interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
 
-        // WEK-134: Look up the real VNC URL from the sandbox running this task
+        // WEK-162: Prefer kasm_url from callback, fallback to sandbox noVNC URL
         let vncUrl: string | undefined;
-        if (task.sandboxId) {
+        let vncType: "kasm" | "novnc" | undefined;
+        if (payload.kasm_url) {
+          vncUrl = payload.kasm_url;
+          vncType = "kasm";
+        } else if (task.sandboxId) {
           try {
             const sandbox = await sandboxRepo.findById(task.sandboxId);
             if (sandbox?.novncUrl) {
               vncUrl = sandbox.novncUrl;
+              vncType = "novnc";
             }
           } catch (err) {
             request.log.warn(
@@ -315,7 +328,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           type: "task_needs_human",
           taskId: task.id,
           status: taskStatus,
-          ...(vncUrl ? { vncUrl } : {}),
+          ...(vncUrl ? { vncUrl, vncType } : {}),
           interaction: {
             type: wsMappedType,
             screenshotUrl: payload.interaction.screenshot_url ?? null,
