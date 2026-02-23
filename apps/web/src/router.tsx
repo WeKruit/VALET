@@ -114,6 +114,11 @@ const WorkersPage = lazy(() =>
     default: m.WorkersPage,
   })),
 );
+const SecretsStatusPage = lazy(() =>
+  import("./features/admin/pages/secrets-status-page").then((m) => ({
+    default: m.SecretsStatusPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -223,6 +228,14 @@ export function AppRouter() {
             element={
               <AdminGuard>
                 <WorkersPage />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/secrets"
+            element={
+              <AdminGuard>
+                <SecretsStatusPage />
               </AdminGuard>
             }
           />

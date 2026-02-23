@@ -50,6 +50,7 @@ import { PgBossService } from "../services/pgboss.service.js";
 import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
 import { AutoScaleService } from "../services/auto-scale.service.js";
 import { StaleTaskReconciliationMonitor } from "../modules/tasks/stale-task-reconciliation.js";
+import { SecretsSyncService } from "../modules/secrets/secrets-sync.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -100,6 +101,7 @@ export interface AppCradle {
   taskQueueService: TaskQueueService;
   autoScaleService: AutoScaleService;
   staleTaskReconciliation: StaleTaskReconciliationMonitor;
+  secretsSyncService: SecretsSyncService;
 }
 
 declare module "@fastify/awilix" {
@@ -201,6 +203,9 @@ export default fp(async (fastify: FastifyInstance) => {
     taskQueueService: asClass(TaskQueueService, { lifetime: Lifetime.SINGLETON }),
     autoScaleService: asClass(AutoScaleService, { lifetime: Lifetime.SINGLETON }),
     staleTaskReconciliation: asClass(StaleTaskReconciliationMonitor, {
+      lifetime: Lifetime.SINGLETON,
+    }),
+    secretsSyncService: asClass(SecretsSyncService, {
       lifetime: Lifetime.SINGLETON,
     }),
   });
