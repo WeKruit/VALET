@@ -15,6 +15,7 @@ function enrichWorker(
     uptime_seconds?: number | null;
   },
   sandboxMap: Map<string, { id: string; name: string; environment: string }>,
+  jobTaskMap: Map<string, string>,
 ) {
   const sandbox = sandboxMap.get(w.worker_id) ?? sandboxMap.get(w.target_worker_id ?? "");
   return {
@@ -25,6 +26,7 @@ function enrichWorker(
     ec2_ip: w.ec2_ip ?? null,
     status: w.status,
     current_job_id: w.current_job_id,
+    valet_task_id: w.current_job_id ? (jobTaskMap.get(w.current_job_id) ?? null) : null,
     registered_at: w.registered_at,
     last_heartbeat: w.last_heartbeat,
     jobs_completed: w.jobs_completed,
@@ -36,14 +38,27 @@ function enrichWorker(
 export async function workerAdminRoutes(fastify: FastifyInstance) {
   fastify.get("/api/v1/admin/workers", async (request: FastifyRequest, reply: FastifyReply) => {
     await adminOnly(request);
-    const { ghosthandsClient, sandboxRepo } = request.diScope.cradle;
+    const { ghosthandsClient, sandboxRepo, ghJobRepo } = request.diScope.cradle;
     try {
       const [fleetData, activeSandboxes] = await Promise.all([
         ghosthandsClient.getWorkerFleet(),
         sandboxRepo.findAllActive(),
       ]);
+
+      // Resolve current_job_id → valet_task_id for workers with active jobs
+      const activeJobIds = fleetData.workers
+        .map((w) => w.current_job_id)
+        .filter((id): id is string => id != null);
+      const jobTaskMap = new Map<string, string>();
+      if (activeJobIds.length > 0) {
+        const jobs = await ghJobRepo.findByIds(activeJobIds);
+        for (const j of jobs) {
+          if (j.valetTaskId) jobTaskMap.set(j.id, j.valetTaskId);
+        }
+      }
+
       const sandboxMap = new Map(activeSandboxes.map((s) => [s.id, s]));
-      const workers = fleetData.workers.map((w) => enrichWorker(w, sandboxMap));
+      const workers = fleetData.workers.map((w) => enrichWorker(w, sandboxMap, jobTaskMap));
       return reply.send({ workers, total: workers.length });
     } catch (err) {
       request.log.error({ err }, "Failed to fetch worker fleet");
@@ -55,7 +70,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
     "/api/v1/admin/workers/:workerId",
     async (request: FastifyRequest<{ Params: { workerId: string } }>, reply: FastifyReply) => {
       await adminOnly(request);
-      const { ghosthandsClient, sandboxRepo } = request.diScope.cradle;
+      const { ghosthandsClient, sandboxRepo, ghJobRepo } = request.diScope.cradle;
       const { workerId } = request.params;
       try {
         const [fleetData, activeSandboxes] = await Promise.all([
@@ -64,8 +79,17 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         ]);
         const worker = fleetData.workers.find((w) => w.worker_id === workerId);
         if (!worker) return reply.status(404).send({ error: "Worker not found" });
+
+        const jobTaskMap = new Map<string, string>();
+        if (worker.current_job_id) {
+          const jobs = await ghJobRepo.findByIds([worker.current_job_id]);
+          for (const j of jobs) {
+            if (j.valetTaskId) jobTaskMap.set(j.id, j.valetTaskId);
+          }
+        }
+
         const sandboxMap = new Map(activeSandboxes.map((s) => [s.id, s]));
-        return reply.send(enrichWorker(worker, sandboxMap));
+        return reply.send(enrichWorker(worker, sandboxMap, jobTaskMap));
       } catch (err) {
         request.log.error({ err }, "Failed to fetch worker detail");
         return reply.status(502).send({ error: "GhostHands API unreachable" });

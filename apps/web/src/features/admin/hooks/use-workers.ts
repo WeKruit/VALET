@@ -36,6 +36,7 @@ export interface WorkerEntry {
   ec2_ip: string | null;
   status: "active" | "draining" | "offline";
   current_job_id: string | null;
+  valet_task_id: string | null;
   registered_at: string;
   last_heartbeat: string;
   jobs_completed: number;
