@@ -28,6 +28,7 @@ import {
   useSecretsDiff,
   useSyncSecrets,
   useRefreshFleet,
+  useRefreshSandbox,
   useSecretsAudit,
 } from "../hooks/use-secrets-sync";
 import type {
@@ -213,7 +214,9 @@ export function SecretsStatusPage() {
       {lastSyncResult && <SyncResultCard result={lastSyncResult} />}
 
       {/* Last fleet refresh result */}
-      {lastFleetResult && <FleetRefreshCard result={lastFleetResult} />}
+      {lastFleetResult && (
+        <FleetRefreshCard result={lastFleetResult} onFleetUpdate={setLastFleetResult} />
+      )}
 
       {/* Audit log */}
       {auditData && auditData.entries.length > 0 && <AuditLogCard entries={auditData.entries} />}
@@ -485,8 +488,38 @@ function SyncResultCard({ result }: { result: SyncResult }) {
   );
 }
 
-function FleetRefreshCard({ result }: { result: FleetRefreshResult }) {
+function FleetRefreshCard({
+  result,
+  onFleetUpdate,
+}: {
+  result: FleetRefreshResult;
+  onFleetUpdate: (r: FleetRefreshResult) => void;
+}) {
+  const refreshSandbox = useRefreshSandbox();
   const total = result.refreshed.length + result.failed.length + result.skipped.length;
+
+  const handleRetry = async (sandboxId: string) => {
+    try {
+      const res = await refreshSandbox.mutateAsync({ sandboxId });
+      if (res.success) {
+        toast.success(`${res.name} refreshed successfully.`);
+        // Move from failed to refreshed
+        onFleetUpdate({
+          ...result,
+          refreshed: [
+            ...result.refreshed,
+            { sandboxId: res.sandboxId, name: res.name, ip: res.ip, status: "ok" },
+          ],
+          failed: result.failed.filter((f) => f.sandboxId !== sandboxId),
+        });
+      } else {
+        toast.error(`${res.name}: ${res.message}`);
+      }
+    } catch {
+      toast.error("Retry failed.");
+    }
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -521,9 +554,23 @@ function FleetRefreshCard({ result }: { result: FleetRefreshResult }) {
             <span className="font-medium">
               {s.name} <span className="text-[var(--wk-text-tertiary)]">({s.ip})</span>
             </span>
-            <div className="flex items-center gap-1 text-red-500">
-              <XCircle className="h-3.5 w-3.5" />
-              {s.error}
+            <div className="flex items-center gap-2">
+              <span className="text-red-500 flex items-center gap-1">
+                <XCircle className="h-3.5 w-3.5" />
+                {s.error}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                onClick={() => handleRetry(s.sandboxId)}
+                disabled={refreshSandbox.isPending}
+              >
+                <RefreshCw
+                  className={cn("h-3 w-3 mr-1", refreshSandbox.isPending && "animate-spin")}
+                />
+                Retry
+              </Button>
             </div>
           </div>
         ))}

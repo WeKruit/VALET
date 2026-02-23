@@ -323,6 +323,19 @@ export class SecretsSyncService {
         continue;
       }
 
+      // Skip errored targets (diff itself failed — can't push)
+      if (target.status === "error") {
+        results.push({
+          target: target.target,
+          success: false,
+          pushed: 0,
+          skipped: 0,
+          failed: 0,
+          errors: [target.error ?? "Target errored during diff"],
+        });
+        continue;
+      }
+
       try {
         const result = await this.pushToTarget(env, target, valetVars, ghVars);
         results.push(result);

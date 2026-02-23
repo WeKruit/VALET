@@ -108,6 +108,9 @@ export function useSyncSecrets() {
       qc.invalidateQueries({
         queryKey: ["admin", "secrets", "diff", variables.env],
       });
+      qc.invalidateQueries({
+        queryKey: ["admin", "secrets", "audit"],
+      });
     },
   });
 }
