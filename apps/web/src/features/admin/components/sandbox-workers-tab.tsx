@@ -1,8 +1,16 @@
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
 import { Skeleton } from "@valet/ui/components/skeleton";
-import { Users, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@valet/ui/components/tooltip";
+import { Users, AlertCircle, RefreshCw, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useAgentWorkers } from "../hooks/use-sandboxes";
+import { useWorkerFleet } from "../hooks/use-workers";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "default" | "info"> = {
   running: "success",
@@ -27,6 +35,13 @@ interface SandboxWorkersTabProps {
 
 export function SandboxWorkersTab({ sandboxId }: SandboxWorkersTabProps) {
   const { data, isLoading, isError, refetch } = useAgentWorkers(sandboxId);
+  const fleetQuery = useWorkerFleet();
+
+  // Cross-reference agent workers with fleet registry to get current_job_id
+  const fleetWorkers = fleetQuery.data?.workers ?? [];
+  const jobByWorkerId = new Map(
+    fleetWorkers.filter((w) => w.current_job_id).map((w) => [w.worker_id, w.current_job_id!]),
+  );
 
   if (isLoading) {
     return (
@@ -93,6 +108,9 @@ export function SandboxWorkersTab({ sandboxId }: SandboxWorkersTabProps) {
               <th className="pb-2 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
                 Active Jobs
               </th>
+              <th className="pb-2 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
+                Current Task
+              </th>
               <th className="pb-2 text-left font-medium text-[var(--wk-text-secondary)]">Uptime</th>
             </tr>
           </thead>
@@ -112,6 +130,31 @@ export function SandboxWorkersTab({ sandboxId }: SandboxWorkersTabProps) {
                   </Badge>
                 </td>
                 <td className="py-2.5 pr-4 tabular-nums">{w.activeJobs}</td>
+                <td className="py-2.5 pr-4">
+                  {(() => {
+                    const jobId = jobByWorkerId.get(w.workerId);
+                    if (!jobId)
+                      return <span className="text-[var(--wk-text-tertiary)]">{"\u2014"}</span>;
+                    return (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Link
+                              to={`/admin/workers`}
+                              className="inline-flex items-center gap-1 font-mono text-xs text-[var(--wk-copilot)] hover:underline"
+                            >
+                              {jobId.slice(0, 8)}&hellip;
+                              <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-mono text-xs">{jobId}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  })()}
+                </td>
                 <td className="py-2.5 text-[var(--wk-text-secondary)]">{formatUptime(w.uptime)}</td>
               </tr>
             ))}
