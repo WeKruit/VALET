@@ -195,18 +195,17 @@ export class TaskRepository {
   }
 
   /**
-   * EC7: Update task status with optimistic locking via status_version.
-   * Only succeeds if current status_version matches expectedVersion.
-   * Increments status_version on success.
-   * Returns null if version mismatch (another callback won the race).
+   * EC7: Atomically update task status, guarding against terminal states.
+   * Single UPDATE ... WHERE status NOT IN (terminal) — no read-then-write race.
+   * Increments status_version on each successful update.
+   * Returns null if task is already in a terminal state (or doesn't exist).
    */
-  async updateStatusWithVersion(
-    id: string,
-    status: TaskStatus,
-    expectedVersion: number,
-  ): Promise<TaskRecord | null> {
+  async updateStatusGuarded(id: string, status: TaskStatus): Promise<TaskRecord | null> {
     const now = new Date();
-    const extra: Record<string, unknown> = { updatedAt: now, statusVersion: expectedVersion + 1 };
+    const extra: Record<string, unknown> = {
+      updatedAt: now,
+      statusVersion: sql`${tasks.statusVersion} + 1`,
+    };
     if (status === "completed" || status === "failed" || status === "cancelled") {
       extra.completedAt = now;
       if (status === "completed") {
@@ -220,7 +219,9 @@ export class TaskRepository {
     const rows = await this.db
       .update(tasks)
       .set({ status, ...extra })
-      .where(and(eq(tasks.id, id), eq(tasks.statusVersion, expectedVersion)))
+      .where(
+        and(eq(tasks.id, id), sql`${tasks.status} NOT IN ('completed', 'failed', 'cancelled')`),
+      )
       .returning();
     const row = rows[0];
     return row ? toTaskRecord(row as Record<string, unknown>) : null;

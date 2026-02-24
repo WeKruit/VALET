@@ -131,49 +131,17 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         }
       }
 
-      // EC7: Use optimistic locking to prevent callback race conditions.
-      // Read current task to check terminal state and get statusVersion.
-      const currentTask = await taskRepo.findByIdAdmin(valetTaskId);
-      if (!currentTask) {
-        request.log.warn({ valetTaskId }, "Task not found for GhostHands callback");
-        return reply.status(404).send({
-          error: "Not Found",
-          message: `Task ${valetTaskId} not found`,
-        });
-      }
-
-      // If task is already in a terminal state, skip the update
-      const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"]);
-      if (TERMINAL_TASK_STATUSES.has(currentTask.status)) {
-        request.log.warn(
-          {
-            valetTaskId,
-            currentStatus: currentTask.status,
-            incomingGhStatus: payload.status,
-          },
-          "Skipping callback — task already in terminal state",
-        );
-        return reply.status(200).send({ received: true, skipped: true });
-      }
-
-      // Use version-gated update to prevent race conditions
-      const task = await taskRepo.updateStatusWithVersion(
-        valetTaskId,
-        taskStatus,
-        currentTask.statusVersion,
-      );
+      // EC7: Atomic status update — single UPDATE ... WHERE status NOT IN (terminal).
+      // No read-then-write race; the DB enforces the guard in one round-trip.
+      const task = await taskRepo.updateStatusGuarded(valetTaskId, taskStatus);
 
       if (!task) {
-        // Version mismatch — another callback won the race
+        // Task is already in a terminal state or doesn't exist
         request.log.warn(
-          {
-            valetTaskId,
-            expectedVersion: currentTask.statusVersion,
-            incomingGhStatus: payload.status,
-          },
-          "Callback lost status version race — another update was applied first",
+          { valetTaskId, incomingGhStatus: payload.status },
+          "Callback skipped — task in terminal state or not found",
         );
-        return reply.status(200).send({ received: true, raceLost: true });
+        return reply.status(200).send({ received: true, skipped: true });
       }
 
       // HITL-specific data handling

@@ -82,6 +82,20 @@ export class StaleTaskReconciliationMonitor {
     };
 
     try {
+      // EC10: Run heartbeat-based stale task detection first.
+      // Fails tasks stuck >2h with no recent GH worker heartbeat.
+      try {
+        const staleResult = await this.taskService.monitorStaleTasks();
+        if (staleResult.handled > 0) {
+          this.logger.info(
+            { staleHandled: staleResult.handled, staleChecked: staleResult.checked },
+            "EC10 stale task monitor ran",
+          );
+        }
+      } catch (err) {
+        this.logger.error({ err }, "EC10 stale task monitor failed");
+      }
+
       const stuck = await this.taskService.findStuckJobs(STUCK_THRESHOLD_MINUTES);
       if (stuck.length === 0) {
         this.running = false;

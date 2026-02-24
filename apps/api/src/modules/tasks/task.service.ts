@@ -372,7 +372,7 @@ export class TaskService {
 
     // EC4: Poll session status to verify boot (up to 3 attempts, 2s delay).
     // If Kasm doesn't reach "running", destroy the session and fall back.
-    const BOOT_POLL_ATTEMPTS = 3;
+    const BOOT_POLL_ATTEMPTS = 5;
     const BOOT_POLL_DELAY_MS = 2000;
     let kasmBooted = false;
 
@@ -1053,25 +1053,25 @@ export class TaskService {
     if (task.workflowRunId) {
       // In queue mode, mark GH job as cancelled first, then cancel pg-boss job
       if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+        // EC1: GH job update MUST succeed — do not swallow errors
+        await this.ghJobRepo.updateStatus(task.workflowRunId, {
+          status: "cancelled",
+          completedAt: new Date(),
+          statusMessage: "Cancelled by user via VALET",
+        });
+
+        // EC2: NOTIFY for instant cancellation (best-effort)
         try {
-          // Mark GH job as cancelled BEFORE pg-boss cancel
-          await this.ghJobRepo.updateStatus(task.workflowRunId, {
-            status: "cancelled",
-            completedAt: new Date(),
-            statusMessage: "Cancelled by user via VALET",
-          });
+          await this.ghJobRepo.notifyCancel(task.workflowRunId);
+        } catch (notifyErr) {
+          this.logger.warn(
+            { err: notifyErr, jobId: task.workflowRunId },
+            "Failed to send cancel NOTIFY",
+          );
+        }
 
-          // EC2: NOTIFY for instant cancellation (GH worker LISTENs on this channel)
-          try {
-            await this.ghJobRepo.notifyCancel(task.workflowRunId);
-          } catch (notifyErr) {
-            this.logger.warn(
-              { err: notifyErr, jobId: task.workflowRunId },
-              "Failed to send cancel NOTIFY",
-            );
-          }
-
-          // Then cancel the pg-boss job (best-effort)
+        // pg-boss cancel is best-effort
+        try {
           const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
           const pgBossJobId = ghJob?.metadata?.pgBossJobId as string | undefined;
           const pgBossQueueName = ghJob?.metadata?.pgBossQueueName as string | undefined;
@@ -1082,7 +1082,7 @@ export class TaskService {
         } catch (err) {
           this.logger.warn(
             { err, taskId: id, jobId: task.workflowRunId },
-            "Failed to cancel gh_automation_jobs record",
+            "Failed to cancel pg-boss job (best-effort)",
           );
         }
       }
