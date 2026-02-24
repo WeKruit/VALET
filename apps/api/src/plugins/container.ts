@@ -52,6 +52,8 @@ import { AutoScaleService } from "../services/auto-scale.service.js";
 import { StaleTaskReconciliationMonitor } from "../modules/tasks/stale-task-reconciliation.js";
 import { SecretsSyncService } from "../modules/secrets/secrets-sync.service.js";
 import { InstanceDiscoveryService } from "../modules/sync/instance-discovery.service.js";
+import { EarlyAccessRepository } from "../modules/early-access/early-access.repository.js";
+import { EarlyAccessService } from "../modules/early-access/early-access.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -104,6 +106,8 @@ export interface AppCradle {
   staleTaskReconciliation: StaleTaskReconciliationMonitor;
   secretsSyncService: SecretsSyncService;
   instanceDiscoveryService: InstanceDiscoveryService;
+  earlyAccessRepo: EarlyAccessRepository;
+  earlyAccessService: EarlyAccessService;
 }
 
 declare module "@fastify/awilix" {
@@ -213,5 +217,7 @@ export default fp(async (fastify: FastifyInstance) => {
     instanceDiscoveryService: asClass(InstanceDiscoveryService, {
       lifetime: Lifetime.SINGLETON,
     }),
+    earlyAccessRepo: asClass(EarlyAccessRepository, { lifetime: Lifetime.SINGLETON }),
+    earlyAccessService: asClass(EarlyAccessService, { lifetime: Lifetime.SINGLETON }),
   });
 });

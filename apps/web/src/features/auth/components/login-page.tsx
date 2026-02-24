@@ -27,7 +27,14 @@ export function LoginPage() {
 
   function handleAuthSuccess(data: {
     accessToken: string;
-    user: { id: string; email: string; name: string; avatarUrl: string | null };
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      avatarUrl: string | null;
+      role?: string;
+      subscriptionTier?: string;
+    };
   }) {
     setAccessToken(data.accessToken);
     setUser({
@@ -35,6 +42,9 @@ export function LoginPage() {
       email: data.user.email,
       name: data.user.name,
       avatarUrl: data.user.avatarUrl ?? undefined,
+      role: (data.user.role as "user" | "developer" | "admin" | "superadmin") ?? "user",
+      subscriptionTier:
+        (data.user.subscriptionTier as "free" | "starter" | "pro" | "enterprise") ?? undefined,
       onboardingComplete: false,
       copilotAppsCompleted: 0,
       autopilotUnlocked: false,
@@ -112,14 +122,10 @@ export function LoginPage() {
         {/* Logo */}
         <div className="flex flex-col items-center space-y-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-text-primary)]">
-            <span className="text-2xl font-bold text-[var(--wk-surface-page)]">
-              V
-            </span>
+            <span className="text-2xl font-bold text-[var(--wk-surface-page)]">V</span>
           </div>
           <div className="text-center">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">
-              WeKruit Valet
-            </h1>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">WeKruit Valet</h1>
             <p className="mt-2 text-sm text-[var(--wk-text-secondary)]">
               Verified Automation. Limitless Execution. Trust.
             </p>
@@ -148,9 +154,7 @@ export function LoginPage() {
                   placeholder="you@example.com"
                   {...register("email")}
                 />
-                {errors.email && (
-                  <p className="text-xs text-red-500">{errors.email.message}</p>
-                )}
+                {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
               </div>
 
               <div className="space-y-1.5">
@@ -183,15 +187,8 @@ export function LoginPage() {
                 </p>
               )}
 
-              <Button
-                type="submit"
-                size="lg"
-                className="w-full"
-                disabled={emailLogin.isPending}
-              >
-                {emailLogin.isPending ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : null}
+              <Button type="submit" size="lg" className="w-full" disabled={emailLogin.isPending}>
+                {emailLogin.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
                 {emailLogin.isPending ? "Signing in..." : "Sign in"}
               </Button>
             </form>

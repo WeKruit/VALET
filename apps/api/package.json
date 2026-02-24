@@ -15,6 +15,7 @@
     "@aws-sdk/client-ec2": "^3.990.0",
     "@aws-sdk/client-s3": "^3.989.0",
     "@aws-sdk/client-secrets-manager": "^3.995.0",
+    "@casl/ability": "^6.8.0",
     "@fastify/awilix": "^6.0.0",
     "@fastify/cookie": "^11.0.0",
     "@fastify/cors": "^10.0.0",

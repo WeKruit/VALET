@@ -54,6 +54,11 @@ const OnboardingPage = lazy(() =>
     default: m.OnboardingPage,
   })),
 );
+const EarlyAccessPage = lazy(() =>
+  import("./features/early-access/pages/early-access-page").then((m) => ({
+    default: m.EarlyAccessPage,
+  })),
+);
 const SettingsPage = lazy(() =>
   import("./features/settings/pages/settings-page").then((m) => ({
     default: m.SettingsPage,
@@ -145,6 +150,15 @@ export function AppRouter() {
         <Route path="/legal/privacy" element={<PrivacyPolicyPage />} />
 
         {/* Auth-protected routes */}
+        <Route
+          path="/early-access"
+          element={
+            <AuthGuard>
+              <EarlyAccessPage />
+            </AuthGuard>
+          }
+        />
+
         <Route
           path="/onboarding/*"
           element={

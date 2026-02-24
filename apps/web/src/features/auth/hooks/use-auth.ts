@@ -7,7 +7,7 @@ interface User {
   email: string;
   name: string;
   avatarUrl?: string | null;
-  role?: "user" | "admin" | "superadmin";
+  role?: "user" | "developer" | "admin" | "superadmin";
   subscriptionTier?: "free" | "starter" | "pro" | "enterprise";
   onboardingComplete?: boolean;
   copilotAppsCompleted?: number;
@@ -56,8 +56,8 @@ export const useAuth = create<AuthStore>()(
         });
       },
     }),
-    { name: "wk-auth" }
-  )
+    { name: "wk-auth" },
+  ),
 );
 
 /**

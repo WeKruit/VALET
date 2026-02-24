@@ -160,6 +160,29 @@ export class EmailService {
     await this.send(to, subject, html);
   }
 
+  async sendEarlyAccessConfirmation(to: string, name: string, position: number): Promise<void> {
+    const subject = "You're on the WeKruit Valet waitlist!";
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a;">
+  <h1 style="font-size: 24px; font-weight: 600; margin-bottom: 16px;">You're on the list, ${escapeHtml(name)}!</h1>
+  <p style="font-size: 15px; line-height: 1.6; color: #4a4a4a;">
+    Thanks for signing up for early access to WeKruit Valet. You're <strong>#${position}</strong> on the waitlist.
+  </p>
+  <p style="font-size: 15px; line-height: 1.6; color: #4a4a4a;">
+    We're rolling out access in waves and will notify you as soon as it's your turn. In the meantime, keep an eye on your inbox.
+  </p>
+  <p style="font-size: 13px; color: #999; margin-top: 32px;">
+    &mdash; The WeKruit Team
+  </p>
+</body>
+</html>`.trim();
+
+    await this.send(to, subject, html);
+  }
+
   private async send(to: string, subject: string, html: string): Promise<void> {
     if (!this.resend) {
       this.logger.info({ to, subject }, "Email skipped (no API key)");

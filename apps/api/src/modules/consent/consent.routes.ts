@@ -1,16 +1,19 @@
 import { initServer } from "@ts-rest/fastify";
 import { consentContract } from "@valet/contracts";
+import { requireAbility } from "../../common/middleware/authorize.js";
 
 const s = initServer();
 
 export const consentRouter = s.router(consentContract, {
   list: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { consentService } = request.diScope.cradle;
     const records = await consentService.getByUser(request.userId);
     return { status: 200 as const, body: { data: records } };
   },
 
   create: async ({ body, request }) => {
+    await requireAbility("read", "Settings")(request);
     const { consentService } = request.diScope.cradle;
     const record = await consentService.recordConsent({
       userId: request.userId,
@@ -23,12 +26,9 @@ export const consentRouter = s.router(consentContract, {
   },
 
   check: async ({ query, request }) => {
+    await requireAbility("read", "Settings")(request);
     const { consentService } = request.diScope.cradle;
-    const result = await consentService.checkConsent(
-      request.userId,
-      query.type,
-      query.version,
-    );
+    const result = await consentService.checkConsent(request.userId, query.type, query.version);
     return {
       status: 200 as const,
       body: {

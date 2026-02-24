@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Button } from "@valet/ui/components/button";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
 import {
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { PublicHeader } from "../components/public-header";
 import { PublicFooter } from "../components/public-footer";
+import { EarlyAccessForm } from "../../early-access/components/early-access-form";
 
 const features = [
   {
@@ -101,24 +101,28 @@ export function LandingPage() {
       {/* Hero */}
       <section className="relative overflow-hidden px-4 md:px-6 py-12 md:py-20 lg:py-32">
         <div className="mx-auto max-w-[var(--wk-max-width)] text-center">
-          <Badge className="mb-4 md:mb-6">Now in Beta</Badge>
+          <Badge className="mb-4 md:mb-6">Early Access</Badge>
           <h1 className="wk-display-xl mx-auto max-w-4xl text-3xl md:text-5xl lg:text-6xl font-display font-semibold text-[var(--wk-text-primary)]">
             Stop filling out
             <br />
             job applications.
           </h1>
           <p className="wk-body-lg mx-auto mt-6 max-w-2xl text-[var(--wk-text-secondary)]">
-            WeKruit Valet uses AI to fill out job applications for you. Upload
-            your resume, paste a job URL, and apply in minutes instead of hours.
-            You review everything before it goes out.
+            WeKruit Valet uses AI to fill out job applications for you. Upload your resume, paste a
+            job URL, and apply in minutes instead of hours. You review everything before it goes
+            out.
           </p>
-          <div className="mt-8 md:mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
-            <Button asChild size="lg" variant="cta" className="w-full sm:w-auto">
-              <Link to="/login">Start Applying Free</Link>
-            </Button>
-            <Button asChild size="lg" variant="secondary" className="w-full sm:w-auto">
-              <Link to="/pricing">View Pricing</Link>
-            </Button>
+          <div className="mt-8 md:mt-10 mx-auto max-w-xl">
+            <EarlyAccessForm />
+            <p className="mt-3 text-xs text-center text-[var(--wk-text-tertiary)]">
+              Already have access?{" "}
+              <Link
+                to="/login"
+                className="underline underline-offset-2 hover:text-[var(--wk-text-secondary)] transition-colors"
+              >
+                Sign in
+              </Link>
+            </p>
           </div>
           <div className="mt-6 md:mt-8 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-6 text-xs sm:text-sm text-[var(--wk-text-tertiary)]">
             <span className="flex items-center gap-1.5">
@@ -135,16 +139,13 @@ export function LandingPage() {
       <section className="border-t border-[var(--wk-border-subtle)] px-4 md:px-6 py-12 md:py-20 lg:py-24">
         <div className="mx-auto max-w-[var(--wk-max-width)]">
           <div className="text-center">
-            <p className="wk-caption text-[var(--wk-accent-amber)]">
-              Features
-            </p>
+            <p className="wk-caption text-[var(--wk-accent-amber)]">Features</p>
             <h2 className="wk-display-lg mt-3 text-[var(--wk-text-primary)]">
               Everything you need to apply faster
             </h2>
             <p className="wk-body-base mx-auto mt-4 max-w-2xl text-[var(--wk-text-secondary)]">
-              From parsing your resume to filling multi-step forms across every
-              major job platform, Valet handles the busywork so you can focus on
-              what matters.
+              From parsing your resume to filling multi-step forms across every major job platform,
+              Valet handles the busywork so you can focus on what matters.
             </p>
           </div>
 
@@ -155,9 +156,7 @@ export function LandingPage() {
                   <div className="flex h-11 w-11 items-center justify-center rounded-[var(--wk-radius-xl)] bg-[var(--wk-surface-sunken)]">
                     <feature.icon className="h-5 w-5 text-[var(--wk-accent-amber)]" />
                   </div>
-                  <h3 className="mt-4 font-display text-lg font-semibold">
-                    {feature.title}
-                  </h3>
+                  <h3 className="mt-4 font-display text-lg font-semibold">{feature.title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-[var(--wk-text-secondary)]">
                     {feature.description}
                   </p>
@@ -172,9 +171,7 @@ export function LandingPage() {
       <section className="border-t border-[var(--wk-border-subtle)] bg-[var(--wk-surface-raised)] px-4 md:px-6 py-12 md:py-20 lg:py-24">
         <div className="mx-auto max-w-[var(--wk-max-width)]">
           <div className="text-center">
-            <p className="wk-caption text-[var(--wk-accent-amber)]">
-              How It Works
-            </p>
+            <p className="wk-caption text-[var(--wk-accent-amber)]">How It Works</p>
             <h2 className="wk-display-lg mt-3 text-[var(--wk-text-primary)]">
               Three steps to your next role
             </h2>
@@ -189,9 +186,7 @@ export function LandingPage() {
                 <div className="mt-2 text-xs font-medium text-[var(--wk-text-tertiary)]">
                   Step {step.step}
                 </div>
-                <h3 className="mt-2 font-display text-xl font-semibold">
-                  {step.title}
-                </h3>
+                <h3 className="mt-2 font-display text-xl font-semibold">{step.title}</h3>
                 <p className="mt-3 text-sm leading-relaxed text-[var(--wk-text-secondary)]">
                   {step.description}
                 </p>
@@ -205,9 +200,7 @@ export function LandingPage() {
       <section className="border-t border-[var(--wk-border-subtle)] px-4 md:px-6 py-12 md:py-20 lg:py-24">
         <div className="mx-auto max-w-[var(--wk-max-width)]">
           <div className="text-center">
-            <p className="wk-caption text-[var(--wk-accent-amber)]">
-              Testimonials
-            </p>
+            <p className="wk-caption text-[var(--wk-accent-amber)]">Testimonials</p>
             <h2 className="wk-display-lg mt-3 text-[var(--wk-text-primary)]">
               Trusted by job seekers
             </h2>
@@ -225,9 +218,7 @@ export function LandingPage() {
                     <p className="text-sm font-semibold text-[var(--wk-text-primary)]">
                       {testimonial.name}
                     </p>
-                    <p className="text-xs text-[var(--wk-text-tertiary)]">
-                      {testimonial.role}
-                    </p>
+                    <p className="text-xs text-[var(--wk-text-tertiary)]">{testimonial.role}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -243,17 +234,11 @@ export function LandingPage() {
             Ready to automate your job search?
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-base text-[var(--wk-text-on-dark-muted)]">
-            Join thousands of job seekers who apply smarter, not harder. Start
-            with 5 free applications every month.
+            Join thousands of job seekers who apply smarter, not harder. Start with 5 free
+            applications every month.
           </p>
-          <div className="mt-8">
-            <Button
-              asChild
-              size="lg"
-              className="bg-[var(--wk-accent-amber)] text-[var(--wk-text-primary)] hover:opacity-90"
-            >
-              <Link to="/login">Get Started for Free</Link>
-            </Button>
+          <div className="mt-8 mx-auto max-w-xl">
+            <EarlyAccessForm />
           </div>
         </div>
       </section>

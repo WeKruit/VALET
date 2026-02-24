@@ -7,6 +7,7 @@ import type {
   NotificationPreferences,
 } from "@valet/shared/schemas";
 import { AppError } from "../../common/errors.js";
+import { requireAbility } from "../../common/middleware/authorize.js";
 
 const s = initServer();
 
@@ -63,6 +64,7 @@ const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 
 export const userRouter = s.router(userContract, {
   getProfile: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const user = await userService.getById(request.userId);
     if (!user) throw AppError.notFound("User not found");
@@ -70,48 +72,56 @@ export const userRouter = s.router(userContract, {
   },
 
   updateProfile: async ({ body, request }) => {
+    await requireAbility("update", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const user = await userService.updateProfile(request.userId, body);
     return { status: 200, body: toProfileResponse(user as unknown as Record<string, unknown>) };
   },
 
   getPreferences: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const preferences = await userService.getPreferences(request.userId);
     return { status: 200, body: preferences };
   },
 
   updatePreferences: async ({ body, request }) => {
+    await requireAbility("update", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const preferences = await userService.updatePreferences(request.userId, body);
     return { status: 200, body: preferences };
   },
 
   getJobPreferences: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const prefs = await userService.getJobPreferences(request.userId);
     return { status: 200, body: prefs ?? DEFAULT_JOB_PREFERENCES };
   },
 
   updateJobPreferences: async ({ body, request }) => {
+    await requireAbility("update", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const prefs = await userService.updateJobPreferences(request.userId, body);
     return { status: 200, body: prefs };
   },
 
   getNotificationPreferences: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const prefs = await userService.getNotificationPreferences(request.userId);
     return { status: 200, body: prefs ?? DEFAULT_NOTIFICATION_PREFERENCES };
   },
 
   updateNotificationPreferences: async ({ body, request }) => {
+    await requireAbility("update", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const prefs = await userService.updateNotificationPreferences(request.userId, body);
     return { status: 200, body: prefs };
   },
 
   listSessions: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { taskService } = request.diScope.cradle;
     const ghResponse = await taskService.listSessions(request.userId);
     return {
@@ -131,6 +141,7 @@ export const userRouter = s.router(userContract, {
   },
 
   deleteSession: async ({ params, request }) => {
+    await requireAbility("delete", "Settings")(request);
     const { taskService } = request.diScope.cradle;
     await taskService.clearSession(request.userId, params.domain);
     return {
@@ -143,6 +154,7 @@ export const userRouter = s.router(userContract, {
   },
 
   clearAllSessions: async ({ request }) => {
+    await requireAbility("delete", "Settings")(request);
     const { taskService } = request.diScope.cradle;
     const ghResponse = await taskService.clearAllSessions(request.userId);
     return {

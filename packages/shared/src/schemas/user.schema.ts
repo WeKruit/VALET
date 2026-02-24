@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { workHistoryEntry, educationEntry } from "./resume.schema.js";
 
-export const userRole = z.enum(["user", "admin", "superadmin"]);
+export const userRole = z.enum(["user", "developer", "admin", "superadmin"]);
 
 export const subscriptionTier = z.enum(["free", "starter", "pro", "enterprise"]);
 
@@ -94,6 +94,8 @@ export type NotificationPreferences = z.infer<typeof notificationPreferences>;
 export type UpdateUserProfileRequest = z.infer<typeof updateUserProfileRequest>;
 export type UpdatePreferencesRequest = z.infer<typeof updatePreferencesRequest>;
 export type UpdateJobPreferencesRequest = z.infer<typeof updateJobPreferencesRequest>;
-export type UpdateNotificationPreferencesRequest = z.infer<typeof updateNotificationPreferencesRequest>;
+export type UpdateNotificationPreferencesRequest = z.infer<
+  typeof updateNotificationPreferencesRequest
+>;
 export type UserResponse = z.infer<typeof userResponse>;
 export type UserProfileResponse = z.infer<typeof userProfileResponse>;
