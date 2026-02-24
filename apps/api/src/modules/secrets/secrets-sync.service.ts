@@ -2,6 +2,7 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
   PutSecretValueCommand,
+  CreateSecretCommand,
   DescribeSecretCommand,
 } from "@aws-sdk/client-secrets-manager";
 import sodium from "libsodium-wrappers";
@@ -675,12 +676,8 @@ export class SecretsSyncService {
         };
       }
 
-      // Write merged secret
-      const putCmd = new PutSecretValueCommand({
-        SecretId: secretId,
-        SecretString: JSON.stringify(merged),
-      });
-      await this.smClient.send(putCmd);
+      // Write merged secret (creates SM secret if it doesn't exist yet)
+      await this.writeSmRaw(secretId, merged);
 
       this.logger.info({ target: target.target, secretId, pushed }, "AWS Secrets Manager synced");
 
@@ -995,12 +992,8 @@ export class SecretsSyncService {
       keys.push(key);
     }
 
-    // Write back
-    const putCmd = new PutSecretValueCommand({
-      SecretId: secretId,
-      SecretString: JSON.stringify(merged),
-    });
-    await this.smClient.send(putCmd);
+    // Write back (creates SM secret if it doesn't exist yet)
+    await this.writeSmRaw(secretId, merged);
 
     // Audit (keys only, NEVER values)
     await this.logAudit(userId, "secrets_upsert", {
@@ -1038,11 +1031,7 @@ export class SecretsSyncService {
 
     if (deletedKeys.length > 0) {
       // Write back
-      const putCmd = new PutSecretValueCommand({
-        SecretId: secretId,
-        SecretString: JSON.stringify(current),
-      });
-      await this.smClient.send(putCmd);
+      await this.writeSmRaw(secretId, current);
     }
 
     // Audit (keys only, NEVER values)
@@ -1076,6 +1065,22 @@ export class SecretsSyncService {
       }
     }
     return {};
+  }
+
+  // Write SM secret (Put first, Create if not exists)
+  private async writeSmRaw(secretId: string, data: Record<string, string>): Promise<void> {
+    const secretString = JSON.stringify(data);
+    try {
+      await this.smClient.send(
+        new PutSecretValueCommand({ SecretId: secretId, SecretString: secretString }),
+      );
+    } catch (err: unknown) {
+      if (!isSmNotFound(err)) throw err;
+      // Secret doesn't exist yet — create it
+      await this.smClient.send(
+        new CreateSecretCommand({ Name: secretId, SecretString: secretString }),
+      );
+    }
   }
 
   // ─── Private: audit helper ─────────────────────────────────────────

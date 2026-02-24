@@ -49,6 +49,10 @@ vi.mock("@aws-sdk/client-secrets-manager", () => ({
     _type: "Put",
     input,
   })),
+  CreateSecretCommand: vi.fn().mockImplementation((input: unknown) => ({
+    _type: "Create",
+    input,
+  })),
   DescribeSecretCommand: vi.fn().mockImplementation((input: unknown) => ({
     _type: "Describe",
     input,
@@ -131,7 +135,10 @@ function setupSmRouter(
   writeSpy?: { calls: Array<{ secretId: string; data: Record<string, string> }> },
 ) {
   mockAwsSend.mockImplementation(
-    (cmd: { _type: string; input: { SecretId?: string; SecretString?: string } }) => {
+    (cmd: {
+      _type: string;
+      input: { SecretId?: string; Name?: string; SecretString?: string };
+    }) => {
       if (cmd._type === "Get") {
         const secretId = cmd.input.SecretId!;
         const data = secrets[secretId];
@@ -139,10 +146,10 @@ function setupSmRouter(
         if (data) return Promise.resolve({ SecretString: JSON.stringify(data) });
         return Promise.reject(new Error("ResourceNotFoundException: Secret not found"));
       }
-      if (cmd._type === "Put") {
+      if (cmd._type === "Put" || cmd._type === "Create") {
         if (writeSpy) {
           writeSpy.calls.push({
-            secretId: cmd.input.SecretId!,
+            secretId: cmd.input.SecretId ?? cmd.input.Name ?? "unknown",
             data: JSON.parse(cmd.input.SecretString!),
           });
         }
