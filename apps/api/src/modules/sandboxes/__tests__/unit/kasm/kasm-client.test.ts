@@ -1,4 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// vi.hoisted runs before vi.mock hoisting, so fetchMock is available in the factory
+const { fetchMock } = vi.hoisted(() => ({
+  fetchMock: vi.fn(),
+}));
+
+vi.mock("undici", () => ({
+  Agent: vi.fn(),
+  fetch: fetchMock,
+}));
+
 import { KasmClient } from "../../../kasm/kasm.client.js";
 
 function makeMockLogger() {
@@ -17,9 +28,10 @@ function makeMockLogger() {
 
 describe("KasmClient", () => {
   let client: KasmClient;
-  let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    fetchMock.mockReset();
+
     const logger = makeMockLogger();
     client = new KasmClient({
       kasmApiUrl: "https://kasm.example.com/api/public",
@@ -27,13 +39,6 @@ describe("KasmClient", () => {
       kasmApiKeySecret: "test-api-secret",
       logger: logger as never,
     });
-
-    fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
   });
 
   describe("requestKasm", () => {
@@ -141,6 +146,54 @@ describe("KasmClient", () => {
       await expect(client.getKasmStatus("kasm-123")).rejects.toThrow(
         "Kasm API error (403): Forbidden",
       );
+    });
+  });
+
+  describe("TLS verification", () => {
+    it("creates dispatcher when KASM_TLS_VERIFY=false", () => {
+      const original = process.env.KASM_TLS_VERIFY;
+      process.env.KASM_TLS_VERIFY = "false";
+
+      const logger = makeMockLogger();
+      const _tlsClient = new KasmClient({
+        kasmApiUrl: "https://kasm.example.com/api/public",
+        kasmApiKey: "key",
+        kasmApiKeySecret: "secret",
+        logger: logger as never,
+      });
+
+      // The warn log should have been called about TLS
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Kasm TLS verification disabled (KASM_TLS_VERIFY=false)",
+      );
+      expect(_tlsClient).toBeDefined();
+
+      // Restore
+      if (original === undefined) {
+        delete process.env.KASM_TLS_VERIFY;
+      } else {
+        process.env.KASM_TLS_VERIFY = original;
+      }
+    });
+
+    it("does not create dispatcher when KASM_TLS_VERIFY is not false", () => {
+      const original = process.env.KASM_TLS_VERIFY;
+      delete process.env.KASM_TLS_VERIFY;
+
+      const logger = makeMockLogger();
+      new KasmClient({
+        kasmApiUrl: "https://kasm.example.com/api/public",
+        kasmApiKey: "key",
+        kasmApiKeySecret: "secret",
+        logger: logger as never,
+      });
+
+      expect(logger.warn).not.toHaveBeenCalled();
+
+      // Restore
+      if (original !== undefined) {
+        process.env.KASM_TLS_VERIFY = original;
+      }
     });
   });
 });

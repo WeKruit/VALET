@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import { Agent, fetch as uFetch } from "undici";
 import type {
   RequestKasmParams,
   RequestKasmResponse,
@@ -7,11 +8,22 @@ import type {
   KasmImage,
 } from "./types.js";
 
+/**
+ * Create an undici Agent that skips TLS certificate verification.
+ * Used when KASM_TLS_VERIFY=false (e.g. self-signed certs in staging).
+ */
+function createTlsSkipAgent(): Agent {
+  return new Agent({
+    connect: { rejectUnauthorized: false },
+  });
+}
+
 export class KasmClient {
   private kasmApiUrl: string;
   private kasmApiKey: string;
   private kasmApiKeySecret: string;
   private logger: FastifyBaseLogger;
+  private dispatcher: Agent | undefined;
 
   constructor({
     kasmApiUrl,
@@ -28,6 +40,14 @@ export class KasmClient {
     this.kasmApiKey = kasmApiKey;
     this.kasmApiKeySecret = kasmApiKeySecret;
     this.logger = logger;
+
+    // Skip TLS verification when KASM_TLS_VERIFY is explicitly "false"
+    // (for self-signed certificates in staging/dev environments)
+    const tlsVerify = process.env.KASM_TLS_VERIFY;
+    if (tlsVerify === "false") {
+      this.logger.warn("Kasm TLS verification disabled (KASM_TLS_VERIFY=false)");
+      this.dispatcher = createTlsSkipAgent();
+    }
   }
 
   async requestKasm(params: RequestKasmParams): Promise<RequestKasmResponse> {
@@ -65,7 +85,7 @@ export class KasmClient {
   private async post<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
     const url = `${this.kasmApiUrl}${endpoint}`;
 
-    const response = await fetch(url, {
+    const fetchOptions: Parameters<typeof uFetch>[1] = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -74,7 +94,14 @@ export class KasmClient {
         ...body,
       }),
       signal: AbortSignal.timeout(30_000),
-    });
+    };
+
+    // Use undici dispatcher to skip TLS verification for self-signed certs
+    if (this.dispatcher) {
+      fetchOptions.dispatcher = this.dispatcher;
+    }
+
+    const response = await uFetch(url, fetchOptions);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Unknown error");
