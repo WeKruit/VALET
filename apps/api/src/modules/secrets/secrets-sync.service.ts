@@ -732,7 +732,26 @@ export class SecretsSyncService {
       const res = await fetch(`https://api.machines.dev/v1/apps/${appName}/secrets`, {
         headers: { Authorization: `Bearer ${flyToken}` },
       });
-      if (!res.ok) throw new Error(`Fly API ${res.status}: ${res.statusText}`);
+      if (!res.ok) {
+        if (res.status === 403) {
+          return {
+            target: appName,
+            targetType: "fly" as const,
+            role,
+            totalRefKeys: filtered.size,
+            totalDeployedKeys: 0,
+            missing: [],
+            extra: [],
+            matched: 0,
+            mismatched: 0,
+            status: "unavailable" as const,
+            error:
+              "FLY_API_TOKEN lacks permission for secrets endpoint. Regenerate with: fly tokens create org",
+            lastChecked: new Date().toISOString(),
+          };
+        }
+        throw new Error(`Fly API ${res.status}: ${res.statusText}`);
+      }
       const secrets = (await res.json()) as Array<{ label: string }>;
       const deployedKeys = new Set(secrets.map((s) => s.label));
       const refKeys = new Set(filtered.keys());

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { AppError } from "../../common/errors.js";
 import { adminOnly } from "../../common/middleware/admin.js";
 
 export async function secretsAdminRoutes(fastify: FastifyInstance) {
@@ -6,16 +7,17 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/api/v1/admin/secrets/diff",
     async (request: FastifyRequest<{ Querystring: { env?: string } }>, reply: FastifyReply) => {
-      await adminOnly(request);
-      const env = (request.query.env ?? "staging") as "staging" | "production";
-      if (env !== "staging" && env !== "production") {
-        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
-      }
-      const { secretsSyncService } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const env = (request.query.env ?? "staging") as "staging" | "production";
+        if (env !== "staging" && env !== "production") {
+          return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+        }
+        const { secretsSyncService } = request.diScope.cradle;
         const diff = await secretsSyncService.getDiff(env);
         return reply.send(diff);
       } catch (err) {
+        if (err instanceof AppError) throw err;
         request.log.error({ err }, "Secrets diff failed");
         return reply.status(500).send({ error: "Failed to compute secrets diff" });
       }
@@ -31,14 +33,14 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
-      await adminOnly(request);
-      const body = (request.body as { env?: string; targets?: string[] }) ?? {};
-      const env = body.env as "staging" | "production";
-      if (env !== "staging" && env !== "production") {
-        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
-      }
-      const { secretsSyncService } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const body = (request.body as { env?: string; targets?: string[] }) ?? {};
+        const env = body.env as "staging" | "production";
+        if (env !== "staging" && env !== "production") {
+          return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+        }
+        const { secretsSyncService } = request.diScope.cradle;
         const result = await secretsSyncService.sync(
           env,
           request.userId ?? "unknown",
@@ -46,6 +48,7 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
         );
         return reply.send(result);
       } catch (err) {
+        if (err instanceof AppError) throw err;
         request.log.error({ err }, "Secrets sync failed");
         return reply.status(500).send({ error: "Failed to sync secrets" });
       }
@@ -59,17 +62,18 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { env?: string; limit?: string } }>,
       reply: FastifyReply,
     ) => {
-      await adminOnly(request);
-      const env = request.query.env;
-      if (env && env !== "staging" && env !== "production") {
-        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
-      }
-      const limit = Math.min(parseInt(request.query.limit ?? "50", 10) || 50, 200);
-      const { secretsSyncService } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const env = request.query.env;
+        if (env && env !== "staging" && env !== "production") {
+          return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+        }
+        const limit = Math.min(parseInt(request.query.limit ?? "50", 10) || 50, 200);
+        const { secretsSyncService } = request.diScope.cradle;
         const entries = await secretsSyncService.getAuditLog(env, limit);
         return reply.send({ entries });
       } catch (err) {
+        if (err instanceof AppError) throw err;
         request.log.error({ err }, "Secrets audit log query failed");
         return reply.status(500).send({ error: "Failed to fetch audit log" });
       }
@@ -83,20 +87,21 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { env?: string; project?: string } }>,
       reply: FastifyReply,
     ) => {
-      await adminOnly(request);
-      const env = request.query.env as "staging" | "production" | undefined;
-      if (!env || (env !== "staging" && env !== "production")) {
-        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
-      }
-      const project = request.query.project as "valet" | "ghosthands" | undefined;
-      if (!project || (project !== "valet" && project !== "ghosthands")) {
-        return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
-      }
-      const { secretsSyncService } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const env = request.query.env as "staging" | "production" | undefined;
+        if (!env || (env !== "staging" && env !== "production")) {
+          return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+        }
+        const project = request.query.project as "valet" | "ghosthands" | undefined;
+        if (!project || (project !== "valet" && project !== "ghosthands")) {
+          return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
+        }
+        const { secretsSyncService } = request.diScope.cradle;
         const result = await secretsSyncService.listVars(env, project);
         return reply.send(result);
       } catch (err) {
+        if (err instanceof AppError) throw err;
         request.log.error({ err }, "List secret vars failed");
         return reply.status(500).send({ error: "Failed to list secret vars" });
       }
@@ -116,28 +121,28 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
-      await adminOnly(request);
-      const body =
-        (request.body as {
-          env?: string;
-          project?: string;
-          vars?: Array<{ key: string; value: string }>;
-        }) ?? {};
-      const env = body.env as "staging" | "production";
-      if (env !== "staging" && env !== "production") {
-        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
-      }
-      const project = body.project as "valet" | "ghosthands";
-      if (project !== "valet" && project !== "ghosthands") {
-        return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
-      }
-      if (!Array.isArray(body.vars) || body.vars.length === 0) {
-        return reply
-          .status(400)
-          .send({ error: "vars must be a non-empty array of { key, value }" });
-      }
-      const { secretsSyncService } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const body =
+          (request.body as {
+            env?: string;
+            project?: string;
+            vars?: Array<{ key: string; value: string }>;
+          }) ?? {};
+        const env = body.env as "staging" | "production";
+        if (env !== "staging" && env !== "production") {
+          return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+        }
+        const project = body.project as "valet" | "ghosthands";
+        if (project !== "valet" && project !== "ghosthands") {
+          return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
+        }
+        if (!Array.isArray(body.vars) || body.vars.length === 0) {
+          return reply
+            .status(400)
+            .send({ error: "vars must be a non-empty array of { key, value }" });
+        }
+        const { secretsSyncService } = request.diScope.cradle;
         const result = await secretsSyncService.upsertVars(
           env,
           project,
@@ -146,6 +151,7 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
         );
         return reply.send(result);
       } catch (err) {
+        if (err instanceof AppError) throw err;
         if (
           err instanceof Error &&
           (err.message.includes("runtime-injected") || err.message.includes("Invalid key format"))
@@ -167,26 +173,26 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
-      await adminOnly(request);
-      const body =
-        (request.body as {
-          env?: string;
-          project?: string;
-          keys?: string[];
-        }) ?? {};
-      const env = body.env as "staging" | "production";
-      if (env !== "staging" && env !== "production") {
-        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
-      }
-      const project = body.project as "valet" | "ghosthands";
-      if (project !== "valet" && project !== "ghosthands") {
-        return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
-      }
-      if (!Array.isArray(body.keys) || body.keys.length === 0) {
-        return reply.status(400).send({ error: "keys must be a non-empty array" });
-      }
-      const { secretsSyncService } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const body =
+          (request.body as {
+            env?: string;
+            project?: string;
+            keys?: string[];
+          }) ?? {};
+        const env = body.env as "staging" | "production";
+        if (env !== "staging" && env !== "production") {
+          return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+        }
+        const project = body.project as "valet" | "ghosthands";
+        if (project !== "valet" && project !== "ghosthands") {
+          return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
+        }
+        if (!Array.isArray(body.keys) || body.keys.length === 0) {
+          return reply.status(400).send({ error: "keys must be a non-empty array" });
+        }
+        const { secretsSyncService } = request.diScope.cradle;
         const result = await secretsSyncService.deleteVars(
           env,
           project,
@@ -195,6 +201,7 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
         );
         return reply.send(result);
       } catch (err) {
+        if (err instanceof AppError) throw err;
         request.log.error({ err }, "Delete secret vars failed");
         return reply.status(500).send({ error: "Failed to delete secret vars" });
       }
@@ -205,9 +212,9 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/admin/secrets/refresh-fleet",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      await adminOnly(request);
-      const { sandboxRepo, sandboxAgentClient } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const { sandboxRepo, sandboxAgentClient } = request.diScope.cradle;
         const sandboxes = await sandboxRepo.findActive("ec2");
         if (sandboxes.length === 0) {
           return reply.send({
@@ -281,6 +288,7 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
 
         return reply.send({ refreshed, failed, skipped });
       } catch (err) {
+        if (err instanceof AppError) throw err;
         request.log.error({ err }, "Fleet refresh failed");
         return reply.status(500).send({ error: "Failed to refresh fleet secrets" });
       }
@@ -291,10 +299,10 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/admin/secrets/refresh-sandbox/:sandboxId",
     async (request: FastifyRequest<{ Params: { sandboxId: string } }>, reply: FastifyReply) => {
-      await adminOnly(request);
-      const { sandboxId } = request.params;
-      const { sandboxRepo, sandboxAgentClient } = request.diScope.cradle;
       try {
+        await adminOnly(request);
+        const { sandboxId } = request.params;
+        const { sandboxRepo, sandboxAgentClient } = request.diScope.cradle;
         const sandbox = await sandboxRepo.findById(sandboxId);
         if (!sandbox) {
           return reply.status(404).send({ error: "Sandbox not found" });
@@ -314,7 +322,8 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
           message: result.message,
         });
       } catch (err) {
-        request.log.error({ err, sandboxId }, "Sandbox refresh failed");
+        if (err instanceof AppError) throw err;
+        request.log.error({ err, sandboxId: request.params }, "Sandbox refresh failed");
         return reply.status(500).send({ error: "Failed to refresh sandbox secrets" });
       }
     },
