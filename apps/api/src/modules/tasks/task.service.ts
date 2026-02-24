@@ -383,7 +383,12 @@ export class TaskService {
     });
 
     this.logger.info(
-      { taskId, kasmId: kasmResponse.kasm_id, kasmWorkerId, rawKasmUrl: kasmResponse.kasm_url },
+      {
+        taskId,
+        kasmId: kasmResponse.kasm_id,
+        kasmWorkerId,
+        kasmUrlPrefix: kasmResponse.kasm_url?.slice(0, 30),
+      },
       "Created Kasm session for task",
     );
 
@@ -1402,7 +1407,14 @@ export class TaskService {
           // WEK-183: Ensure kasm_url is absolute (Kasm API returns relative paths like /#/connect/...)
           let absoluteUrl = kasmUrl;
           if (kasmUrl.startsWith("/#/") || kasmUrl.startsWith("/")) {
-            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "") ?? "";
+            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "");
+            if (!kasmBase) {
+              this.logger.warn(
+                { taskId },
+                "KASM_API_URL not set — cannot resolve relative kasm_url to absolute",
+              );
+              return null;
+            }
             absoluteUrl = `${kasmBase}${kasmUrl}`;
           }
           return { url: absoluteUrl, readOnly, type: "kasm" };

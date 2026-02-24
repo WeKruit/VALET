@@ -39,6 +39,10 @@ export function LiveView({
   }
 
   const isKasm = type === "kasm";
+  // WEK-183: Feature flag — inline iframe requires kasm.wekruit.dev domain + real cert.
+  // Until then, default to new-tab for Kasm sessions.
+  const kasmInlineEnabled = import.meta.env.VITE_KASM_INLINE_IFRAME === "true";
+  const useKasmIframe = isKasm && kasmInlineEnabled;
 
   return (
     <Card>
@@ -49,7 +53,7 @@ export function LiveView({
             <CardTitle className="text-lg">Live View</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            {isVisible && (
+            {isVisible && (!isKasm || useKasmIframe) && (
               <>
                 {!readOnly && !isKasm && (
                   <Button
@@ -101,47 +105,74 @@ export function LiveView({
           </div>
         </div>
       </CardHeader>
-      {isVisible && (
-        <CardContent>
-          <div
-            className={`relative overflow-hidden rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-black ${
-              isFullWidth ? "w-full" : "max-w-4xl"
-            }`}
-          >
-            <div className="aspect-video">
-              <iframe
-                key={isKasm ? "kasm" : String(viewOnly)}
-                src={isKasm ? url : iframeUrl}
-                title={isKasm ? "Kasm Live View" : "noVNC Live View"}
-                className="h-full w-full border-0"
-                allow="clipboard-read; clipboard-write"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-              />
-            </div>
-          </div>
-          {isKasm ? (
-            <div className="mt-2 flex items-center justify-between">
-              <p className="text-xs text-[var(--wk-text-tertiary)]">
-                Watching browser automation in real time
-              </p>
+      {isVisible &&
+        (isKasm && !useKasmIframe ? (
+          <CardContent>
+            <div className="flex flex-col items-center justify-center gap-4 py-8 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-[var(--wk-bg-secondary)]">
+              <Monitor className="h-12 w-12 text-[var(--wk-text-tertiary)]" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-[var(--wk-text-primary)]">
+                  Browser automation is running
+                </p>
+                <p className="mt-1 text-xs text-[var(--wk-text-tertiary)]">
+                  Opens in a new tab with full desktop view
+                </p>
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  Only one person can view at a time.
+                </p>
+              </div>
               <Button
-                variant="ghost"
-                size="sm"
+                variant="primary"
                 onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
               >
                 <ExternalLink className="h-4 w-4 mr-1.5" />
-                Open in new tab
+                Watch Live
               </Button>
             </div>
-          ) : (
-            <p className="mt-2 text-xs text-[var(--wk-text-tertiary)]">
-              {viewOnly
-                ? "Watching browser automation in real time (view only)"
-                : "Interactive mode — you have keyboard and mouse control"}
-            </p>
-          )}
-        </CardContent>
-      )}
+          </CardContent>
+        ) : (
+          <CardContent>
+            <div
+              className={`relative overflow-hidden rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-black ${
+                isFullWidth ? "w-full" : "max-w-4xl"
+              }`}
+            >
+              <div className="aspect-video">
+                <iframe
+                  key={useKasmIframe ? "kasm" : String(viewOnly)}
+                  src={useKasmIframe ? url : iframeUrl}
+                  title={useKasmIframe ? "Kasm Live View" : "noVNC Live View"}
+                  className="h-full w-full border-0"
+                  allow="clipboard-read; clipboard-write"
+                  {...(!useKasmIframe && {
+                    sandbox: "allow-scripts allow-same-origin allow-popups allow-forms",
+                  })}
+                />
+              </div>
+            </div>
+            {useKasmIframe ? (
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-xs text-[var(--wk-text-tertiary)]">
+                  Watching browser automation in real time
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+                >
+                  <ExternalLink className="h-4 w-4 mr-1.5" />
+                  Open in new tab
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--wk-text-tertiary)]">
+                {viewOnly
+                  ? "Watching browser automation in real time (view only)"
+                  : "Interactive mode — you have keyboard and mouse control"}
+              </p>
+            )}
+          </CardContent>
+        ))}
     </Card>
   );
 }
