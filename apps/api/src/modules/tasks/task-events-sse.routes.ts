@@ -93,6 +93,17 @@ export async function taskEventsSSERoutes(fastify: FastifyInstance) {
       }
 
       // 4. Set up SSE stream
+      //
+      // Fly.io runs multiple API machines. On reconnect the load balancer may
+      // route the client to a different machine. To guarantee no events are
+      // lost we rely on Redis Streams cursor tracking:
+      //   - If the browser sends Last-Event-ID (automatic on reconnect), we
+      //     resume from that cursor.
+      //   - For the *initial* connection we start from "0" (beginning of
+      //     stream) so the client catches events published between task
+      //     creation and the moment the SSE connection is established.
+      //   - `retry: 2000` tells the browser to reconnect after 2 s on drop.
+      //
       reply.raw.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -101,10 +112,16 @@ export async function taskEventsSSERoutes(fastify: FastifyInstance) {
         ...getCorsHeaders(request),
       });
 
+      // Tell the browser to auto-reconnect after 2 seconds on disconnect
+      reply.raw.write("retry: 2000\n\n");
+
       // 5. Duplicate Redis for blocking XREAD
       const redis = request.server.redis.duplicate({ maxRetriesPerRequest: null });
       const key = streamKey(jobId);
-      let lastId = (request.headers["last-event-id"] as string) || "$";
+      // Use Last-Event-ID from browser reconnect, otherwise "0" to replay
+      // from the beginning of the stream (catches events published before
+      // this SSE connection was established).
+      let lastId = (request.headers["last-event-id"] as string) || "0";
       let closed = false;
 
       // Cleanup on disconnect

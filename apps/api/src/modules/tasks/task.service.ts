@@ -512,7 +512,7 @@ export class TaskService {
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        const ghJob = await this.ghJobRepo.insertPendingJob({
+        let ghJob = await this.ghJobRepo.insertPendingJob({
           userId,
           jobType: "apply",
           targetUrl: task.jobUrl,
@@ -542,6 +542,11 @@ export class TaskService {
         try {
           const kasmResult = await this.createKasmSession(task.id, ghJob);
           kasmWorkerId = kasmResult.kasmWorkerId;
+
+          // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
+          // Without this, the updateStatus() below would spread stale metadata and overwrite them.
+          const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
+          if (refreshedJob) ghJob = refreshedJob;
         } catch (err) {
           // Distinguish SM errors from Kasm API errors
           const errorCode =
@@ -745,7 +750,7 @@ export class TaskService {
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        const ghJob = await this.ghJobRepo.insertPendingJob({
+        let ghJob = await this.ghJobRepo.insertPendingJob({
           userId,
           jobType: "custom",
           targetUrl: "https://www.google.com",
@@ -768,6 +773,11 @@ export class TaskService {
         try {
           const kasmResult = await this.createKasmSession(task.id, ghJob);
           kasmWorkerId = kasmResult.kasmWorkerId;
+
+          // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
+          // Without this, the updateStatus() below would spread stale metadata and overwrite them.
+          const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
+          if (refreshedJob) ghJob = refreshedJob;
         } catch (err) {
           const errorCode =
             err instanceof Error && err.message.includes("SM")
@@ -901,7 +911,7 @@ export class TaskService {
       }
 
       const callbackUrl = buildCallbackUrl();
-      const ghJob = await this.ghJobRepo.insertPendingJob({
+      let ghJob = await this.ghJobRepo.insertPendingJob({
         userId,
         jobType: originalGhJob.jobType ?? "apply",
         targetUrl: task.jobUrl,
@@ -926,6 +936,11 @@ export class TaskService {
       try {
         const kasmResult = await this.createKasmSession(id, ghJob);
         kasmWorkerId = kasmResult.kasmWorkerId;
+
+        // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
+        // Without this, the updateStatus() below would spread stale metadata and overwrite them.
+        const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
+        if (refreshedJob) ghJob = refreshedJob;
       } catch (err) {
         this.logger.error({ err, taskId: id }, "Kasm session creation failed on retry");
         // For retries, don't hard-fail — fall back to general queue
