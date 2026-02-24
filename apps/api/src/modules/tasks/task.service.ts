@@ -18,6 +18,7 @@ import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-sessio
 import { QUEUE_APPLY_JOB, type TaskQueueService } from "./task-queue.service.js";
 import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
 import type { KasmClient } from "../sandboxes/kasm/kasm.client.js";
+import type { SecretsSyncService } from "../secrets/secrets-sync.service.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -62,6 +63,7 @@ export class TaskService {
   private logger: FastifyBaseLogger;
   private sandboxRepo: SandboxRepository;
   private kasmClient: KasmClient | null;
+  private secretsSyncService: SecretsSyncService;
 
   constructor({
     taskRepo,
@@ -76,6 +78,7 @@ export class TaskService {
     logger,
     sandboxRepo,
     kasmClient,
+    secretsSyncService,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -89,6 +92,7 @@ export class TaskService {
     logger: FastifyBaseLogger;
     sandboxRepo: SandboxRepository;
     kasmClient?: KasmClient;
+    secretsSyncService: SecretsSyncService;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -102,6 +106,7 @@ export class TaskService {
     this.logger = logger;
     this.sandboxRepo = sandboxRepo;
     this.kasmClient = kasmClient ?? null;
+    this.secretsSyncService = secretsSyncService;
   }
 
   async getById(id: string, userId: string) {
@@ -314,61 +319,67 @@ export class TaskService {
   }
 
   /**
-   * WEK-147: Create a Kasm session for a task if the sandbox is kasm-type.
-   * Non-blocking — if session creation fails, the task still works via regular dispatch.
+   * WEK-147: Create a Kasm session for a task.
+   * Mandatory — every task gets a live VNC session via Kasm.
+   * Reads env vars from AWS Secrets Manager and injects them into the Kasm session.
+   *
+   * Throws on failure — callers should catch and set task status to failed.
+   *
+   * @returns Kasm worker ID (used as targetWorkerId for queue routing) and session info
    */
-  private async maybeCreateKasmSession(
+  private async createKasmSession(
     taskId: string,
     ghJob: { id: string; metadata?: Record<string, unknown> | null },
-    sandboxId: string | undefined,
-  ): Promise<void> {
-    if (!sandboxId || !this.kasmClient) return;
-
-    try {
-      const sandbox = await this.sandboxRepo.findById(sandboxId);
-      if (sandbox?.machineType !== "kasm") return;
-
-      const kasmWorkerId = crypto.randomUUID();
-      const kasmEnv: Record<string, string> = {
-        GH_WORKER_ID: kasmWorkerId,
-        JOB_DISPATCH_MODE: "queue",
-        MAX_CONCURRENT_JOBS: "1",
-        GH_SERVICE_SECRET: process.env.GH_SERVICE_SECRET ?? "",
-        DATABASE_URL: process.env.PGBOSS_DATABASE_URL ?? process.env.DATABASE_URL ?? "",
-        GHOSTHANDS_CALLBACK_URL: buildCallbackUrl(),
-      };
-
-      const kasmResponse = await this.kasmClient.requestKasm({
-        image_id:
-          ((sandbox.tags as Record<string, unknown>)?.kasm_image_id as string) ??
-          process.env.KASM_DEFAULT_IMAGE_ID ??
-          "",
-        user_id:
-          ((sandbox.tags as Record<string, unknown>)?.kasm_user_id as string) ??
-          process.env.KASM_DEFAULT_USER_ID ??
-          "",
-        environment: kasmEnv,
-      });
-
-      // Store Kasm session info in gh_automation_jobs metadata
-      await this.ghJobRepo.updateStatus(ghJob.id, {
-        status: "queued",
-        metadata: {
-          ...(ghJob.metadata ?? {}),
-          kasm_id: kasmResponse.kasm_id,
-          kasm_url: kasmResponse.kasm_url,
-          kasm_session_token: kasmResponse.session_token,
-          kasm_worker_id: kasmWorkerId,
-        },
-      });
-
-      this.logger.info(
-        { taskId, kasmId: kasmResponse.kasm_id, kasmWorkerId },
-        "Created Kasm session for task",
-      );
-    } catch (err) {
-      this.logger.error({ err, taskId }, "Failed to create Kasm session (non-blocking)");
+  ): Promise<{ kasmWorkerId: string; kasmId: string; kasmUrl: string }> {
+    if (!this.kasmClient) {
+      throw new Error("KasmClient not configured — cannot create Kasm session");
     }
+
+    // Read env vars from AWS Secrets Manager (throws if SM unreachable)
+    const smVars = await this.secretsSyncService.readGhWorkerEnvVars();
+
+    const kasmWorkerId = crypto.randomUUID();
+
+    // Build env: SM vars + task-specific overrides
+    const kasmEnv: Record<string, string> = {};
+    for (const [key, value] of smVars) {
+      kasmEnv[key] = value;
+    }
+    // Override with task-specific values
+    kasmEnv.GH_WORKER_ID = kasmWorkerId;
+    kasmEnv.JOB_DISPATCH_MODE = "queue";
+    kasmEnv.MAX_CONCURRENT_JOBS = "1";
+    kasmEnv.GH_HEADLESS = "false";
+    kasmEnv.GHOSTHANDS_CALLBACK_URL = buildCallbackUrl();
+
+    const kasmResponse = await this.kasmClient.requestKasm({
+      image_id: process.env.KASM_DEFAULT_IMAGE_ID ?? "",
+      user_id: process.env.KASM_DEFAULT_USER_ID ?? "",
+      environment: kasmEnv,
+    });
+
+    // Store Kasm session info in gh_automation_jobs metadata
+    await this.ghJobRepo.updateStatus(ghJob.id, {
+      status: "queued",
+      metadata: {
+        ...(ghJob.metadata ?? {}),
+        kasm_id: kasmResponse.kasm_id,
+        kasm_url: kasmResponse.kasm_url,
+        kasm_session_token: kasmResponse.session_token,
+        kasm_worker_id: kasmWorkerId,
+      },
+    });
+
+    this.logger.info(
+      { taskId, kasmId: kasmResponse.kasm_id, kasmWorkerId },
+      "Created Kasm session for task",
+    );
+
+    return {
+      kasmWorkerId,
+      kasmId: kasmResponse.kasm_id,
+      kasmUrl: kasmResponse.kasm_url,
+    };
   }
 
   async list(
@@ -501,18 +512,6 @@ export class TaskService {
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        // Resolve sandbox ID → actual GH worker ID for queue routing
-        const resolvedWorkerId = body.targetWorkerId
-          ? await this.sandboxRepo.resolveWorkerId(body.targetWorkerId)
-          : undefined;
-
-        if (body.targetWorkerId && !resolvedWorkerId) {
-          this.logger.warn(
-            { sandboxId: body.targetWorkerId },
-            "No active worker found for sandbox — falling back to general queue",
-          );
-        }
-
         const ghJob = await this.ghJobRepo.insertPendingJob({
           userId,
           jobType: "apply",
@@ -532,12 +531,38 @@ export class TaskService {
             ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
             ...(body.visionModel ? { image_model: body.visionModel } : {}),
           },
-          targetWorkerId: resolvedWorkerId ?? body.targetWorkerId,
           callbackUrl,
           valetTaskId: task.id,
-          workerAffinity: body.targetWorkerId ? "strict" : undefined,
         });
 
+        await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
+
+        // WEK-147: Create Kasm session BEFORE enqueue — session provides the worker ID
+        let kasmWorkerId: string | undefined;
+        try {
+          const kasmResult = await this.createKasmSession(task.id, ghJob);
+          kasmWorkerId = kasmResult.kasmWorkerId;
+        } catch (err) {
+          // Distinguish SM errors from Kasm API errors
+          const errorCode =
+            err instanceof Error && err.message.includes("SM")
+              ? "GH_KASM_FAILED"
+              : "GH_KASM_UNAVAILABLE";
+          this.logger.error({ err, taskId: task.id }, "Kasm session creation failed");
+          await this.taskRepo.updateStatus(task.id, "failed");
+          await this.taskRepo.updateGhosthandsResult(task.id, {
+            ghJobId: ghJob.id,
+            result: null,
+            error: {
+              code: errorCode,
+              message: err instanceof Error ? err.message : "Kasm session creation failed",
+            },
+            completedAt: null,
+          });
+          return task;
+        }
+
+        // Enqueue with Kasm worker as target
         const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
           {
             ghJobId: ghJob.id,
@@ -548,12 +573,12 @@ export class TaskService {
             jobType: "apply",
             callbackUrl,
           },
-          { targetWorkerId: resolvedWorkerId ?? undefined },
+          { targetWorkerId: kasmWorkerId },
         );
 
         // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = resolvedWorkerId
-          ? `${QUEUE_APPLY_JOB}/${resolvedWorkerId}`
+        const pgBossQueueName = kasmWorkerId
+          ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}`
           : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
@@ -566,11 +591,7 @@ export class TaskService {
           });
         }
 
-        await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
         await this.taskRepo.updateStatus(task.id, "queued");
-
-        // WEK-147: Create Kasm session if sandbox is kasm-type
-        await this.maybeCreateKasmSession(task.id, ghJob, body.targetWorkerId);
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
@@ -724,16 +745,6 @@ export class TaskService {
     if (useQueueDispatch() && this.taskQueueService.isAvailable) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        // Resolve sandbox ID → actual GH worker ID for queue routing
-        const resolvedWorkerId = await this.sandboxRepo.resolveWorkerId(body.targetWorkerId);
-
-        if (!resolvedWorkerId) {
-          this.logger.warn(
-            { sandboxId: body.targetWorkerId },
-            "No active worker found for sandbox — falling back to general queue",
-          );
-        }
-
         const ghJob = await this.ghJobRepo.insertPendingJob({
           userId,
           jobType: "custom",
@@ -746,11 +757,35 @@ export class TaskService {
             ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
             ...(body.visionModel ? { image_model: body.visionModel } : {}),
           },
-          targetWorkerId: resolvedWorkerId ?? body.targetWorkerId,
           callbackUrl,
           valetTaskId: task.id,
-          workerAffinity: "strict",
         });
+
+        await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
+
+        // WEK-147: Create Kasm session BEFORE enqueue
+        let kasmWorkerId: string | undefined;
+        try {
+          const kasmResult = await this.createKasmSession(task.id, ghJob);
+          kasmWorkerId = kasmResult.kasmWorkerId;
+        } catch (err) {
+          const errorCode =
+            err instanceof Error && err.message.includes("SM")
+              ? "GH_KASM_FAILED"
+              : "GH_KASM_UNAVAILABLE";
+          this.logger.error({ err, taskId: task.id }, "Kasm session creation failed for test task");
+          await this.taskRepo.updateStatus(task.id, "failed");
+          await this.taskRepo.updateGhosthandsResult(task.id, {
+            ghJobId: ghJob.id,
+            result: null,
+            error: {
+              code: errorCode,
+              message: err instanceof Error ? err.message : "Kasm session creation failed",
+            },
+            completedAt: null,
+          });
+          return task;
+        }
 
         const pgBossJobId = await this.taskQueueService.enqueueGenericTask(
           {
@@ -762,12 +797,12 @@ export class TaskService {
             taskDescription,
             callbackUrl,
           },
-          { targetWorkerId: resolvedWorkerId ?? undefined },
+          { targetWorkerId: kasmWorkerId },
         );
 
         // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = resolvedWorkerId
-          ? `${QUEUE_APPLY_JOB}/${resolvedWorkerId}`
+        const pgBossQueueName = kasmWorkerId
+          ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}`
           : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
@@ -780,11 +815,7 @@ export class TaskService {
           });
         }
 
-        await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
         await this.taskRepo.updateStatus(task.id, "queued");
-
-        // WEK-147: Create Kasm session if sandbox is kasm-type
-        await this.maybeCreateKasmSession(task.id, ghJob, body.targetWorkerId);
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
@@ -890,10 +921,15 @@ export class TaskService {
         },
       });
 
-      // Resolve sandbox ID → actual GH worker ID for queue routing
-      const resolvedWorkerId = task.sandboxId
-        ? await this.sandboxRepo.resolveWorkerId(task.sandboxId)
-        : undefined;
+      // WEK-147: Create Kasm session BEFORE enqueue (same pattern as create())
+      let kasmWorkerId: string | undefined;
+      try {
+        const kasmResult = await this.createKasmSession(id, ghJob);
+        kasmWorkerId = kasmResult.kasmWorkerId;
+      } catch (err) {
+        this.logger.error({ err, taskId: id }, "Kasm session creation failed on retry");
+        // For retries, don't hard-fail — fall back to general queue
+      }
 
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
@@ -905,16 +941,15 @@ export class TaskService {
           jobType: "apply",
           callbackUrl,
         },
-        { targetWorkerId: resolvedWorkerId ?? undefined },
+        { targetWorkerId: kasmWorkerId },
       );
 
       // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-      const pgBossQueueName = resolvedWorkerId
-        ? `${QUEUE_APPLY_JOB}/${resolvedWorkerId}`
-        : QUEUE_APPLY_JOB;
+      const pgBossQueueName = kasmWorkerId ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}` : QUEUE_APPLY_JOB;
       if (pgBossJobId) {
         await this.ghJobRepo.updateStatus(ghJob.id, {
           status: "queued",
+          targetWorkerId: kasmWorkerId,
           metadata: {
             ...(((ghJob as unknown as Record<string, unknown>).metadata as Record<
               string,
@@ -997,6 +1032,25 @@ export class TaskService {
           { err, taskId: id, jobId: task.workflowRunId },
           "Failed to cancel GhostHands job (may have already completed)",
         );
+      }
+
+      // WEK-147: Destroy Kasm session on cancel
+      if (this.kasmClient) {
+        try {
+          const ghJob = useQueueDispatch()
+            ? await this.ghJobRepo.findById(task.workflowRunId)
+            : null;
+          const kasmId = ghJob?.metadata?.kasm_id as string | undefined;
+          if (kasmId) {
+            await this.kasmClient.destroyKasm(kasmId);
+            this.logger.info({ kasmId, taskId: id }, "Destroyed Kasm session on cancel");
+          }
+        } catch (err) {
+          this.logger.warn(
+            { err, taskId: id },
+            "Failed to destroy Kasm session on cancel (may already be gone)",
+          );
+        }
       }
     }
   }
