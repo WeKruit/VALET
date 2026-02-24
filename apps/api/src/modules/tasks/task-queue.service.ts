@@ -82,6 +82,12 @@ export class TaskQueueService {
       ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
 
+    // pg-boss requires queues to exist before sending. For targeted queues
+    // (Kasm workers), the worker may not have booted yet, so create it first.
+    if (options?.targetWorkerId) {
+      await boss.createQueue(queueName);
+    }
+
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 3,
       retryBackoff: true,
@@ -114,6 +120,10 @@ export class TaskQueueService {
     const queueName = options?.targetWorkerId
       ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
+
+    if (options?.targetWorkerId) {
+      await boss.createQueue(queueName);
+    }
 
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 3,
