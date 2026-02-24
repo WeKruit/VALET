@@ -229,7 +229,10 @@ export class SecretsSyncService {
    * Throws if SM is unreachable or empty (task should fail).
    */
   async readGhWorkerEnvVars(): Promise<Map<string, string>> {
-    const env = process.env.NODE_ENV === "production" ? "production" : "staging";
+    // FLY_APP_NAME reliably distinguishes staging vs production on Fly.io
+    // (NODE_ENV is "production" on both staging and production)
+    const flyApp = process.env.FLY_APP_NAME ?? "";
+    const env = flyApp.includes("stg") ? "staging" : "production";
     const vars = await this.readFromSm(`ghosthands/${env}`);
     if (vars.size === 0) {
       throw new Error(
