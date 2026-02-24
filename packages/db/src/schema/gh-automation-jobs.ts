@@ -63,6 +63,7 @@ export const ghAutomationJobs = pgTable(
     executionMode: text("execution_mode"),
     browserMode: text("browser_mode"),
     finalMode: text("final_mode"),
+    executionAttemptId: uuid("execution_attempt_id"),
   },
   (table) => [
     index("idx_gh_jobs_status").on(table.status),

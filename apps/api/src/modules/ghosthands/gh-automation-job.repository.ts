@@ -29,6 +29,7 @@ export interface GhJobRecord {
   interactionData: Record<string, unknown> | null;
   pausedAt: Date | null;
   metadata: Record<string, unknown> | null;
+  executionAttemptId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +63,7 @@ function toRecord(row: Record<string, unknown>): GhJobRecord {
     interactionData: (row.interactionData as Record<string, unknown>) ?? null,
     pausedAt: (row.pausedAt as Date) ?? null,
     metadata: (row.metadata as Record<string, unknown>) ?? null,
+    executionAttemptId: (row.executionAttemptId as string) ?? null,
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
   };
@@ -124,6 +126,7 @@ export class GhAutomationJobRepository {
       workerId?: string | null;
       metadata?: Record<string, unknown> | null;
       targetWorkerId?: string | null;
+      executionAttemptId?: string | null;
     },
   ): Promise<GhJobRecord | null> {
     const updates: Record<string, unknown> = {
@@ -147,6 +150,7 @@ export class GhAutomationJobRepository {
     if (data.workerId !== undefined) updates.workerId = data.workerId;
     if (data.metadata !== undefined) updates.metadata = data.metadata;
     if (data.targetWorkerId !== undefined) updates.targetWorkerId = data.targetWorkerId;
+    if (data.executionAttemptId !== undefined) updates.executionAttemptId = data.executionAttemptId;
 
     const rows = await this.db
       .update(ghAutomationJobs)
@@ -244,5 +248,14 @@ export class GhAutomationJobRepository {
       .orderBy(asc(ghAutomationJobs.updatedAt))
       .limit(100);
     return rows.map((r) => toRecord(r as Record<string, unknown>));
+  }
+
+  /**
+   * EC2: Send NOTIFY on the job's cancel channel.
+   * GH worker LISTENs on "gh_job_cancel_{jobId}" for instant cancellation.
+   */
+  async notifyCancel(jobId: string): Promise<void> {
+    const channel = `gh_job_cancel_${jobId}`;
+    await this.db.execute(sql`SELECT pg_notify(${channel}, 'cancelled')`);
   }
 }

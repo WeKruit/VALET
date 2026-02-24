@@ -31,6 +31,7 @@ export interface TaskRecord {
   sandboxId: string | null;
   interactionType: string | null;
   interactionData: Record<string, unknown> | null;
+  statusVersion: number;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -188,6 +189,38 @@ export class TaskRepository {
       .update(tasks)
       .set({ status, ...extra })
       .where(eq(tasks.id, id))
+      .returning();
+    const row = rows[0];
+    return row ? toTaskRecord(row as Record<string, unknown>) : null;
+  }
+
+  /**
+   * EC7: Update task status with optimistic locking via status_version.
+   * Only succeeds if current status_version matches expectedVersion.
+   * Increments status_version on success.
+   * Returns null if version mismatch (another callback won the race).
+   */
+  async updateStatusWithVersion(
+    id: string,
+    status: TaskStatus,
+    expectedVersion: number,
+  ): Promise<TaskRecord | null> {
+    const now = new Date();
+    const extra: Record<string, unknown> = { updatedAt: now, statusVersion: expectedVersion + 1 };
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      extra.completedAt = now;
+      if (status === "completed") {
+        extra.progress = 100;
+      }
+    }
+    if (status === "in_progress") {
+      extra.startedAt = now;
+    }
+
+    const rows = await this.db
+      .update(tasks)
+      .set({ status, ...extra })
+      .where(and(eq(tasks.id, id), eq(tasks.statusVersion, expectedVersion)))
       .returning();
     const row = rows[0];
     return row ? toTaskRecord(row as Record<string, unknown>) : null;

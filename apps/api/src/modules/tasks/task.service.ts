@@ -370,6 +370,52 @@ export class TaskService {
       environment: kasmEnv,
     });
 
+    // EC4: Poll session status to verify boot (up to 3 attempts, 2s delay).
+    // If Kasm doesn't reach "running", destroy the session and fall back.
+    const BOOT_POLL_ATTEMPTS = 3;
+    const BOOT_POLL_DELAY_MS = 2000;
+    let kasmBooted = false;
+
+    for (let attempt = 1; attempt <= BOOT_POLL_ATTEMPTS; attempt++) {
+      try {
+        const statusResp = await this.kasmClient.getKasmStatus(kasmResponse.kasm_id);
+        const opStatus = statusResp.kasm?.operational_status ?? statusResp.kasm?.status;
+        if (opStatus === "running") {
+          kasmBooted = true;
+          break;
+        }
+        this.logger.debug(
+          { taskId, kasmId: kasmResponse.kasm_id, attempt, opStatus },
+          "Kasm session not yet running, polling again",
+        );
+      } catch (err) {
+        this.logger.debug(
+          { err, taskId, kasmId: kasmResponse.kasm_id, attempt },
+          "Failed to poll Kasm session status",
+        );
+      }
+      if (attempt < BOOT_POLL_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, BOOT_POLL_DELAY_MS));
+      }
+    }
+
+    if (!kasmBooted) {
+      this.logger.warn(
+        { taskId, kasmId: kasmResponse.kasm_id },
+        "Kasm session failed to reach running state — destroying and falling back to general queue",
+      );
+      try {
+        await this.kasmClient.destroyKasm(kasmResponse.kasm_id);
+      } catch (destroyErr) {
+        this.logger.warn(
+          { err: destroyErr, kasmId: kasmResponse.kasm_id },
+          "Failed to destroy unbooted Kasm session (may already be gone)",
+        );
+      }
+      // Signal to caller that Kasm is unavailable — fall back to general queue
+      throw new Error("Kasm session failed to boot within timeout");
+    }
+
     // Store Kasm session info in gh_automation_jobs metadata
     await this.ghJobRepo.updateStatus(ghJob.id, {
       status: "queued",
@@ -1002,14 +1048,30 @@ export class TaskService {
       throw new TaskNotCancellableError(id, task.status);
     }
 
-    await this.taskRepo.cancel(id);
-
-    // Cancel the GhostHands job if one exists
+    // EC1: Cancel GH job FIRST so the worker sees "cancelled" when it polls,
+    // even if the subsequent pg-boss cancel or task cancel fails.
     if (task.workflowRunId) {
-      // In queue mode, cancel pg-boss job and mark the gh_automation_jobs record as cancelled
+      // In queue mode, mark GH job as cancelled first, then cancel pg-boss job
       if (useQueueDispatch() && this.taskQueueService.isAvailable) {
         try {
-          // Read GH job metadata for pg-boss job ID and queue name
+          // Mark GH job as cancelled BEFORE pg-boss cancel
+          await this.ghJobRepo.updateStatus(task.workflowRunId, {
+            status: "cancelled",
+            completedAt: new Date(),
+            statusMessage: "Cancelled by user via VALET",
+          });
+
+          // EC2: NOTIFY for instant cancellation (GH worker LISTENs on this channel)
+          try {
+            await this.ghJobRepo.notifyCancel(task.workflowRunId);
+          } catch (notifyErr) {
+            this.logger.warn(
+              { err: notifyErr, jobId: task.workflowRunId },
+              "Failed to send cancel NOTIFY",
+            );
+          }
+
+          // Then cancel the pg-boss job (best-effort)
           const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
           const pgBossJobId = ghJob?.metadata?.pgBossJobId as string | undefined;
           const pgBossQueueName = ghJob?.metadata?.pgBossQueueName as string | undefined;
@@ -1017,12 +1079,6 @@ export class TaskService {
           if (pgBossJobId) {
             await this.taskQueueService.cancelJob(pgBossJobId, pgBossQueueName);
           }
-
-          await this.ghJobRepo.updateStatus(task.workflowRunId, {
-            status: "cancelled",
-            completedAt: new Date(),
-            statusMessage: "Cancelled by user via VALET",
-          });
         } catch (err) {
           this.logger.warn(
             { err, taskId: id, jobId: task.workflowRunId },
@@ -1060,6 +1116,9 @@ export class TaskService {
         }
       }
     }
+
+    // Cancel the task record AFTER GH job is marked cancelled
+    await this.taskRepo.cancel(id);
   }
 
   /**
@@ -1422,5 +1481,90 @@ export class TaskService {
     }
 
     return { url: sandbox.novncUrl, readOnly, type: "novnc" };
+  }
+
+  /**
+   * EC10: Monitor and fail stale tasks.
+   * Finds tasks stuck in "queued" or "in_progress" for more than 2 hours,
+   * checks if the corresponding GH job has a recent heartbeat (last 5 min),
+   * and marks tasks as "failed" with errorCode "STALE_TASK" if no heartbeat.
+   */
+  async monitorStaleTasks(): Promise<{ handled: number; checked: number }> {
+    const STALE_THRESHOLD_MINUTES = 120; // 2 hours
+    const HEARTBEAT_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+    const staleTasks = await this.taskRepo.findStuckJobs(STALE_THRESHOLD_MINUTES);
+    let handled = 0;
+
+    for (const task of staleTasks) {
+      // Check if the GH job has a recent heartbeat
+      if (task.workflowRunId) {
+        try {
+          const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
+          if (ghJob?.lastHeartbeat) {
+            const heartbeatAge = Date.now() - ghJob.lastHeartbeat.getTime();
+            if (heartbeatAge < HEARTBEAT_THRESHOLD_MS) {
+              // GH job is still alive — skip
+              continue;
+            }
+          }
+        } catch (err) {
+          this.logger.debug(
+            { err, taskId: task.id, workflowRunId: task.workflowRunId },
+            "Failed to check GH job heartbeat for stale task",
+          );
+        }
+      }
+
+      // No recent heartbeat — mark task as failed
+      this.logger.warn(
+        {
+          taskId: task.id,
+          status: task.status,
+          workflowRunId: task.workflowRunId,
+          updatedAt: task.updatedAt.toISOString(),
+        },
+        "Failing stale task — no recent GH job heartbeat",
+      );
+
+      await this.taskRepo.updateStatus(task.id, "failed");
+      await this.taskRepo.updateGhosthandsResult(task.id, {
+        ghJobId: task.workflowRunId ?? "",
+        result: null,
+        error: {
+          code: "STALE_TASK",
+          message: `Task stuck in "${task.status}" for over ${STALE_THRESHOLD_MINUTES} minutes with no worker heartbeat`,
+        },
+        completedAt: null,
+      });
+
+      // Also mark the GH job as failed if it exists
+      if (task.workflowRunId) {
+        try {
+          await this.ghJobRepo.updateStatus(task.workflowRunId, {
+            status: "failed",
+            errorCode: "STALE_TASK",
+            errorDetails: {
+              code: "STALE_TASK",
+              message: "No worker heartbeat detected — marked stale by monitor",
+            },
+            completedAt: new Date(),
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err, taskId: task.id, workflowRunId: task.workflowRunId },
+            "Failed to mark GH job as failed for stale task",
+          );
+        }
+      }
+
+      handled++;
+    }
+
+    if (handled > 0) {
+      this.logger.info({ checked: staleTasks.length, handled }, "Stale task monitor completed");
+    }
+
+    return { handled, checked: staleTasks.length };
   }
 }

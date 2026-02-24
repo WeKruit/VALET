@@ -131,15 +131,49 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         }
       }
 
-      // Update the task record
-      const task = await taskRepo.updateStatus(valetTaskId, taskStatus);
-
-      if (!task) {
+      // EC7: Use optimistic locking to prevent callback race conditions.
+      // Read current task to check terminal state and get statusVersion.
+      const currentTask = await taskRepo.findByIdAdmin(valetTaskId);
+      if (!currentTask) {
         request.log.warn({ valetTaskId }, "Task not found for GhostHands callback");
         return reply.status(404).send({
           error: "Not Found",
           message: `Task ${valetTaskId} not found`,
         });
+      }
+
+      // If task is already in a terminal state, skip the update
+      const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"]);
+      if (TERMINAL_TASK_STATUSES.has(currentTask.status)) {
+        request.log.warn(
+          {
+            valetTaskId,
+            currentStatus: currentTask.status,
+            incomingGhStatus: payload.status,
+          },
+          "Skipping callback — task already in terminal state",
+        );
+        return reply.status(200).send({ received: true, skipped: true });
+      }
+
+      // Use version-gated update to prevent race conditions
+      const task = await taskRepo.updateStatusWithVersion(
+        valetTaskId,
+        taskStatus,
+        currentTask.statusVersion,
+      );
+
+      if (!task) {
+        // Version mismatch — another callback won the race
+        request.log.warn(
+          {
+            valetTaskId,
+            expectedVersion: currentTask.statusVersion,
+            incomingGhStatus: payload.status,
+          },
+          "Callback lost status version race — another update was applied first",
+        );
+        return reply.status(200).send({ received: true, raceLost: true });
       }
 
       // HITL-specific data handling
