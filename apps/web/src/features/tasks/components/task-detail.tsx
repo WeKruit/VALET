@@ -33,8 +33,8 @@ import {
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { LiveView } from "./live-view";
-import { useVncUrl } from "../hooks/use-vnc-url";
+import { LiveView } from "./live-view"; // WEK-147: currently dead code, re-enable with Kasm dispatch
+// import { useVncUrl } from "../hooks/use-vnc-url"; // WEK-147: re-enable when Kasm dispatch is wired
 
 interface TaskDetailProps {
   taskId: string;
@@ -82,10 +82,11 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     taskData?.status === "cancelled" ||
     taskData?.status === "failed";
   const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, !isTerminalTask);
-  const { data: vncData } = useVncUrl(taskId, !isTerminalTask);
-  const vncUrl = vncData?.status === 200 ? vncData.body.url : null;
-  const vncReadOnly = vncData?.status === 200 ? vncData.body.readOnly : true;
-  const vncType = vncData?.status === 200 ? vncData.body.type : undefined;
+  // VNC/live-view disabled until WEK-147 wires Kasm into task dispatch.
+  // ASG workers are headless — no VNC available. Suppress noisy 404s.
+  const vncUrl: string | null = null;
+  const vncReadOnly = true;
+  const vncType: "novnc" | "kasm" | undefined = undefined;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [showLiveView, setShowLiveView] = useState(false);
   const queryClient = useQueryClient();
