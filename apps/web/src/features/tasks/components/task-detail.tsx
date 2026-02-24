@@ -33,8 +33,8 @@ import {
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { LiveView } from "./live-view"; // WEK-147: currently dead code, re-enable with Kasm dispatch
-// import { useVncUrl } from "../hooks/use-vnc-url"; // WEK-147: re-enable when Kasm dispatch is wired
+import { LiveView } from "./live-view";
+import { useVncUrl } from "../hooks/use-vnc-url";
 
 interface TaskDetailProps {
   taskId: string;
@@ -82,11 +82,11 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     taskData?.status === "cancelled" ||
     taskData?.status === "failed";
   const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, !isTerminalTask);
-  // VNC/live-view disabled until WEK-147 wires Kasm into task dispatch.
-  // ASG workers are headless — no VNC available. Suppress noisy 404s.
-  const vncUrl: string | null = null;
-  const vncReadOnly = true;
-  const vncType: "novnc" | "kasm" | undefined = undefined;
+  // WEK-147: Fetch VNC/Kasm session URL for live view
+  const { data: vncData } = useVncUrl(taskId, !isTerminalTask);
+  const vncUrl = vncData?.status === 200 ? vncData.body.url : null;
+  const vncReadOnly = vncData?.status === 200 ? vncData.body.readOnly : true;
+  const vncType = vncData?.status === 200 ? vncData.body.type : undefined;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [showLiveView, setShowLiveView] = useState(false);
   const queryClient = useQueryClient();
@@ -278,6 +278,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 onValueChange={(v) =>
                   updateExternalStatus.mutate({
                     params: { id: taskId },
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     body: { externalStatus: v === "none" ? null : (v as any) },
                   })
                 }
@@ -300,52 +301,58 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
 
       {/* WEK-163: Prominent Watch Live / Take Control CTA */}
       {!isTerminal && vncUrl && !showLiveView && (
-        <div
-          className={`rounded-[var(--wk-radius-lg)] border-2 p-4 flex items-center justify-between ${
-            isWaitingReview
-              ? "border-[var(--wk-status-warning)] bg-amber-50/50 dark:bg-amber-950/10"
-              : "border-[var(--wk-copilot)] bg-blue-50/50 dark:bg-blue-950/10"
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <Monitor className="h-5 w-5 text-[var(--wk-copilot)] shrink-0" />
-            <div>
-              <p className="text-sm font-medium">
-                {isWaitingReview
-                  ? "Browser session needs your attention"
-                  : "Browser automation is running"}
-              </p>
-              <p className="text-xs text-[var(--wk-text-secondary)] mt-0.5">
-                {isWaitingReview
-                  ? "Take control of the browser to resolve the blocker"
-                  : "Watch the automation in real time"}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant={isWaitingReview ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => {
-              if (vncType === "kasm") {
-                window.open(vncUrl, "_blank", "noopener,noreferrer");
-              } else {
-                setShowLiveView(true);
-              }
-            }}
+        <>
+          <div
+            className={`rounded-[var(--wk-radius-lg)] border-2 p-4 flex items-center justify-between ${
+              isWaitingReview
+                ? "border-[var(--wk-status-warning)] bg-amber-50/50 dark:bg-amber-950/10"
+                : "border-[var(--wk-copilot)] bg-blue-50/50 dark:bg-blue-950/10"
+            }`}
           >
-            {isWaitingReview ? (
-              <>
-                <MousePointer className="h-4 w-4 mr-1.5" />
-                Take Control
-              </>
-            ) : (
-              <>
-                <Monitor className="h-4 w-4 mr-1.5" />
-                Watch Live
-              </>
-            )}
-          </Button>
-        </div>
+            <div className="flex items-center gap-3">
+              <Monitor className="h-5 w-5 text-[var(--wk-copilot)] shrink-0" />
+              <div>
+                <p className="text-sm font-medium">
+                  {isWaitingReview
+                    ? "Browser session needs your attention"
+                    : "Browser automation is running"}
+                </p>
+                <p className="text-xs text-[var(--wk-text-secondary)] mt-0.5">
+                  {isWaitingReview
+                    ? "Take control of the browser to resolve the blocker"
+                    : "Watch the automation in real time"}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant={isWaitingReview ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => {
+                if (vncType === "kasm") {
+                  window.open(vncUrl, "_blank", "noopener,noreferrer");
+                } else {
+                  setShowLiveView(true);
+                }
+              }}
+            >
+              {isWaitingReview ? (
+                <>
+                  <MousePointer className="h-4 w-4 mr-1.5" />
+                  Take Control
+                </>
+              ) : (
+                <>
+                  <Monitor className="h-4 w-4 mr-1.5" />
+                  Watch Live
+                </>
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-[var(--wk-text-tertiary)] mt-2">
+            Only one person can view at a time. Opening in another tab will disconnect your current
+            session.
+          </p>
+        </>
       )}
 
       {/* Live View - only for active tasks with VNC URL */}
@@ -376,6 +383,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 ? task.interaction.pausedAt.toISOString()
                 : String(task.interaction.pausedAt),
           }}
+          vncUrl={vncUrl}
+          vncType={vncType}
           onCancel={() =>
             cancelTask.mutate({
               params: { id: taskId },

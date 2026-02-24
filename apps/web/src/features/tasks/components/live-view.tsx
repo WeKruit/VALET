@@ -113,6 +113,9 @@ export function LiveView({
                 <p className="mt-1 text-xs text-[var(--wk-text-tertiary)]">
                   Opens in a new tab with full desktop view
                 </p>
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  Only one person can view at a time.
+                </p>
               </div>
               <Button
                 variant="primary"

@@ -13,6 +13,7 @@ import {
   Clock,
   Timer,
   ShieldCheck,
+  Monitor,
 } from "lucide-react";
 import { useResolveBlocker } from "../hooks/use-tasks";
 
@@ -32,6 +33,8 @@ interface HitlBlockerCardProps {
     } | null;
     pausedAt: string;
   };
+  vncUrl?: string | null;
+  vncType?: "novnc" | "kasm";
   onCancel: () => void;
 }
 
@@ -79,7 +82,13 @@ function formatCountdown(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCardProps) {
+export function HitlBlockerCard({
+  taskId,
+  interaction,
+  vncUrl,
+  vncType: _vncType,
+  onCancel,
+}: HitlBlockerCardProps) {
   const resolveBlocker = useResolveBlocker();
   const [remaining, setRemaining] = useState<number | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
@@ -244,6 +253,17 @@ export function HitlBlockerCard({ taskId, interaction, onCancel }: HitlBlockerCa
               {remaining <= 0 ? "Timeout expired" : `${formatCountdown(remaining)} remaining`}
             </span>
           </div>
+        )}
+
+        {/* Watch & Resolve in browser */}
+        {vncUrl && (
+          <Button
+            variant="primary"
+            className="w-full"
+            onClick={() => window.open(vncUrl, "_blank", "noopener,noreferrer")}
+          >
+            <Monitor className="h-4 w-4 mr-1.5" /> Watch & Resolve in Browser
+          </Button>
         )}
 
         {/* Type-specific resolution controls */}

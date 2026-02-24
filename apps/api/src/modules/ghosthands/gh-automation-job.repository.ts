@@ -123,6 +123,7 @@ export class GhAutomationJobRepository {
       pausedAt?: Date | null;
       workerId?: string | null;
       metadata?: Record<string, unknown> | null;
+      targetWorkerId?: string | null;
     },
   ): Promise<GhJobRecord | null> {
     const updates: Record<string, unknown> = {
@@ -145,6 +146,7 @@ export class GhAutomationJobRepository {
     if (data.pausedAt !== undefined) updates.pausedAt = data.pausedAt;
     if (data.workerId !== undefined) updates.workerId = data.workerId;
     if (data.metadata !== undefined) updates.metadata = data.metadata;
+    if (data.targetWorkerId !== undefined) updates.targetWorkerId = data.targetWorkerId;
 
     const rows = await this.db
       .update(ghAutomationJobs)
@@ -208,6 +210,24 @@ export class GhAutomationJobRepository {
     const row = rows[0];
     if (!row) throw new Error("INSERT into gh_automation_jobs returned no rows");
     return toRecord(row as Record<string, unknown>);
+  }
+
+  /**
+   * WEK-147: Find active jobs that have a kasm_id in their metadata.
+   * Used by SandboxHealthMonitor to send Kasm keepalives.
+   */
+  async findActiveWithKasm(): Promise<GhJobRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(ghAutomationJobs)
+      .where(
+        and(
+          inArray(ghAutomationJobs.status, ["running", "paused", "needs_human"]),
+          sql`${ghAutomationJobs.metadata}->>'kasm_id' IS NOT NULL`,
+        ),
+      )
+      .limit(100);
+    return rows.map((r) => toRecord(r as Record<string, unknown>));
   }
 
   async findStuckJobs(stuckMinutes = 30): Promise<GhJobRecord[]> {

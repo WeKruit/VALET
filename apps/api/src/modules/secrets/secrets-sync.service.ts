@@ -221,6 +221,24 @@ export class SecretsSyncService {
     return result;
   }
 
+  // ─── Read GH worker env vars from SM (used by Kasm session creation) ──
+
+  /**
+   * WEK-147: Read GhostHands worker env vars from AWS Secrets Manager.
+   * Used by TaskService to inject env vars into Kasm sessions.
+   * Throws if SM is unreachable or empty (task should fail).
+   */
+  async readGhWorkerEnvVars(): Promise<Map<string, string>> {
+    const env = process.env.NODE_ENV === "production" ? "production" : "staging";
+    const vars = await this.readFromSm(`ghosthands/${env}`);
+    if (vars.size === 0) {
+      throw new Error(
+        `No GH worker env vars found in SM (ghosthands/${env}) — cannot create Kasm session`,
+      );
+    }
+    return vars;
+  }
+
   // ─── Diff ──────────────────────────────────────────────────────────
 
   async getDiff(env: "staging" | "production"): Promise<SecretsDiffResponse> {

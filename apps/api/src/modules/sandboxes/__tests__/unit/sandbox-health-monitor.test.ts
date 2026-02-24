@@ -56,6 +56,7 @@ describe("SandboxHealthMonitor", () => {
       sandboxService: sandboxService as never,
       sandboxRepo: sandboxRepo as never,
       logger: logger as never,
+      ghJobRepo: { findActiveWithKasm: vi.fn().mockResolvedValue([]) } as never,
     });
   });
 
