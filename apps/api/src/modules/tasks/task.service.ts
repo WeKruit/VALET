@@ -319,11 +319,23 @@ export class TaskService {
   }
 
   /**
-   * WEK-147: Create a Kasm session for a task.
-   * Mandatory — every task gets a live VNC session via Kasm.
+   * Check if Kasm is configured and enabled.
+   * Kasm is used only when KASM_ENABLED=true and KasmClient is available.
+   */
+  private isKasmEnabled(): boolean {
+    return (
+      process.env.KASM_ENABLED === "true" &&
+      this.kasmClient !== null &&
+      this.kasmClient !== undefined
+    );
+  }
+
+  /**
+   * WEK-147: Create a Kasm session for a task (optional).
+   * When Kasm is enabled, creates a live VNC session for browser visibility.
    * Reads env vars from AWS Secrets Manager and injects them into the Kasm session.
    *
-   * Throws on failure — callers should catch and set task status to failed.
+   * Throws on failure — callers should catch and fall back to general queue.
    *
    * @returns Kasm worker ID (used as targetWorkerId for queue routing) and session info
    */
@@ -537,37 +549,27 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Create Kasm session BEFORE enqueue — session provides the worker ID
+        // WEK-147: Optionally create Kasm session for live VNC view.
+        // Falls back to general queue (ASG worker) if Kasm is disabled or fails.
         let kasmWorkerId: string | undefined;
-        try {
-          const kasmResult = await this.createKasmSession(task.id, ghJob);
-          kasmWorkerId = kasmResult.kasmWorkerId;
+        if (this.isKasmEnabled()) {
+          try {
+            const kasmResult = await this.createKasmSession(task.id, ghJob);
+            kasmWorkerId = kasmResult.kasmWorkerId;
 
-          // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
-          // Without this, the updateStatus() below would spread stale metadata and overwrite them.
-          const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-          if (refreshedJob) ghJob = refreshedJob;
-        } catch (err) {
-          // Distinguish SM errors from Kasm API errors
-          const errorCode =
-            err instanceof Error && err.message.includes("SM")
-              ? "GH_KASM_FAILED"
-              : "GH_KASM_UNAVAILABLE";
-          this.logger.error({ err, taskId: task.id }, "Kasm session creation failed");
-          await this.taskRepo.updateStatus(task.id, "failed");
-          await this.taskRepo.updateGhosthandsResult(task.id, {
-            ghJobId: ghJob.id,
-            result: null,
-            error: {
-              code: errorCode,
-              message: err instanceof Error ? err.message : "Kasm session creation failed",
-            },
-            completedAt: null,
-          });
-          return task;
+            // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
+            const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
+            if (refreshedJob) ghJob = refreshedJob;
+          } catch (err) {
+            this.logger.warn(
+              { err, taskId: task.id },
+              "Kasm session creation failed — falling back to general queue",
+            );
+            // Continue without Kasm — job goes to general queue
+          }
         }
 
-        // Enqueue with Kasm worker as target
+        // Enqueue: targeted queue if Kasm worker is available, general queue otherwise
         const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
           {
             ghJobId: ghJob.id,
@@ -768,33 +770,21 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Create Kasm session BEFORE enqueue
+        // WEK-147: Optionally create Kasm session for live VNC view.
         let kasmWorkerId: string | undefined;
-        try {
-          const kasmResult = await this.createKasmSession(task.id, ghJob);
-          kasmWorkerId = kasmResult.kasmWorkerId;
+        if (this.isKasmEnabled()) {
+          try {
+            const kasmResult = await this.createKasmSession(task.id, ghJob);
+            kasmWorkerId = kasmResult.kasmWorkerId;
 
-          // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
-          // Without this, the updateStatus() below would spread stale metadata and overwrite them.
-          const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-          if (refreshedJob) ghJob = refreshedJob;
-        } catch (err) {
-          const errorCode =
-            err instanceof Error && err.message.includes("SM")
-              ? "GH_KASM_FAILED"
-              : "GH_KASM_UNAVAILABLE";
-          this.logger.error({ err, taskId: task.id }, "Kasm session creation failed for test task");
-          await this.taskRepo.updateStatus(task.id, "failed");
-          await this.taskRepo.updateGhosthandsResult(task.id, {
-            ghJobId: ghJob.id,
-            result: null,
-            error: {
-              code: errorCode,
-              message: err instanceof Error ? err.message : "Kasm session creation failed",
-            },
-            completedAt: null,
-          });
-          return task;
+            const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
+            if (refreshedJob) ghJob = refreshedJob;
+          } catch (err) {
+            this.logger.warn(
+              { err, taskId: task.id },
+              "Kasm session creation failed for test task — falling back to general queue",
+            );
+          }
         }
 
         const pgBossJobId = await this.taskQueueService.enqueueGenericTask(
@@ -931,19 +921,21 @@ export class TaskService {
         },
       });
 
-      // WEK-147: Create Kasm session BEFORE enqueue (same pattern as create())
+      // WEK-147: Optionally create Kasm session for live VNC view.
       let kasmWorkerId: string | undefined;
-      try {
-        const kasmResult = await this.createKasmSession(id, ghJob);
-        kasmWorkerId = kasmResult.kasmWorkerId;
+      if (this.isKasmEnabled()) {
+        try {
+          const kasmResult = await this.createKasmSession(id, ghJob);
+          kasmWorkerId = kasmResult.kasmWorkerId;
 
-        // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
-        // Without this, the updateStatus() below would spread stale metadata and overwrite them.
-        const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-        if (refreshedJob) ghJob = refreshedJob;
-      } catch (err) {
-        this.logger.error({ err, taskId: id }, "Kasm session creation failed on retry");
-        // For retries, don't hard-fail — fall back to general queue
+          const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
+          if (refreshedJob) ghJob = refreshedJob;
+        } catch (err) {
+          this.logger.warn(
+            { err, taskId: id },
+            "Kasm session creation failed on retry — falling back to general queue",
+          );
+        }
       }
 
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
