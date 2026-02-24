@@ -2,10 +2,9 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
   PutSecretValueCommand,
+  DescribeSecretCommand,
 } from "@aws-sdk/client-secrets-manager";
 import sodium from "libsodium-wrappers";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { sql, desc } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import type { Database } from "@valet/db";
@@ -76,9 +75,6 @@ const RUNTIME_VARS = new Set([
   "IMAGE_TAG",
 ]);
 
-const PLACEHOLDER_RE =
-  /<SET ON FLY|<set on EC2|<same as|<from admin|<production value|<MUST be|cannot read|PLACEHOLDER/i;
-
 const WORKER_VAR_PATTERNS = [
   "NODE_ENV",
   "DATABASE_URL",
@@ -112,37 +108,6 @@ const CI_VAR_PATTERNS = [
   "ECR_REGISTRY",
   "ECR_REPOSITORY",
 ];
-
-// --- Helper: parse .env file ---
-function parseEnvFile(filePath: string): Map<string, string> {
-  const result = new Map<string, string>();
-  let content: string;
-  try {
-    content = readFileSync(filePath, "utf-8");
-  } catch {
-    return result;
-  }
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)/);
-    if (!match) continue;
-    const key = match[1]!;
-    let value = match[2]!.trim();
-    // Strip surrounding quotes
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (RUNTIME_VARS.has(key)) continue;
-    if (PLACEHOLDER_RE.test(value)) continue;
-    if (!value) continue;
-    result.set(key, value);
-  }
-  return result;
-}
 
 // --- Helper: filter by role ---
 function filterByRole(vars: Map<string, string>, role: string): Map<string, string> {
@@ -183,15 +148,6 @@ function computeDiff(
   return { missing, extra, matched };
 }
 
-// --- Helper: get env file paths ---
-function getEnvPaths(env: string) {
-  const monorepoRoot = process.env.MONOREPO_ROOT ?? resolve(process.cwd(), "..");
-  return {
-    valetEnvPath: resolve(monorepoRoot, `.env.${env}`),
-    ghEnvPath: resolve(monorepoRoot, `GHOST-HANDS/.env.${env}`),
-  };
-}
-
 // --- Helper: Fly app config ---
 function getFlyApps(env: string) {
   return env === "staging"
@@ -211,21 +167,58 @@ function getFlyApps(env: string) {
 export class SecretsSyncService {
   private readonly logger: FastifyBaseLogger;
   private readonly db: Database;
+  private readonly smClient: SecretsManagerClient;
 
   constructor({ logger, db }: { logger: FastifyBaseLogger; db: Database }) {
     this.logger = logger;
     this.db = db;
+    this.smClient = new SecretsManagerClient({
+      region: process.env.AWS_REGION ?? "us-east-1",
+      ...(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+        ? {
+            credentials: {
+              accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+              secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            },
+          }
+        : {}),
+    });
+  }
+
+  // ─── Read from AWS Secrets Manager ──────────────────────────────────
+
+  private async readFromSm(secretId: string): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    try {
+      const cmd = new GetSecretValueCommand({ SecretId: secretId });
+      const res = await this.smClient.send(cmd);
+      if (!res.SecretString) return result;
+      const parsed = JSON.parse(res.SecretString) as Record<string, string>;
+      for (const [key, value] of Object.entries(parsed)) {
+        if (RUNTIME_VARS.has(key)) continue;
+        if (typeof value === "string" && value) {
+          result.set(key, value);
+        }
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes("ResourceNotFoundException")) {
+        this.logger.warn({ secretId }, "SM secret not found — returning empty");
+        return result;
+      }
+      throw err;
+    }
+    return result;
   }
 
   // ─── Diff ──────────────────────────────────────────────────────────
 
   async getDiff(env: "staging" | "production"): Promise<SecretsDiffResponse> {
-    const { valetEnvPath, ghEnvPath } = getEnvPaths(env);
-    const valetVars = parseEnvFile(valetEnvPath);
-    const ghVars = parseEnvFile(ghEnvPath);
+    const valetVars = await this.readFromSm(`valet/${env}`);
+    const ghVars = await this.readFromSm(`ghosthands/${env}`);
 
     this.logger.info(
-      { env, valetEnvPath, ghEnvPath, valetKeyCount: valetVars.size, ghKeyCount: ghVars.size },
+      { env, valetKeyCount: valetVars.size, ghKeyCount: ghVars.size },
       "Computing secrets diff",
     );
 
@@ -282,9 +275,8 @@ export class SecretsSyncService {
     const startTime = Date.now();
     this.logger.info({ env, userId, targets }, "Starting secrets sync");
 
-    const { valetEnvPath, ghEnvPath } = getEnvPaths(env);
-    const valetVars = parseEnvFile(valetEnvPath);
-    const ghVars = parseEnvFile(ghEnvPath);
+    const valetVars = await this.readFromSm(`valet/${env}`);
+    const ghVars = await this.readFromSm(`ghosthands/${env}`);
 
     // Get diff to know what's drifted
     const diff = await this.getDiff(env);
@@ -637,17 +629,12 @@ export class SecretsSyncService {
   ): Promise<SyncTargetResult> {
     const secretId = `ghosthands/${env}`;
 
-    // For AWS SM, we read the full current secret, merge in changes, write back
-    const client = new SecretsManagerClient({
-      region: process.env.AWS_REGION ?? "us-east-1",
-    });
-
     try {
       // Read existing secret (may not exist)
       let existing: Record<string, string> = {};
       try {
         const getCmd = new GetSecretValueCommand({ SecretId: secretId });
-        const getResult = await client.send(getCmd);
+        const getResult = await this.smClient.send(getCmd);
         if (getResult.SecretString) {
           existing = JSON.parse(getResult.SecretString) as Record<string, string>;
         }
@@ -685,7 +672,7 @@ export class SecretsSyncService {
         SecretId: secretId,
         SecretString: JSON.stringify(merged),
       });
-      await client.send(putCmd);
+      await this.smClient.send(putCmd);
 
       this.logger.info({ target: target.target, secretId, pushed }, "AWS Secrets Manager synced");
 
@@ -845,11 +832,8 @@ export class SecretsSyncService {
   private async diffAwsSm(env: string, refVars: Map<string, string>): Promise<TargetDiff> {
     const secretId = `ghosthands/${env}`;
     try {
-      const client = new SecretsManagerClient({
-        region: process.env.AWS_REGION ?? "us-east-1",
-      });
       const cmd = new GetSecretValueCommand({ SecretId: secretId });
-      const result = await client.send(cmd);
+      const result = await this.smClient.send(cmd);
       if (!result.SecretString) throw new Error("Empty secret");
       const deployed = JSON.parse(result.SecretString) as Record<string, string>;
       const deployedKeys = new Set(Object.keys(deployed));
@@ -909,6 +893,183 @@ export class SecretsSyncService {
         lastChecked: new Date().toISOString(),
       };
     }
+  }
+
+  // ─── CRUD: list / upsert / delete vars ──────────────────────────────
+
+  async listVars(
+    env: "staging" | "production",
+    project: "valet" | "ghosthands",
+  ): Promise<{
+    environment: string;
+    project: string;
+    secretId: string;
+    vars: Array<{ key: string; value: string; isRuntime: boolean }>;
+    lastModified?: string;
+    totalKeys: number;
+  }> {
+    const secretId = `${project}/${env}`;
+    const vars: Array<{ key: string; value: string; isRuntime: boolean }> = [];
+
+    try {
+      const cmd = new GetSecretValueCommand({ SecretId: secretId });
+      const res = await this.smClient.send(cmd);
+      if (res.SecretString) {
+        const parsed = JSON.parse(res.SecretString) as Record<string, string>;
+        for (const [key, value] of Object.entries(parsed)) {
+          if (typeof value === "string") {
+            vars.push({ key, value, isRuntime: RUNTIME_VARS.has(key) });
+          }
+        }
+        vars.sort((a, b) => a.key.localeCompare(b.key));
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (!errMsg.includes("ResourceNotFoundException")) {
+        throw err;
+      }
+      // Secret doesn't exist yet — return empty
+    }
+
+    // Get lastModified via DescribeSecret
+    let lastModified: string | undefined;
+    try {
+      const desc = new DescribeSecretCommand({ SecretId: secretId });
+      const meta = await this.smClient.send(desc);
+      if (meta.LastChangedDate) {
+        lastModified = meta.LastChangedDate.toISOString();
+      }
+    } catch {
+      // Ignore — lastModified is optional
+    }
+
+    return {
+      environment: env,
+      project,
+      secretId,
+      vars,
+      lastModified,
+      totalKeys: vars.length,
+    };
+  }
+
+  async upsertVars(
+    env: "staging" | "production",
+    project: "valet" | "ghosthands",
+    vars: Array<{ key: string; value: string }>,
+    userId: string,
+  ): Promise<{ upserted: number; keys: string[] }> {
+    const secretId = `${project}/${env}`;
+
+    // Validate: reject RUNTIME_VARS
+    const runtimeConflicts = vars.filter((v) => RUNTIME_VARS.has(v.key));
+    if (runtimeConflicts.length > 0) {
+      throw new Error(
+        `Cannot upsert runtime-injected vars: ${runtimeConflicts.map((v) => v.key).join(", ")}`,
+      );
+    }
+
+    // Validate key format
+    const invalidKeys = vars.filter((v) => !/^[A-Z_][A-Z0-9_]*$/.test(v.key));
+    if (invalidKeys.length > 0) {
+      throw new Error(
+        `Invalid key format (must be [A-Z_][A-Z0-9_]*): ${invalidKeys.map((v) => v.key).join(", ")}`,
+      );
+    }
+
+    // Read current SM secret
+    const current = await this.readSmRaw(secretId);
+
+    // Merge
+    const merged = { ...current };
+    const keys: string[] = [];
+    for (const { key, value } of vars) {
+      merged[key] = value;
+      keys.push(key);
+    }
+
+    // Write back
+    const putCmd = new PutSecretValueCommand({
+      SecretId: secretId,
+      SecretString: JSON.stringify(merged),
+    });
+    await this.smClient.send(putCmd);
+
+    // Audit (keys only, NEVER values)
+    await this.logAudit(userId, "secrets_upsert", {
+      environment: env,
+      project,
+      secretId,
+      upsertedKeys: keys,
+      count: keys.length,
+    });
+
+    this.logger.info({ secretId, upserted: keys.length, keys }, "Secrets upserted");
+
+    return { upserted: keys.length, keys };
+  }
+
+  async deleteVars(
+    env: "staging" | "production",
+    project: "valet" | "ghosthands",
+    keys: string[],
+    userId: string,
+  ): Promise<{ deleted: number; keys: string[] }> {
+    const secretId = `${project}/${env}`;
+
+    // Read current SM secret
+    const current = await this.readSmRaw(secretId);
+
+    // Remove keys
+    const deletedKeys: string[] = [];
+    for (const key of keys) {
+      if (key in current) {
+        delete current[key];
+        deletedKeys.push(key);
+      }
+    }
+
+    if (deletedKeys.length > 0) {
+      // Write back
+      const putCmd = new PutSecretValueCommand({
+        SecretId: secretId,
+        SecretString: JSON.stringify(current),
+      });
+      await this.smClient.send(putCmd);
+    }
+
+    // Audit (keys only, NEVER values)
+    await this.logAudit(userId, "secrets_delete", {
+      environment: env,
+      project,
+      secretId,
+      deletedKeys,
+      count: deletedKeys.length,
+    });
+
+    this.logger.info(
+      { secretId, deleted: deletedKeys.length, keys: deletedKeys },
+      "Secrets deleted",
+    );
+
+    return { deleted: deletedKeys.length, keys: deletedKeys };
+  }
+
+  // Read raw SM secret as Record (no RUNTIME_VARS filtering)
+  private async readSmRaw(secretId: string): Promise<Record<string, string>> {
+    try {
+      const cmd = new GetSecretValueCommand({ SecretId: secretId });
+      const res = await this.smClient.send(cmd);
+      if (res.SecretString) {
+        return JSON.parse(res.SecretString) as Record<string, string>;
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (!errMsg.includes("ResourceNotFoundException")) {
+        throw err;
+      }
+    }
+    return {};
   }
 
   // ─── Private: audit helper ─────────────────────────────────────────

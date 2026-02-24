@@ -133,6 +133,84 @@ export function useRefreshSandbox() {
   });
 }
 
+// --- CRUD types ---
+export interface SecretVar {
+  key: string;
+  value: string;
+  isRuntime: boolean;
+}
+
+export interface SecretVarsResponse {
+  environment: string;
+  project: string;
+  secretId: string;
+  vars: SecretVar[];
+  lastModified?: string;
+  totalKeys: number;
+}
+
+export interface UpsertVarsResult {
+  upserted: number;
+  keys: string[];
+}
+
+export interface DeleteVarsResult {
+  deleted: number;
+  keys: string[];
+}
+
+// --- CRUD hooks ---
+export function useSecretVars(env: "staging" | "production", project: "valet" | "ghosthands") {
+  return useQuery<SecretVarsResponse>({
+    queryKey: ["admin", "secrets", "vars", env, project],
+    queryFn: () =>
+      fetchWithAuth(`${API_BASE_URL}/api/v1/admin/secrets/vars?env=${env}&project=${project}`),
+    staleTime: 1000 * 30,
+  });
+}
+
+export function useUpsertSecretVars() {
+  const qc = useQueryClient();
+  return useMutation<
+    UpsertVarsResult,
+    Error,
+    { env: string; project: string; vars: Array<{ key: string; value: string }> }
+  >({
+    mutationFn: (body) =>
+      fetchWithAuth(`${API_BASE_URL}/api/v1/admin/secrets/vars`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (_, variables) => {
+      qc.invalidateQueries({
+        queryKey: ["admin", "secrets", "vars", variables.env, variables.project],
+      });
+      qc.invalidateQueries({
+        queryKey: ["admin", "secrets", "audit"],
+      });
+    },
+  });
+}
+
+export function useDeleteSecretVars() {
+  const qc = useQueryClient();
+  return useMutation<DeleteVarsResult, Error, { env: string; project: string; keys: string[] }>({
+    mutationFn: (body) =>
+      fetchWithAuth(`${API_BASE_URL}/api/v1/admin/secrets/vars`, {
+        method: "DELETE",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (_, variables) => {
+      qc.invalidateQueries({
+        queryKey: ["admin", "secrets", "vars", variables.env, variables.project],
+      });
+      qc.invalidateQueries({
+        queryKey: ["admin", "secrets", "audit"],
+      });
+    },
+  });
+}
+
 export function useSecretsAudit(env?: string, limit = 50) {
   return useQuery<{ entries: AuditEntry[] }>({
     queryKey: ["admin", "secrets", "audit", env, limit],
