@@ -511,7 +511,7 @@ export class SandboxService {
 
   /**
    * Enforce state consistency: any sandbox marked 'active' + 'healthy' that
-   * has NOT passed a health check within the last 10 minutes gets downgraded
+   * has NOT passed a health check within the last 15 minutes gets downgraded
    * to healthStatus='degraded'. A sandbox must continuously prove health.
    */
   async enforceStateConsistency(): Promise<number> {

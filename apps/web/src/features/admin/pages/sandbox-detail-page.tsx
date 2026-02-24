@@ -103,17 +103,21 @@ export function SandboxDetailPage() {
   // Trigger a fresh health check on mount so we don't show stale cached data
   const mountRefreshDone = useRef(false);
   useEffect(() => {
-    if (id && !mountRefreshDone.current) {
-      mountRefreshDone.current = true;
-      healthCheckMutation.mutate(
-        { params: { id }, body: {} },
-        {
-          onSuccess: () => {
-            sandboxQuery.refetch();
-          },
+    if (!id || mountRefreshDone.current) return;
+    mountRefreshDone.current = true;
+    healthCheckMutation.mutate(
+      { params: { id }, body: {} },
+      {
+        onSuccess: () => sandboxQuery.refetch(),
+        onError: () => {
+          // Silent — stale cached data is still usable, background monitor will update
         },
-      );
-    }
+      },
+    );
+    return () => {
+      // StrictMode remount guard: allow retry if unmounted before completion
+      mountRefreshDone.current = false;
+    };
   }, [id]);
 
   const sandbox = sandboxQuery.data?.status === 200 ? sandboxQuery.data.body : null;
