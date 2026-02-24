@@ -31,6 +31,7 @@ export interface TaskRecord {
   sandboxId: string | null;
   interactionType: string | null;
   interactionData: Record<string, unknown> | null;
+  statusVersion: number;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -188,6 +189,39 @@ export class TaskRepository {
       .update(tasks)
       .set({ status, ...extra })
       .where(eq(tasks.id, id))
+      .returning();
+    const row = rows[0];
+    return row ? toTaskRecord(row as Record<string, unknown>) : null;
+  }
+
+  /**
+   * EC7: Atomically update task status, guarding against terminal states.
+   * Single UPDATE ... WHERE status NOT IN (terminal) — no read-then-write race.
+   * Increments status_version on each successful update.
+   * Returns null if task is already in a terminal state (or doesn't exist).
+   */
+  async updateStatusGuarded(id: string, status: TaskStatus): Promise<TaskRecord | null> {
+    const now = new Date();
+    const extra: Record<string, unknown> = {
+      updatedAt: now,
+      statusVersion: sql`${tasks.statusVersion} + 1`,
+    };
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      extra.completedAt = now;
+      if (status === "completed") {
+        extra.progress = 100;
+      }
+    }
+    if (status === "in_progress") {
+      extra.startedAt = now;
+    }
+
+    const rows = await this.db
+      .update(tasks)
+      .set({ status, ...extra })
+      .where(
+        and(eq(tasks.id, id), sql`${tasks.status} NOT IN ('completed', 'failed', 'cancelled')`),
+      )
       .returning();
     const row = rows[0];
     return row ? toTaskRecord(row as Record<string, unknown>) : null;

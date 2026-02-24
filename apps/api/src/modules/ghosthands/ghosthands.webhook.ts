@@ -131,15 +131,17 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         }
       }
 
-      // Update the task record
-      const task = await taskRepo.updateStatus(valetTaskId, taskStatus);
+      // EC7: Atomic status update — single UPDATE ... WHERE status NOT IN (terminal).
+      // No read-then-write race; the DB enforces the guard in one round-trip.
+      const task = await taskRepo.updateStatusGuarded(valetTaskId, taskStatus);
 
       if (!task) {
-        request.log.warn({ valetTaskId }, "Task not found for GhostHands callback");
-        return reply.status(404).send({
-          error: "Not Found",
-          message: `Task ${valetTaskId} not found`,
-        });
+        // Task is already in a terminal state or doesn't exist
+        request.log.warn(
+          { valetTaskId, incomingGhStatus: payload.status },
+          "Callback skipped — task in terminal state or not found",
+        );
+        return reply.status(200).send({ received: true, skipped: true });
       }
 
       // HITL-specific data handling

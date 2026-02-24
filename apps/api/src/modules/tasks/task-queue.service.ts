@@ -89,10 +89,10 @@ export class TaskQueueService {
     }
 
     const jobId = await boss.send(queueName, payload, {
-      retryLimit: 3,
-      retryBackoff: true,
-      retryDelay: 15,
-      expireInSeconds: 30 * 60,
+      retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves
+      expireInSeconds: 86400, // EC10: 24h expiry (was 30min)
+      // EC5: Prevent duplicate dispatch — keyed on valetTaskId for true dedup
+      ...(payload.valetTaskId ? { singletonKey: payload.valetTaskId } : {}),
     });
 
     this.logger.info(
@@ -126,10 +126,10 @@ export class TaskQueueService {
     }
 
     const jobId = await boss.send(queueName, payload, {
-      retryLimit: 3,
-      retryBackoff: true,
-      retryDelay: 15,
-      expireInSeconds: 30 * 60,
+      retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves
+      expireInSeconds: 86400, // EC10: 24h expiry (was 30min)
+      // EC5: Prevent duplicate dispatch — keyed on valetTaskId for true dedup
+      ...(payload.valetTaskId ? { singletonKey: payload.valetTaskId } : {}),
     });
 
     this.logger.info(

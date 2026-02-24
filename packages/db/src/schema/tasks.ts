@@ -79,6 +79,7 @@ export const tasks = pgTable(
     sandboxId: uuid("sandbox_id").references(() => sandboxes.id, { onDelete: "set null" }),
     interactionType: varchar("interaction_type", { length: 50 }),
     interactionData: jsonb("interaction_data"),
+    statusVersion: integer("status_version").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
