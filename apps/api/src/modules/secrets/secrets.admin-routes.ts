@@ -76,6 +76,131 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // GET /api/v1/admin/secrets/vars?env=staging&project=valet
+  fastify.get(
+    "/api/v1/admin/secrets/vars",
+    async (
+      request: FastifyRequest<{ Querystring: { env?: string; project?: string } }>,
+      reply: FastifyReply,
+    ) => {
+      await adminOnly(request);
+      const env = request.query.env as "staging" | "production" | undefined;
+      if (!env || (env !== "staging" && env !== "production")) {
+        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+      }
+      const project = request.query.project as "valet" | "ghosthands" | undefined;
+      if (!project || (project !== "valet" && project !== "ghosthands")) {
+        return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
+      }
+      const { secretsSyncService } = request.diScope.cradle;
+      try {
+        const result = await secretsSyncService.listVars(env, project);
+        return reply.send(result);
+      } catch (err) {
+        request.log.error({ err }, "List secret vars failed");
+        return reply.status(500).send({ error: "Failed to list secret vars" });
+      }
+    },
+  );
+
+  // PUT /api/v1/admin/secrets/vars
+  fastify.put(
+    "/api/v1/admin/secrets/vars",
+    async (
+      request: FastifyRequest<{
+        Body: {
+          env: string;
+          project: string;
+          vars: Array<{ key: string; value: string }>;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      await adminOnly(request);
+      const body =
+        (request.body as {
+          env?: string;
+          project?: string;
+          vars?: Array<{ key: string; value: string }>;
+        }) ?? {};
+      const env = body.env as "staging" | "production";
+      if (env !== "staging" && env !== "production") {
+        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+      }
+      const project = body.project as "valet" | "ghosthands";
+      if (project !== "valet" && project !== "ghosthands") {
+        return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
+      }
+      if (!Array.isArray(body.vars) || body.vars.length === 0) {
+        return reply
+          .status(400)
+          .send({ error: "vars must be a non-empty array of { key, value }" });
+      }
+      const { secretsSyncService } = request.diScope.cradle;
+      try {
+        const result = await secretsSyncService.upsertVars(
+          env,
+          project,
+          body.vars,
+          request.userId ?? "unknown",
+        );
+        return reply.send(result);
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          (err.message.includes("runtime-injected") || err.message.includes("Invalid key format"))
+        ) {
+          return reply.status(400).send({ error: err.message });
+        }
+        request.log.error({ err }, "Upsert secret vars failed");
+        return reply.status(500).send({ error: "Failed to upsert secret vars" });
+      }
+    },
+  );
+
+  // DELETE /api/v1/admin/secrets/vars
+  fastify.delete(
+    "/api/v1/admin/secrets/vars",
+    async (
+      request: FastifyRequest<{
+        Body: { env: string; project: string; keys: string[] };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      await adminOnly(request);
+      const body =
+        (request.body as {
+          env?: string;
+          project?: string;
+          keys?: string[];
+        }) ?? {};
+      const env = body.env as "staging" | "production";
+      if (env !== "staging" && env !== "production") {
+        return reply.status(400).send({ error: "env must be 'staging' or 'production'" });
+      }
+      const project = body.project as "valet" | "ghosthands";
+      if (project !== "valet" && project !== "ghosthands") {
+        return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
+      }
+      if (!Array.isArray(body.keys) || body.keys.length === 0) {
+        return reply.status(400).send({ error: "keys must be a non-empty array" });
+      }
+      const { secretsSyncService } = request.diScope.cradle;
+      try {
+        const result = await secretsSyncService.deleteVars(
+          env,
+          project,
+          body.keys,
+          request.userId ?? "unknown",
+        );
+        return reply.send(result);
+      } catch (err) {
+        request.log.error({ err }, "Delete secret vars failed");
+        return reply.status(500).send({ error: "Failed to delete secret vars" });
+      }
+    },
+  );
+
   // POST /api/v1/admin/secrets/refresh-fleet
   fastify.post(
     "/api/v1/admin/secrets/refresh-fleet",

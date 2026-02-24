@@ -31,6 +31,7 @@ import {
   useRefreshSandbox,
   useSecretsAudit,
 } from "../hooks/use-secrets-sync";
+import { SecretsCrudPanel } from "../components/secrets-crud-panel";
 import type {
   TargetDiff,
   SyncResult,
@@ -39,6 +40,7 @@ import type {
 } from "../hooks/use-secrets-sync";
 
 export function SecretsStatusPage() {
+  const [view, setView] = useState<"status" | "manage">("status");
   const [env, setEnv] = useState<"staging" | "production">("staging");
   const [expandedTargets, setExpandedTargets] = useState<Set<string>>(new Set());
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
@@ -120,106 +122,126 @@ export function SecretsStatusPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-display font-semibold">Secrets Sync</h1>
           <p className="mt-1 text-sm text-[var(--wk-text-secondary)]">
-            Compare deployed secrets against canonical .env reference files
+            Manage and sync secrets from AWS Secrets Manager to deployment targets
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={cn("mr-2 h-4 w-4", isFetching && "animate-spin")} />
-            Check Drift
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleFleetRefresh}
-            disabled={fleetRefreshMutation.isPending}
-          >
-            <Server className="mr-2 h-4 w-4" />
-            {fleetRefreshMutation.isPending ? "Refreshing..." : "Refresh Fleet"}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setSyncDialogOpen(true)}
-            disabled={!data}
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            Sync All
-          </Button>
+          <Tabs value={view} onValueChange={(v) => setView(v as "status" | "manage")}>
+            <TabsList>
+              <TabsTrigger value="status">Status</TabsTrigger>
+              <TabsTrigger value="manage">Manage</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {view === "status" && (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => refetch()} disabled={isFetching}>
+                <RefreshCw className={cn("mr-2 h-4 w-4", isFetching && "animate-spin")} />
+                Check Drift
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleFleetRefresh}
+                disabled={fleetRefreshMutation.isPending}
+              >
+                <Server className="mr-2 h-4 w-4" />
+                {fleetRefreshMutation.isPending ? "Refreshing..." : "Refresh Fleet"}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setSyncDialogOpen(true)}
+                disabled={!data}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Sync All
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Environment Tabs */}
-      <Tabs value={env} onValueChange={(v) => setEnv(v as "staging" | "production")}>
-        <TabsList>
-          <TabsTrigger value="staging">Staging</TabsTrigger>
-          <TabsTrigger value="production">Production</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* View: Manage */}
+      {view === "manage" && <SecretsCrudPanel />}
 
-      {/* Summary cards */}
-      {data && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <SummaryCard label="Total Targets" value={data.summary.total} />
-          <SummaryCard label="In Sync" value={data.summary.synced} color="green" />
-          <SummaryCard label="Drifted" value={data.summary.drifted} color="amber" />
-          <SummaryCard
-            label="Errors"
-            value={data.summary.errors + data.summary.unavailable}
-            color="red"
-          />
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!data && !isFetching && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <KeyRound className="mx-auto h-12 w-12 text-[var(--wk-text-tertiary)]" />
-            <p className="mt-4 text-sm text-[var(--wk-text-secondary)]">
-              Click &quot;Check Drift&quot; to compare deployed secrets against reference files
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Loading state */}
-      {isFetching && !data && <LoadingSkeleton />}
-
-      {/* Target groups */}
-      {data && (
+      {/* View: Status */}
+      {view === "status" && (
         <>
-          <TargetGroup
-            title="Fly.io Apps"
-            targets={data.targets.filter((t) => t.targetType === "fly")}
-            expandedTargets={expandedTargets}
-            toggleExpand={toggleExpand}
-          />
-          <TargetGroup
-            title="GitHub Actions"
-            targets={data.targets.filter((t) => t.targetType === "gh-actions")}
-            expandedTargets={expandedTargets}
-            toggleExpand={toggleExpand}
-          />
-          <TargetGroup
-            title="AWS Secrets Manager"
-            targets={data.targets.filter((t) => t.targetType === "aws-sm")}
-            expandedTargets={expandedTargets}
-            toggleExpand={toggleExpand}
-          />
+          {/* Environment Tabs */}
+          <Tabs value={env} onValueChange={(v) => setEnv(v as "staging" | "production")}>
+            <TabsList>
+              <TabsTrigger value="staging">Staging</TabsTrigger>
+              <TabsTrigger value="production">Production</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {/* Summary cards */}
+          {data && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <SummaryCard label="Total Targets" value={data.summary.total} />
+              <SummaryCard label="In Sync" value={data.summary.synced} color="green" />
+              <SummaryCard label="Drifted" value={data.summary.drifted} color="amber" />
+              <SummaryCard
+                label="Errors"
+                value={data.summary.errors + data.summary.unavailable}
+                color="red"
+              />
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!data && !isFetching && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <KeyRound className="mx-auto h-12 w-12 text-[var(--wk-text-tertiary)]" />
+                <p className="mt-4 text-sm text-[var(--wk-text-secondary)]">
+                  Click &quot;Check Drift&quot; to compare deployed secrets against reference files
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Loading state */}
+          {isFetching && !data && <LoadingSkeleton />}
+
+          {/* Target groups */}
+          {data && (
+            <>
+              <TargetGroup
+                title="Fly.io Apps"
+                targets={data.targets.filter((t) => t.targetType === "fly")}
+                expandedTargets={expandedTargets}
+                toggleExpand={toggleExpand}
+              />
+              <TargetGroup
+                title="GitHub Actions"
+                targets={data.targets.filter((t) => t.targetType === "gh-actions")}
+                expandedTargets={expandedTargets}
+                toggleExpand={toggleExpand}
+              />
+              <TargetGroup
+                title="AWS Secrets Manager"
+                targets={data.targets.filter((t) => t.targetType === "aws-sm")}
+                expandedTargets={expandedTargets}
+                toggleExpand={toggleExpand}
+              />
+            </>
+          )}
+
+          {/* Last sync result */}
+          {lastSyncResult && <SyncResultCard result={lastSyncResult} />}
+
+          {/* Last fleet refresh result */}
+          {lastFleetResult && (
+            <FleetRefreshCard result={lastFleetResult} onFleetUpdate={setLastFleetResult} />
+          )}
+
+          {/* Audit log */}
+          {auditData && auditData.entries.length > 0 && (
+            <AuditLogCard entries={auditData.entries} />
+          )}
         </>
       )}
-
-      {/* Last sync result */}
-      {lastSyncResult && <SyncResultCard result={lastSyncResult} />}
-
-      {/* Last fleet refresh result */}
-      {lastFleetResult && (
-        <FleetRefreshCard result={lastFleetResult} onFleetUpdate={setLastFleetResult} />
-      )}
-
-      {/* Audit log */}
-      {auditData && auditData.entries.length > 0 && <AuditLogCard entries={auditData.entries} />}
 
       {/* Sync confirmation dialog */}
       <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
@@ -228,8 +250,8 @@ export function SecretsStatusPage() {
             <DialogTitle>Sync Secrets</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-[var(--wk-text-secondary)]">
-            This will push canonical .env values to all deployed targets for <strong>{env}</strong>.
-            This action cannot be undone.
+            This will push canonical values from AWS SM to all deployed targets for{" "}
+            <strong>{env}</strong>. This action cannot be undone.
           </p>
           {data && data.summary.drifted > 0 && (
             <div className="mt-2 text-sm">
