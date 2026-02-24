@@ -35,6 +35,7 @@ export class PgBossService {
     this.boss = new PgBoss({
       connectionString,
       schema: "pgboss",
+      max: 3, // limit session-mode connections (Supabase pool_size is shared)
       // Disable background maintenance/supervision in test mode
       supervise: !isTest,
       migrate: !isTest,
