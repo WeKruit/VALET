@@ -32,6 +32,7 @@ import {
   useSecretsAudit,
 } from "../hooks/use-secrets-sync";
 import { SecretsCrudPanel } from "../components/secrets-crud-panel";
+import { SecretsOverviewPanel } from "../components/secrets-overview-panel";
 import type {
   TargetDiff,
   SyncResult,
@@ -40,7 +41,7 @@ import type {
 } from "../hooks/use-secrets-sync";
 
 export function SecretsStatusPage() {
-  const [view, setView] = useState<"status" | "manage">("status");
+  const [view, setView] = useState<"overview" | "status" | "manage">("overview");
   const [env, setEnv] = useState<"staging" | "production">("staging");
   const [expandedTargets, setExpandedTargets] = useState<Set<string>>(new Set());
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
@@ -126,8 +127,9 @@ export function SecretsStatusPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={view} onValueChange={(v) => setView(v as "status" | "manage")}>
+          <Tabs value={view} onValueChange={(v) => setView(v as "overview" | "status" | "manage")}>
             <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="status">Status</TabsTrigger>
               <TabsTrigger value="manage">Manage</TabsTrigger>
             </TabsList>
@@ -160,6 +162,9 @@ export function SecretsStatusPage() {
           )}
         </div>
       </div>
+
+      {/* View: Overview */}
+      {view === "overview" && <SecretsOverviewPanel />}
 
       {/* View: Manage */}
       {view === "manage" && <SecretsCrudPanel />}
