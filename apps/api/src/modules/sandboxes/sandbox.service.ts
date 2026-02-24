@@ -511,11 +511,11 @@ export class SandboxService {
 
   /**
    * Enforce state consistency: any sandbox marked 'active' + 'healthy' that
-   * has NOT passed a health check within the last 10 minutes gets downgraded
+   * has NOT passed a health check within the last 15 minutes gets downgraded
    * to healthStatus='degraded'. A sandbox must continuously prove health.
    */
   async enforceStateConsistency(): Promise<number> {
-    const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+    const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
     const staleSandboxes = await this.sandboxRepo.findStaleActive(STALE_THRESHOLD_MS);
 
     for (const sandbox of staleSandboxes) {
@@ -530,7 +530,7 @@ export class SandboxService {
           lastHealthCheckAt: sandbox.lastHealthCheckAt?.toISOString() ?? null,
           minutesSinceCheck,
         },
-        "Downgrading sandbox health: no successful health check within 10 minutes",
+        "Downgrading sandbox health: no successful health check within 15 minutes",
       );
 
       await this.sandboxRepo.updateHealthStatus(sandbox.id, "degraded");

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Button } from "@valet/ui/components/button";
@@ -99,6 +99,26 @@ export function SandboxDetailPage() {
   const startMutation = useStartSandbox();
   const stopMutation = useStopSandbox();
   const updateMutation = useUpdateSandbox();
+
+  // Trigger a fresh health check on mount so we don't show stale cached data
+  const mountRefreshDone = useRef(false);
+  useEffect(() => {
+    if (!id || mountRefreshDone.current) return;
+    mountRefreshDone.current = true;
+    healthCheckMutation.mutate(
+      { params: { id }, body: {} },
+      {
+        onSuccess: () => sandboxQuery.refetch(),
+        onError: () => {
+          // Silent — stale cached data is still usable, background monitor will update
+        },
+      },
+    );
+    return () => {
+      // StrictMode remount guard: allow retry if unmounted before completion
+      mountRefreshDone.current = false;
+    };
+  }, [id]);
 
   const sandbox = sandboxQuery.data?.status === 200 ? sandboxQuery.data.body : null;
   const metrics = metricsQuery.data?.status === 200 ? metricsQuery.data.body : null;

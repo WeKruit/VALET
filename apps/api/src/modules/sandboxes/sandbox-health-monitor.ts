@@ -5,7 +5,7 @@ import type { SandboxHealthStatus } from "@valet/shared/schemas";
 import type { KasmClient } from "./kasm/kasm.client.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 
-const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const HEALTH_CHECK_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 const CONSECUTIVE_FAILURE_ALERT_THRESHOLD = 3;
 
 export class SandboxHealthMonitor {
