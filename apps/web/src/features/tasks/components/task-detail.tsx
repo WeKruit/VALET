@@ -94,6 +94,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
 
   const cancelTask = api.tasks.cancel.useMutation({
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast.success("Task cancelled.");
     },
     onError: () => {

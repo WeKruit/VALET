@@ -23,7 +23,7 @@ export interface DeepHealthResult {
 
 const EC2_PORTS = [
   { name: "GH API", port: 3100, path: "/health", critical: true },
-  { name: "GH Worker", port: 3101, path: "/health", critical: false },
+  { name: "GH Worker", port: 3101, path: "/worker/health", critical: false },
   { name: "Deploy Server", port: 8000, path: "/health", critical: false },
 ] as const;
 
