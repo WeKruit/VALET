@@ -65,6 +65,16 @@ export interface SyncAuditEntry {
   createdAt: string;
 }
 
+// --- Helpers ---
+function isSmNotFound(err: unknown): boolean {
+  if (err instanceof Error) {
+    return (
+      err.name === "ResourceNotFoundException" || err.message.includes("ResourceNotFoundException")
+    );
+  }
+  return String(err).includes("ResourceNotFoundException");
+}
+
 // --- Constants ---
 const RUNTIME_VARS = new Set([
   "GH_WORKER_ID",
@@ -201,8 +211,7 @@ export class SecretsSyncService {
         }
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes("ResourceNotFoundException")) {
+      if (isSmNotFound(err)) {
         this.logger.warn({ secretId }, "SM secret not found — returning empty");
         return result;
       }
@@ -639,8 +648,7 @@ export class SecretsSyncService {
           existing = JSON.parse(getResult.SecretString) as Record<string, string>;
         }
       } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        if (!errMsg.includes("ResourceNotFoundException")) {
+        if (!isSmNotFound(err)) {
           throw err;
         }
         // Secret doesn't exist yet — will create
@@ -860,8 +868,7 @@ export class SecretsSyncService {
         lastChecked: new Date().toISOString(),
       };
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes("ResourceNotFoundException")) {
+      if (isSmNotFound(err)) {
         return {
           target: secretId,
           targetType: "aws-sm",
@@ -877,6 +884,7 @@ export class SecretsSyncService {
           lastChecked: new Date().toISOString(),
         };
       }
+      const errMsg = err instanceof Error ? err.message : String(err);
       this.logger.error({ err, secretId }, "AWS SM diff failed");
       return {
         target: secretId,
@@ -924,8 +932,7 @@ export class SecretsSyncService {
         vars.sort((a, b) => a.key.localeCompare(b.key));
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (!errMsg.includes("ResourceNotFoundException")) {
+      if (!isSmNotFound(err)) {
         throw err;
       }
       // Secret doesn't exist yet — return empty
@@ -1064,8 +1071,7 @@ export class SecretsSyncService {
         return JSON.parse(res.SecretString) as Record<string, string>;
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (!errMsg.includes("ResourceNotFoundException")) {
+      if (!isSmNotFound(err)) {
         throw err;
       }
     }
