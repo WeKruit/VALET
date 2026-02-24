@@ -65,9 +65,9 @@ describe("Database Tests", () => {
       }
     });
 
-    it("has exactly 17 SQL migration files", () => {
+    it("has exactly 18 SQL migration files", () => {
       const sqlFiles = fs.readdirSync(DRIZZLE_DIR).filter((f) => f.endsWith(".sql"));
-      expect(sqlFiles).toHaveLength(17);
+      expect(sqlFiles).toHaveLength(18);
     });
   });
 
@@ -416,12 +416,12 @@ describe("Database Tests", () => {
       expect(journal.dialect).toBe("postgresql");
     });
 
-    it("has 17 entries with sequential indices", () => {
+    it("has 18 entries with sequential indices", () => {
       const content = fs.readFileSync(JOURNAL_PATH, "utf-8");
       const journal = JSON.parse(content);
-      expect(journal.entries).toHaveLength(17);
+      expect(journal.entries).toHaveLength(18);
 
-      for (let i = 0; i < 17; i++) {
+      for (let i = 0; i < 18; i++) {
         expect(journal.entries[i].idx).toBe(i);
       }
     });

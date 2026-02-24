@@ -30,6 +30,7 @@ function createMockTaskRepo() {
     findByIdAdmin: vi.fn(),
     findByWorkflowRunId: vi.fn(),
     updateStatus: vi.fn(),
+    updateStatusGuarded: vi.fn(),
     updateWorkflowRunId: vi.fn(),
     updateGhosthandsResult: vi.fn(),
     updateLlmUsage: vi.fn(),
@@ -124,6 +125,8 @@ async function buildWebhookTestApp(mocks: {
         taskRepo: mocks.taskRepo,
         ghJobRepo: mocks.ghJobRepo,
         redis: mocks.redis,
+        sandboxRepo: { findById: vi.fn() },
+        kasmClient: null,
       },
     };
   });
@@ -182,7 +185,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         workflowRunId: ghJobId,
       };
 
-      taskRepo.updateStatus.mockResolvedValue(mockTask);
+      taskRepo.updateStatusGuarded.mockResolvedValue(mockTask);
       ghJobRepo.updateStatus.mockResolvedValue(null);
 
       const response = await app.inject({
@@ -201,7 +204,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       expect(response.statusCode).toBe(200);
 
       // Task status updated to failed
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(taskId, "failed");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "failed");
 
       // Error stored in result
       expect(taskRepo.updateGhosthandsResult).toHaveBeenCalledWith(
@@ -233,11 +236,11 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       expect(wsPayload.error.code).toBe("FORM_FILL_ERROR");
     });
 
-    it("should return 404 when task not found for update", async () => {
+    it("should return 200 with skipped when task is terminal or not found", async () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue(null);
+      taskRepo.updateStatusGuarded.mockResolvedValue(null);
 
       const response = await app.inject({
         method: "POST",
@@ -252,7 +255,9 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         },
       });
 
-      expect(response.statusCode).toBe(404);
+      // EC7: updateStatusGuarded returns null when task is already terminal or not found
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ received: true, skipped: true });
     });
   });
 
@@ -263,7 +268,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "cancelled",
@@ -284,7 +289,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(taskId, "cancelled");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "cancelled");
 
       // WebSocket publishes cancelled status
       const wsPayload = JSON.parse(redis.publish.mock.calls[0]?.[1] as string);
@@ -444,7 +449,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "in_progress",
@@ -484,7 +489,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "waiting_human",
@@ -518,7 +523,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "in_progress",
@@ -546,7 +551,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "completed",
@@ -928,7 +933,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "completed",
@@ -963,7 +968,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "completed",

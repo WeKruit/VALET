@@ -25,6 +25,7 @@ function createMockTaskRepo() {
     findByIdAdmin: vi.fn(),
     findByWorkflowRunId: vi.fn(),
     updateStatus: vi.fn(),
+    updateStatusGuarded: vi.fn(),
     updateWorkflowRunId: vi.fn(),
     updateGhosthandsResult: vi.fn(),
     updateLlmUsage: vi.fn(),
@@ -75,6 +76,8 @@ async function buildIntegrationTestApp(mocks: {
         taskRepo: mocks.taskRepo,
         ghJobRepo: mocks.ghJobRepo,
         redis: mocks.redis,
+        sandboxRepo: { findById: vi.fn() },
+        kasmClient: null,
       },
     };
   });
@@ -136,7 +139,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
         workflowRunId: ghJobId,
       };
 
-      taskRepo.updateStatus.mockResolvedValue(mockTask);
+      taskRepo.updateStatusGuarded.mockResolvedValue(mockTask);
       ghJobRepo.updateStatus.mockResolvedValue(null);
 
       const response = await app.inject({
@@ -156,7 +159,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       expect(response.json()).toEqual({ received: true });
 
       // Verify task was updated to in_progress
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(taskId, "in_progress");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "in_progress");
 
       // WEK-71: Progress is no longer persisted to tasks table from callbacks.
       // It's computed from gh_job_events at read time.
@@ -186,7 +189,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
         workflowRunId: ghJobId,
       };
 
-      taskRepo.updateStatus.mockResolvedValue(mockTask);
+      taskRepo.updateStatusGuarded.mockResolvedValue(mockTask);
       ghJobRepo.updateStatus.mockResolvedValue(null);
 
       const response = await app.inject({
@@ -209,7 +212,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       expect(response.statusCode).toBe(200);
 
       // Task updated to completed
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(taskId, "completed");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "completed");
 
       // Result data stored
       expect(taskRepo.updateGhosthandsResult).toHaveBeenCalledWith(
@@ -239,7 +242,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       const seqJobId = randomUUID();
 
       // Step 1: running callback
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: seqTaskId,
         userId: TEST_USER_ID,
         status: "in_progress",
@@ -264,7 +267,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       vi.clearAllMocks();
 
       // Step 2: completed callback
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: seqTaskId,
         userId: TEST_USER_ID,
         status: "completed",
@@ -286,7 +289,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
         },
       });
       expect(completedRes.statusCode).toBe(200);
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(seqTaskId, "completed");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(seqTaskId, "completed");
     });
   });
 
@@ -304,7 +307,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
         workflowRunId: ghJobId,
       };
 
-      taskRepo.updateStatus.mockResolvedValue(mockTask);
+      taskRepo.updateStatusGuarded.mockResolvedValue(mockTask);
       ghJobRepo.updateStatus.mockResolvedValue(null);
 
       const response = await app.inject({
@@ -328,7 +331,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       expect(response.statusCode).toBe(200);
 
       // Task status should be waiting_human
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(taskId, "waiting_human");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "waiting_human");
 
       // Interaction data should be stored with mapped type (2fa → two_factor)
       expect(taskRepo.updateInteractionData).toHaveBeenCalledWith(taskId, {
@@ -355,7 +358,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
         workflowRunId: ghJobId,
       };
 
-      taskRepo.updateStatus.mockResolvedValue(mockTask);
+      taskRepo.updateStatusGuarded.mockResolvedValue(mockTask);
       ghJobRepo.updateStatus.mockResolvedValue(null);
 
       const response = await app.inject({
@@ -372,7 +375,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       expect(response.statusCode).toBe(200);
 
       // Task goes to in_progress
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(taskId, "in_progress");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "in_progress");
 
       // Interaction data should be cleared
       expect(taskRepo.clearInteractionData).toHaveBeenCalledWith(taskId);
@@ -388,7 +391,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       const loginTaskId = randomUUID();
       const loginJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: loginTaskId,
         userId: TEST_USER_ID,
         status: "waiting_human",
@@ -438,7 +441,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
         workflowRunId: ghJobId,
       };
 
-      taskRepo.updateStatus.mockResolvedValue(mockTask);
+      taskRepo.updateStatusGuarded.mockResolvedValue(mockTask);
       ghJobRepo.updateStatus.mockResolvedValue(null);
 
       const costData = {
@@ -499,7 +502,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "completed",
@@ -565,7 +568,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
       const taskId = randomUUID();
       const ghJobId = randomUUID();
 
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "in_progress",
@@ -643,7 +646,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
         id: resolvedTaskId,
         userId: TEST_USER_ID,
       });
-      taskRepo.updateStatus.mockResolvedValue({
+      taskRepo.updateStatusGuarded.mockResolvedValue({
         id: resolvedTaskId,
         userId: TEST_USER_ID,
         status: "in_progress",
@@ -665,7 +668,7 @@ describe("Integration: Application Lifecycle (P0)", () => {
 
       expect(response.statusCode).toBe(200);
       expect(taskRepo.findByWorkflowRunId).toHaveBeenCalledWith(ghJobId);
-      expect(taskRepo.updateStatus).toHaveBeenCalledWith(resolvedTaskId, "in_progress");
+      expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(resolvedTaskId, "in_progress");
     });
 
     it("should return 200 with warning when no task found by either ID", async () => {
