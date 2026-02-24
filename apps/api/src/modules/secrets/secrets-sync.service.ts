@@ -752,8 +752,11 @@ export class SecretsSyncService {
         }
         throw new Error(`Fly API ${res.status}: ${res.statusText}`);
       }
-      const secrets = (await res.json()) as Array<{ label: string }>;
-      const deployedKeys = new Set(secrets.map((s) => s.label));
+      const data = (await res.json()) as
+        | { secrets?: Array<{ name: string }> }
+        | Array<{ name: string }>;
+      const secrets = Array.isArray(data) ? data : (data.secrets ?? []);
+      const deployedKeys = new Set(secrets.map((s) => s.name));
       const refKeys = new Set(filtered.keys());
       const { missing, extra, matched } = computeDiff(refKeys, deployedKeys);
       return {
