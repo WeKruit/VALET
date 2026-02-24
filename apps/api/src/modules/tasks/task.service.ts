@@ -921,10 +921,15 @@ export class TaskService {
         },
       });
 
-      // Resolve sandbox ID → actual GH worker ID for queue routing
-      const resolvedWorkerId = task.sandboxId
-        ? await this.sandboxRepo.resolveWorkerId(task.sandboxId)
-        : undefined;
+      // WEK-147: Create Kasm session BEFORE enqueue (same pattern as create())
+      let kasmWorkerId: string | undefined;
+      try {
+        const kasmResult = await this.createKasmSession(id, ghJob);
+        kasmWorkerId = kasmResult.kasmWorkerId;
+      } catch (err) {
+        this.logger.error({ err, taskId: id }, "Kasm session creation failed on retry");
+        // For retries, don't hard-fail — fall back to general queue
+      }
 
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
@@ -936,16 +941,15 @@ export class TaskService {
           jobType: "apply",
           callbackUrl,
         },
-        { targetWorkerId: resolvedWorkerId ?? undefined },
+        { targetWorkerId: kasmWorkerId },
       );
 
       // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-      const pgBossQueueName = resolvedWorkerId
-        ? `${QUEUE_APPLY_JOB}/${resolvedWorkerId}`
-        : QUEUE_APPLY_JOB;
+      const pgBossQueueName = kasmWorkerId ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}` : QUEUE_APPLY_JOB;
       if (pgBossJobId) {
         await this.ghJobRepo.updateStatus(ghJob.id, {
           status: "queued",
+          targetWorkerId: kasmWorkerId,
           metadata: {
             ...(((ghJob as unknown as Record<string, unknown>).metadata as Record<
               string,
@@ -955,19 +959,6 @@ export class TaskService {
             pgBossQueueName,
           },
         });
-      }
-
-      // WEK-147: Create Kasm session for retry
-      try {
-        const kasmResult = await this.createKasmSession(id, ghJob);
-        // Update targetWorkerId to the new Kasm worker
-        await this.ghJobRepo.updateStatus(ghJob.id, {
-          status: "queued",
-          targetWorkerId: kasmResult.kasmWorkerId,
-        });
-      } catch (err) {
-        this.logger.error({ err, taskId: id }, "Kasm session creation failed on retry");
-        // Don't fail the retry entirely — the job is already enqueued
       }
 
       // Update task to point to the new job
