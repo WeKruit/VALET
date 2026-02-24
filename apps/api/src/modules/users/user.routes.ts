@@ -20,7 +20,7 @@ function toProfileResponse(user: Record<string, unknown>) {
     email: user.email as string,
     name: user.name as string,
     avatarUrl: (user.avatarUrl as string | null) ?? null,
-    role: (user.role as string as "user" | "admin" | "superadmin") ?? "user",
+    role: (user.role as string as "user" | "developer" | "admin" | "superadmin") ?? "user",
     subscriptionTier: user.subscriptionTier as string as "free" | "starter" | "pro" | "enterprise",
     createdAt: user.createdAt as Date,
     updatedAt: user.updatedAt as Date,
