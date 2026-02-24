@@ -49,9 +49,9 @@ export function LiveView({
             <CardTitle className="text-lg">Live View</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            {isVisible && !isKasm && (
+            {isVisible && (
               <>
-                {!readOnly && (
+                {!readOnly && !isKasm && (
                   <Button
                     variant={viewOnly ? "ghost" : "primary"}
                     size="sm"
@@ -101,56 +101,47 @@ export function LiveView({
           </div>
         </div>
       </CardHeader>
-      {isVisible &&
-        (isKasm ? (
-          <CardContent>
-            <div className="flex flex-col items-center justify-center gap-4 py-8 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-[var(--wk-bg-secondary)]">
-              <Monitor className="h-12 w-12 text-[var(--wk-text-tertiary)]" />
-              <div className="text-center">
-                <p className="text-sm font-medium text-[var(--wk-text-primary)]">
-                  Browser automation is running
-                </p>
-                <p className="mt-1 text-xs text-[var(--wk-text-tertiary)]">
-                  Opens in a new tab with full desktop view
-                </p>
-                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                  Only one person can view at a time.
-                </p>
-              </div>
+      {isVisible && (
+        <CardContent>
+          <div
+            className={`relative overflow-hidden rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-black ${
+              isFullWidth ? "w-full" : "max-w-4xl"
+            }`}
+          >
+            <div className="aspect-video">
+              <iframe
+                key={isKasm ? "kasm" : String(viewOnly)}
+                src={isKasm ? url : iframeUrl}
+                title={isKasm ? "Kasm Live View" : "noVNC Live View"}
+                className="h-full w-full border-0"
+                allow="clipboard-read; clipboard-write"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              />
+            </div>
+          </div>
+          {isKasm ? (
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-xs text-[var(--wk-text-tertiary)]">
+                Watching browser automation in real time
+              </p>
               <Button
-                variant="primary"
+                variant="ghost"
+                size="sm"
                 onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
               >
                 <ExternalLink className="h-4 w-4 mr-1.5" />
-                Watch Live
+                Open in new tab
               </Button>
             </div>
-          </CardContent>
-        ) : (
-          <CardContent>
-            <div
-              className={`relative overflow-hidden rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-black ${
-                isFullWidth ? "w-full" : "max-w-4xl"
-              }`}
-            >
-              <div className="aspect-video">
-                <iframe
-                  key={String(viewOnly)}
-                  src={iframeUrl}
-                  title="noVNC Live View"
-                  className="h-full w-full border-0"
-                  allow="clipboard-read; clipboard-write"
-                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-                />
-              </div>
-            </div>
+          ) : (
             <p className="mt-2 text-xs text-[var(--wk-text-tertiary)]">
               {viewOnly
                 ? "Watching browser automation in real time (view only)"
                 : "Interactive mode — you have keyboard and mouse control"}
             </p>
-          </CardContent>
-        ))}
+          )}
+        </CardContent>
+      )}
     </Card>
   );
 }

@@ -327,13 +327,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             <Button
               variant={isWaitingReview ? "primary" : "secondary"}
               size="sm"
-              onClick={() => {
-                if (vncType === "kasm") {
-                  window.open(vncUrl, "_blank", "noopener,noreferrer");
-                } else {
-                  setShowLiveView(true);
-                }
-              }}
+              onClick={() => setShowLiveView(true)}
             >
               {isWaitingReview ? (
                 <>

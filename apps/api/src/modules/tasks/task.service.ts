@@ -383,7 +383,7 @@ export class TaskService {
     });
 
     this.logger.info(
-      { taskId, kasmId: kasmResponse.kasm_id, kasmWorkerId },
+      { taskId, kasmId: kasmResponse.kasm_id, kasmWorkerId, rawKasmUrl: kasmResponse.kasm_url },
       "Created Kasm session for task",
     );
 
@@ -1399,7 +1399,13 @@ export class TaskService {
         const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
         const kasmUrl = ghJob?.metadata?.kasm_url as string | undefined;
         if (kasmUrl) {
-          return { url: kasmUrl, readOnly, type: "kasm" };
+          // WEK-183: Ensure kasm_url is absolute (Kasm API returns relative paths like /#/connect/...)
+          let absoluteUrl = kasmUrl;
+          if (kasmUrl.startsWith("/#/") || kasmUrl.startsWith("/")) {
+            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "") ?? "";
+            absoluteUrl = `${kasmBase}${kasmUrl}`;
+          }
+          return { url: absoluteUrl, readOnly, type: "kasm" };
         }
       } catch {
         // Fall through to sandbox-based lookup
