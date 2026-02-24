@@ -572,7 +572,27 @@ export class TaskService {
 
     const callbackUrl = buildCallbackUrl();
 
-    if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+    if (useQueueDispatch() && !this.taskQueueService.isAvailable) {
+      // Queue mode configured but pg-boss is down — fail immediately instead of
+      // silently falling back to REST (GH workers in queue mode won't pick it up).
+      this.logger.error(
+        { taskId: task.id },
+        "TASK_DISPATCH_MODE=queue but pg-boss unavailable — failing task. Fix DATABASE_DIRECT_URL or pg-boss connection.",
+      );
+      await this.taskRepo.updateStatus(task.id, "failed");
+      await this.taskRepo.updateGhosthandsResult(task.id, {
+        ghJobId: "",
+        result: null,
+        error: {
+          code: "GH_QUEUE_UNAVAILABLE",
+          message: "Task queue is temporarily unavailable. Please try again in a few minutes.",
+        },
+        completedAt: null,
+      });
+      return task;
+    }
+
+    if (useQueueDispatch()) {
       // ── Queue dispatch path (pg-boss) ──
       try {
         let ghJob = await this.ghJobRepo.insertPendingJob({
@@ -670,7 +690,7 @@ export class TaskService {
         });
       }
     } else {
-      // ── REST dispatch path (legacy) ──
+      // ── REST dispatch path (legacy, only when TASK_DISPATCH_MODE != queue) ──
       try {
         const ghResponse = await this.ghosthandsClient.submitApplication({
           valet_task_id: task.id,
@@ -800,7 +820,25 @@ export class TaskService {
     const callbackUrl = buildCallbackUrl();
     const taskDescription = `Google search integration test: ${body.searchQuery}`;
 
-    if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+    if (useQueueDispatch() && !this.taskQueueService.isAvailable) {
+      this.logger.error(
+        { taskId: task.id },
+        "TASK_DISPATCH_MODE=queue but pg-boss unavailable — failing test task.",
+      );
+      await this.taskRepo.updateStatus(task.id, "failed");
+      await this.taskRepo.updateGhosthandsResult(task.id, {
+        ghJobId: "",
+        result: null,
+        error: {
+          code: "GH_QUEUE_UNAVAILABLE",
+          message: "Task queue is temporarily unavailable. Please try again in a few minutes.",
+        },
+        completedAt: null,
+      });
+      return task;
+    }
+
+    if (useQueueDispatch()) {
       // ── Queue dispatch path (pg-boss) ──
       try {
         let ghJob = await this.ghJobRepo.insertPendingJob({
@@ -887,7 +925,7 @@ export class TaskService {
         });
       }
     } else {
-      // ── REST dispatch path (legacy) ──
+      // ── REST dispatch path (legacy, only when TASK_DISPATCH_MODE != queue) ──
       try {
         const ghResponse = await this.ghosthandsClient.submitGenericTask({
           valet_task_id: task.id,
@@ -943,7 +981,11 @@ export class TaskService {
 
     this.logger.info({ taskId: id, jobId: task.workflowRunId }, "Retrying GhostHands job");
 
-    if (useQueueDispatch() && this.taskQueueService.isAvailable) {
+    if (useQueueDispatch() && !this.taskQueueService.isAvailable) {
+      throw new Error("Task queue is temporarily unavailable. Please try again in a few minutes.");
+    }
+
+    if (useQueueDispatch()) {
       // Queue mode: create new gh_automation_jobs record + enqueue via pg-boss
       // Fetch original job to copy inputData (profile, QA answers, resume ref, platform, tier)
       const originalGhJob = await this.ghJobRepo.findById(task.workflowRunId);
