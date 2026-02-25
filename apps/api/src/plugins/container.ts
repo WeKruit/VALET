@@ -20,6 +20,7 @@ import { GdprService } from "../modules/gdpr/gdpr.service.js";
 import { TaskEventRepository } from "../modules/task-events/task-event.repository.js";
 import { TaskEventService } from "../modules/task-events/task-event.service.js";
 import { EmailService } from "../services/email.service.js";
+import { EmailTemplateService } from "../services/email-template.service.js";
 import { SecurityLoggerService } from "../services/security-logger.service.js";
 import { BillingService } from "../modules/billing/billing.service.js";
 import { DashboardService } from "../modules/dashboard/dashboard.service.js";
@@ -52,6 +53,9 @@ import { AutoScaleService } from "../services/auto-scale.service.js";
 import { StaleTaskReconciliationMonitor } from "../modules/tasks/stale-task-reconciliation.js";
 import { SecretsSyncService } from "../modules/secrets/secrets-sync.service.js";
 import { InstanceDiscoveryService } from "../modules/sync/instance-discovery.service.js";
+import { EarlyAccessRepository } from "../modules/early-access/early-access.repository.js";
+import { EarlyAccessService } from "../modules/early-access/early-access.service.js";
+import { EmailTemplatesRepository } from "../modules/email-templates/email-templates.repository.js";
 
 export interface AppCradle {
   db: Database;
@@ -72,6 +76,7 @@ export interface AppCradle {
   taskEventRepo: TaskEventRepository;
   taskEventService: TaskEventService;
   emailService: EmailService;
+  emailTemplateService: EmailTemplateService;
   securityLogger: SecurityLoggerService;
   billingService: BillingService;
   dashboardService: DashboardService;
@@ -104,6 +109,9 @@ export interface AppCradle {
   staleTaskReconciliation: StaleTaskReconciliationMonitor;
   secretsSyncService: SecretsSyncService;
   instanceDiscoveryService: InstanceDiscoveryService;
+  earlyAccessRepo: EarlyAccessRepository;
+  earlyAccessService: EarlyAccessService;
+  emailTemplatesRepo: EmailTemplatesRepository;
 }
 
 declare module "@fastify/awilix" {
@@ -147,6 +155,7 @@ export default fp(async (fastify: FastifyInstance) => {
     gdprService: asClass(GdprService, { lifetime: Lifetime.SINGLETON }),
     taskEventRepo: asClass(TaskEventRepository, { lifetime: Lifetime.SINGLETON }),
     taskEventService: asClass(TaskEventService, { lifetime: Lifetime.SINGLETON }),
+    emailTemplateService: asClass(EmailTemplateService, { lifetime: Lifetime.SINGLETON }),
     emailService: asClass(EmailService, { lifetime: Lifetime.SINGLETON }),
     securityLogger: asClass(SecurityLoggerService, { lifetime: Lifetime.SINGLETON }),
     billingService: asClass(BillingService, { lifetime: Lifetime.SINGLETON }),
@@ -213,5 +222,8 @@ export default fp(async (fastify: FastifyInstance) => {
     instanceDiscoveryService: asClass(InstanceDiscoveryService, {
       lifetime: Lifetime.SINGLETON,
     }),
+    earlyAccessRepo: asClass(EarlyAccessRepository, { lifetime: Lifetime.SINGLETON }),
+    earlyAccessService: asClass(EarlyAccessService, { lifetime: Lifetime.SINGLETON }),
+    emailTemplatesRepo: asClass(EmailTemplatesRepository, { lifetime: Lifetime.SINGLETON }),
   });
 });

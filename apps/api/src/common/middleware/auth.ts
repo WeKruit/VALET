@@ -28,6 +28,7 @@ const PUBLIC_EXACT_PATHS = [
   "/api/v1/billing/webhook",
   "/api/v1/webhooks/ghosthands",
   "/api/v1/webhooks/ghosthands/deploy",
+  "/api/v1/early-access",
 ];
 
 const PUBLIC_PREFIX_PATHS = ["/api/v1/ws", "/docs"];

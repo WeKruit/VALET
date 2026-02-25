@@ -1,23 +1,27 @@
 import { initServer } from "@ts-rest/fastify";
 import { taskContract } from "@valet/contracts";
 import type { TaskResponse } from "@valet/shared/schemas";
+import { requireAbility } from "../../common/middleware/authorize.js";
 
 const s = initServer();
 
 export const taskRouter = s.router(taskContract, {
   queueStats: async ({ request }) => {
+    await requireAbility("read", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const stats = await taskService.getQueueStats();
     return { status: 200 as const, body: stats };
   },
 
   stats: async ({ request }) => {
+    await requireAbility("read", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const stats = await taskService.stats(request.userId);
     return { status: 200 as const, body: stats };
   },
 
   export: async ({ request, reply }) => {
+    await requireAbility("read", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const csv = await taskService.exportCsv(request.userId);
     reply.header("Content-Type", "text/csv");
@@ -26,36 +30,42 @@ export const taskRouter = s.router(taskContract, {
   },
 
   list: async ({ query, request }) => {
+    await requireAbility("read", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const result = await taskService.list(request.userId, query);
     return { status: 200, body: result };
   },
 
   getById: async ({ params, request }) => {
+    await requireAbility("read", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const task = await taskService.getById(params.id, request.userId);
     return { status: 200, body: task as TaskResponse };
   },
 
   create: async ({ body, request }) => {
+    await requireAbility("create", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const task = await taskService.create(body, request.userId);
     return { status: 201, body: task };
   },
 
   cancel: async ({ params, request }) => {
+    await requireAbility("update", "Task")(request);
     const { taskService } = request.diScope.cradle;
     await taskService.cancel(params.id, request.userId);
     return { status: 204, body: undefined };
   },
 
   approve: async ({ params, body, request }) => {
+    await requireAbility("update", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const task = await taskService.approve(params.id, request.userId, body.fieldOverrides);
     return { status: 200, body: task };
   },
 
   updateExternalStatus: async ({ params, body, request }) => {
+    await requireAbility("update", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const task = await taskService.updateExternalStatus(
       params.id,
@@ -66,6 +76,7 @@ export const taskRouter = s.router(taskContract, {
   },
 
   resolveBlocker: async ({ params, body, request }) => {
+    await requireAbility("update", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const result = await taskService.resolveBlocker(
       params.id,
@@ -79,12 +90,14 @@ export const taskRouter = s.router(taskContract, {
   },
 
   retry: async ({ params, request }) => {
+    await requireAbility("update", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const task = await taskService.retry(params.id, request.userId);
     return { status: 200, body: task };
   },
 
   getVncUrl: async ({ params, request }) => {
+    await requireAbility("read", "Task")(request);
     const { taskService } = request.diScope.cradle;
     const result = await taskService.getVncUrl(params.id, request.userId);
     if (!result) {

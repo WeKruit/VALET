@@ -127,6 +127,20 @@
       "when": 1745625600000,
       "tag": "0017_add_lifecycle_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1745712000000,
+      "tag": "0018_add_early_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1745798000000,
+      "tag": "0019_add_roles_and_email_templates",
+      "breakpoints": true
     }
   ]
 }

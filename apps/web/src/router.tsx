@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "./components/layout/app-layout";
 import { AuthGuard } from "./components/common/auth-guard";
 import { AdminGuard } from "./lib/guards/admin-guard";
@@ -52,6 +52,11 @@ const ApplyPage = lazy(() =>
 const OnboardingPage = lazy(() =>
   import("./features/onboarding/pages/onboarding-page").then((m) => ({
     default: m.OnboardingPage,
+  })),
+);
+const EarlyAccessPage = lazy(() =>
+  import("./features/early-access/pages/early-access-page").then((m) => ({
+    default: m.EarlyAccessPage,
   })),
 );
 const SettingsPage = lazy(() =>
@@ -119,6 +124,21 @@ const SecretsStatusPage = lazy(() =>
     default: m.SecretsStatusPage,
   })),
 );
+const OperationAdminLayout = lazy(() =>
+  import("./features/operation-admin/layout/operation-admin-layout").then((m) => ({
+    default: m.OperationAdminLayout,
+  })),
+);
+const EarlyAccessAdminPage = lazy(() =>
+  import("./features/operation-admin/pages/early-access-admin-page").then((m) => ({
+    default: m.EarlyAccessAdminPage,
+  })),
+);
+const EmailTemplatesAdminPage = lazy(() =>
+  import("./features/operation-admin/pages/email-templates-admin-page").then((m) => ({
+    default: m.EmailTemplatesAdminPage,
+  })),
+);
 
 function PageFallback() {
   return (
@@ -145,6 +165,15 @@ export function AppRouter() {
         <Route path="/legal/privacy" element={<PrivacyPolicyPage />} />
 
         {/* Auth-protected routes */}
+        <Route
+          path="/early-access"
+          element={
+            <AuthGuard>
+              <EarlyAccessPage />
+            </AuthGuard>
+          }
+        />
+
         <Route
           path="/onboarding/*"
           element={
@@ -239,6 +268,20 @@ export function AppRouter() {
               </AdminGuard>
             }
           />
+
+          {/* Operation Admin routes */}
+          <Route
+            path="/operation-admin"
+            element={
+              <AdminGuard>
+                <OperationAdminLayout />
+              </AdminGuard>
+            }
+          >
+            <Route index element={<Navigate to="early-access" replace />} />
+            <Route path="early-access" element={<EarlyAccessAdminPage />} />
+            <Route path="email-templates" element={<EmailTemplatesAdminPage />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

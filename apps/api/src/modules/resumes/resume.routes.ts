@@ -2,6 +2,7 @@ import { initServer } from "@ts-rest/fastify";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { resumeCrudContract } from "@valet/contracts";
 import type { ResumeResponse } from "@valet/shared/schemas";
+import { requireAbility } from "../../common/middleware/authorize.js";
 
 const s = initServer();
 
@@ -29,31 +30,45 @@ function toResumeResponse(row: Record<string, unknown>): ResumeResponse {
  */
 export const resumeRouter = s.router(resumeCrudContract, {
   list: async ({ request }) => {
+    await requireAbility("read", "Resume")(request);
     const { resumeService } = request.diScope.cradle;
     const resumes = await resumeService.listByUser(request.userId);
-    return { status: 200 as const, body: { data: resumes.map((r) => toResumeResponse(r as unknown as Record<string, unknown>)) } };
+    return {
+      status: 200 as const,
+      body: { data: resumes.map((r) => toResumeResponse(r as unknown as Record<string, unknown>)) },
+    };
   },
 
   getById: async ({ params, request }) => {
+    await requireAbility("read", "Resume")(request);
     const { resumeService } = request.diScope.cradle;
     const resume = await resumeService.getById(params.id, request.userId);
-    return { status: 200 as const, body: toResumeResponse(resume as unknown as Record<string, unknown>) };
+    return {
+      status: 200 as const,
+      body: toResumeResponse(resume as unknown as Record<string, unknown>),
+    };
   },
 
   delete: async ({ params, request }) => {
+    await requireAbility("delete", "Resume")(request);
     const { resumeService } = request.diScope.cradle;
     await resumeService.delete(params.id, request.userId);
     return { status: 204 as const, body: undefined };
   },
 
   setDefault: async ({ params, request }) => {
+    await requireAbility("update", "Resume")(request);
     const { resumeService } = request.diScope.cradle;
     await resumeService.setDefault(params.id, request.userId);
     const resume = await resumeService.getById(params.id, request.userId);
-    return { status: 200 as const, body: toResumeResponse(resume as unknown as Record<string, unknown>) };
+    return {
+      status: 200 as const,
+      body: toResumeResponse(resume as unknown as Record<string, unknown>),
+    };
   },
 
   retryParse: async ({ params, request }) => {
+    await requireAbility("update", "Resume")(request);
     const { resumeService } = request.diScope.cradle;
     const result = await resumeService.retryParse(params.id, request.userId);
     return { status: 202 as const, body: result };
@@ -66,37 +81,38 @@ export const resumeRouter = s.router(resumeCrudContract, {
  * body without interference from ts-rest's JSON body parser.
  */
 export async function resumeUploadRoute(fastify: FastifyInstance) {
-  fastify.post(
-    "/api/v1/resumes/upload",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const { resumeService } = request.diScope.cradle;
+  fastify.post("/api/v1/resumes/upload", async (request: FastifyRequest, reply: FastifyReply) => {
+    await requireAbility("create", "Resume")(request);
+    const { resumeService } = request.diScope.cradle;
 
-      const file = await request.file();
-      if (!file) {
-        return reply.status(400).send({
-          error: "BAD_REQUEST",
-          message: "No file provided",
-        });
-      }
-
-      const buffer = await file.toBuffer();
-
-      let resume;
-      try {
-        resume = await resumeService.upload(request.userId, {
-          filename: file.filename,
-          data: buffer,
-          mimetype: file.mimetype,
-        });
-      } catch (err) {
-        request.log.error({ err, filename: file.filename, mimetype: file.mimetype }, "Resume upload failed");
-        throw err;
-      }
-
-      return reply.status(202).send({
-        id: resume.id,
-        status: resume.status,
+    const file = await request.file();
+    if (!file) {
+      return reply.status(400).send({
+        error: "BAD_REQUEST",
+        message: "No file provided",
       });
-    },
-  );
+    }
+
+    const buffer = await file.toBuffer();
+
+    let resume;
+    try {
+      resume = await resumeService.upload(request.userId, {
+        filename: file.filename,
+        data: buffer,
+        mimetype: file.mimetype,
+      });
+    } catch (err) {
+      request.log.error(
+        { err, filename: file.filename, mimetype: file.mimetype },
+        "Resume upload failed",
+      );
+      throw err;
+    }
+
+    return reply.status(202).send({
+      id: resume.id,
+      status: resume.status,
+    });
+  });
 }

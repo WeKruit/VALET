@@ -10,13 +10,9 @@ export function PublicHeader() {
       <div className="mx-auto flex max-w-[var(--wk-max-width)] items-center justify-between px-4 md:px-6 py-3 md:py-4">
         <Link to="/" className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-[var(--wk-radius-xl)] bg-[var(--wk-text-primary)]">
-            <span className="text-base font-bold text-[var(--wk-surface-page)]">
-              V
-            </span>
+            <span className="text-base font-bold text-[var(--wk-surface-page)]">V</span>
           </div>
-          <span className="font-display text-xl font-semibold tracking-tight">
-            WeKruit Valet
-          </span>
+          <span className="font-display text-xl font-semibold tracking-tight">WeKruit Valet</span>
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
@@ -51,7 +47,7 @@ export function PublicHeader() {
                 <Link to="/login">Sign in</Link>
               </Button>
               <Button asChild size="sm" variant="cta" className="hidden sm:inline-flex">
-                <Link to="/login">Get Started</Link>
+                <Link to="/login">Join Waitlist</Link>
               </Button>
             </>
           )}

@@ -1,6 +1,7 @@
 import { initServer } from "@ts-rest/fastify";
 import type { FastifyInstance } from "fastify";
 import { billingContract } from "@valet/contracts";
+import { requireAbility } from "../../common/middleware/authorize.js";
 
 const s = initServer();
 
@@ -9,6 +10,7 @@ const s = initServer();
  */
 export const billingRouter = s.router(billingContract, {
   createCheckoutSession: async ({ body, request }) => {
+    await requireAbility("read", "Settings")(request);
     const { billingService } = request.diScope.cradle;
 
     const url = await billingService.createCheckoutSession(
@@ -22,17 +24,16 @@ export const billingRouter = s.router(billingContract, {
   },
 
   createPortalSession: async ({ body, request }) => {
+    await requireAbility("read", "Settings")(request);
     const { billingService } = request.diScope.cradle;
 
-    const url = await billingService.createPortalSession(
-      request.userId,
-      body.returnUrl,
-    );
+    const url = await billingService.createPortalSession(request.userId, body.returnUrl);
 
     return { status: 200, body: { url } };
   },
 
   getStatus: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { billingService } = request.diScope.cradle;
 
     const status = await billingService.getBillingStatus(request.userId);
@@ -40,23 +41,19 @@ export const billingRouter = s.router(billingContract, {
   },
 
   createPaypalOrder: async ({ body, request }) => {
+    await requireAbility("read", "Settings")(request);
     const { billingService } = request.diScope.cradle;
 
-    const orderId = await billingService.createPaypalOrder(
-      request.userId,
-      body.priceId,
-    );
+    const orderId = await billingService.createPaypalOrder(request.userId, body.priceId);
 
     return { status: 200, body: { orderId } };
   },
 
   capturePaypalOrder: async ({ body, request }) => {
+    await requireAbility("read", "Settings")(request);
     const { billingService } = request.diScope.cradle;
 
-    const result = await billingService.capturePaypalOrder(
-      request.userId,
-      body.orderId,
-    );
+    const result = await billingService.capturePaypalOrder(request.userId, body.orderId);
 
     return { status: 200, body: result };
   },
@@ -87,9 +84,7 @@ export async function billingWebhookRoute(fastify: FastifyInstance) {
 
       // Fastify raw body — the request body is the raw string
       const rawBody =
-        typeof request.body === "string"
-          ? request.body
-          : JSON.stringify(request.body);
+        typeof request.body === "string" ? request.body : JSON.stringify(request.body);
 
       try {
         await billingService.handleWebhook(rawBody, signature);
