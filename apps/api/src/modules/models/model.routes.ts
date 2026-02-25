@@ -1,6 +1,7 @@
 import { initServer } from "@ts-rest/fastify";
 import { modelContract } from "@valet/contracts";
 import type { GHModelCatalog } from "../ghosthands/ghosthands.types.js";
+import { requireAbility } from "../../common/middleware/authorize.js";
 
 const s = initServer();
 
@@ -10,6 +11,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export const modelRouter = s.router(modelContract, {
   getModels: async ({ request }) => {
+    await requireAbility("read", "Settings")(request);
     const { ghosthandsClient, logger } = request.diScope.cradle;
 
     const now = Date.now();

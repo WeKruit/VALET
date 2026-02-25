@@ -13,6 +13,7 @@ import { dashboardContract } from "./dashboard.js";
 import { notificationContract } from "./notifications.js";
 import { sandboxContract } from "./sandbox.js";
 import { modelContract } from "./models.js";
+import { earlyAccessContract } from "./early-access.js";
 
 const c = initContract();
 
@@ -31,6 +32,7 @@ export const apiContract = c.router({
   notifications: notificationContract,
   sandboxes: sandboxContract,
   models: modelContract,
+  earlyAccess: earlyAccessContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -50,4 +52,5 @@ export {
   notificationContract,
   sandboxContract,
   modelContract,
+  earlyAccessContract,
 };

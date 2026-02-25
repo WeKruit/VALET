@@ -14,3 +14,4 @@ export * from "./notification.schema.js";
 export * from "./sandbox.schema.js";
 export * from "./sandbox-secret.schema.js";
 export * from "./session.schema.js";
+export * from "./early-access.schema.js";

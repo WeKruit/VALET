@@ -67,6 +67,15 @@ const ROUTE_LIMITS: RouteLimit[] = [
     keyPrefix: "rl:qa-discover",
     message: "Q&A discover limit reached. Maximum 10 per hour.",
   },
+  {
+    path: "/api/v1/early-access",
+    method: "POST",
+    max: 3,
+    windowSecs: 3600,
+    keyPrefix: "rl:early-access",
+    message: "Too many waitlist submissions. Try again later.",
+    keyByIp: true,
+  },
 ];
 
 /**
@@ -75,57 +84,46 @@ const ROUTE_LIMITS: RouteLimit[] = [
  * has populated request.userId.
  */
 export async function registerRouteRateLimits(fastify: FastifyInstance) {
-  fastify.addHook(
-    "onRequest",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      for (const limit of ROUTE_LIMITS) {
-        if (
-          request.method !== limit.method ||
-          request.url.split("?")[0] !== limit.path
-        ) {
-          continue;
-        }
-
-        const id = limit.keyByIp
-          ? request.ip
-          : (request.userId ?? request.ip);
-        const key = `${limit.keyPrefix}:${id}`;
-
-        const redis = request.server.redis;
-        const count = await redis.incr(key);
-        if (count === 1) {
-          await redis.expire(key, limit.windowSecs);
-        }
-
-        if (count > limit.max) {
-          try {
-            const { securityLogger } = request.diScope.cradle;
-            securityLogger.logEvent(SECURITY_EVENT_TYPES.RATE_LIMIT_HIT, {
-              userId: request.userId,
-              ip: request.ip,
-              userAgent: request.headers["user-agent"],
-              path: limit.path,
-              method: limit.method,
-              reason: limit.message,
-            });
-          } catch {
-            request.log.warn(
-              { security: true, event: SECURITY_EVENT_TYPES.RATE_LIMIT_HIT, path: limit.path },
-              `Security event: ${SECURITY_EVENT_TYPES.RATE_LIMIT_HIT}`,
-            );
-          }
-          reply
-            .code(429)
-            .header("Retry-After", String(limit.windowSecs))
-            .send({
-              error: "RATE_LIMIT_EXCEEDED",
-              message: limit.message,
-            });
-          return;
-        }
-
-        break;
+  fastify.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
+    for (const limit of ROUTE_LIMITS) {
+      if (request.method !== limit.method || request.url.split("?")[0] !== limit.path) {
+        continue;
       }
-    },
-  );
+
+      const id = limit.keyByIp ? request.ip : (request.userId ?? request.ip);
+      const key = `${limit.keyPrefix}:${id}`;
+
+      const redis = request.server.redis;
+      const count = await redis.incr(key);
+      if (count === 1) {
+        await redis.expire(key, limit.windowSecs);
+      }
+
+      if (count > limit.max) {
+        try {
+          const { securityLogger } = request.diScope.cradle;
+          securityLogger.logEvent(SECURITY_EVENT_TYPES.RATE_LIMIT_HIT, {
+            userId: request.userId,
+            ip: request.ip,
+            userAgent: request.headers["user-agent"],
+            path: limit.path,
+            method: limit.method,
+            reason: limit.message,
+          });
+        } catch {
+          request.log.warn(
+            { security: true, event: SECURITY_EVENT_TYPES.RATE_LIMIT_HIT, path: limit.path },
+            `Security event: ${SECURITY_EVENT_TYPES.RATE_LIMIT_HIT}`,
+          );
+        }
+        reply.code(429).header("Retry-After", String(limit.windowSecs)).send({
+          error: "RATE_LIMIT_EXCEEDED",
+          message: limit.message,
+        });
+        return;
+      }
+
+      break;
+    }
+  });
 }

@@ -14,6 +14,7 @@ import containerPlugin from "./plugins/container.js";
 import startupValidatorPlugin from "./plugins/startup-validator.js";
 import securityPlugin from "./plugins/security.js";
 import swaggerPlugin from "./plugins/swagger.js";
+import caslPlugin from "./plugins/casl.js";
 import { registerWebSocket } from "./websocket/handler.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { taskRouter } from "./modules/tasks/task.routes.js";
@@ -37,6 +38,7 @@ import { secretsAdminRoutes } from "./modules/secrets/secrets.admin-routes.js";
 import { syncAdminRoutes } from "./modules/sync/sync.routes.js";
 import { taskUserRoutes } from "./modules/tasks/task.user-routes.js";
 import { taskEventsSSERoutes } from "./modules/tasks/task-events-sse.routes.js";
+import { earlyAccessRouter } from "./modules/early-access/early-access.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -75,6 +77,7 @@ export async function buildApp() {
 
   // Auth middleware
   fastify.addHook("onRequest", authMiddleware);
+  await fastify.register(caslPlugin);
   fastify.addHook("onRequest", requestLogger);
 
   // Per-route rate limits (after auth so request.userId is available)
@@ -124,6 +127,7 @@ export async function buildApp() {
   fastify.register(s.plugin(notificationRouter));
   fastify.register(s.plugin(sandboxRouter));
   fastify.register(s.plugin(modelRouter));
+  fastify.register(s.plugin(earlyAccessRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
