@@ -1268,9 +1268,13 @@ export class TaskService {
   /**
    * WEK-147: Get the VNC live-view URL for the worker running this task.
    * Priority:
-   *   1. kasm_url from GH callback metadata (direct KasmVNC on EC2 worker, https://{IP}:6901)
+   *   1. kasm_url from GH callback metadata — detects URL shape:
+   *      - Contains :6901 → direct KasmVNC (type "kasmvnc", HTTPS via snakeoil cert)
+   *      - Starts with / or /#/ → legacy Kasm Workspaces relative path (resolved via KASM_API_URL)
+   *      - Contains /api/public → legacy Kasm Workspaces absolute URL (type "kasm")
+   *      - Other absolute → treated as direct KasmVNC (type "kasmvnc")
    *   2. Construct from sandbox publicIp (https://{IP}:6901) if no callback URL yet
-   *   3. Fallback to sandbox.novncUrl for backward compat
+   *   3. Fallback to sandbox.novncUrl for backward compat (type "novnc")
    */
   async getVncUrl(
     taskId: string,
@@ -1287,7 +1291,23 @@ export class TaskService {
         const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
         const kasmUrl = ghJob?.metadata?.kasm_url as string | undefined;
         if (kasmUrl) {
-          return { url: kasmUrl, readOnly, type: "kasmvnc" };
+          // Detect type from URL shape
+          if (kasmUrl.includes(":6901")) {
+            // Direct KasmVNC on ASG worker (https://{IP}:6901)
+            return { url: kasmUrl, readOnly, type: "kasmvnc" };
+          }
+          if (kasmUrl.startsWith("/#/") || kasmUrl.startsWith("/")) {
+            // Legacy Kasm Workspaces relative path — resolve against KASM_API_URL
+            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "");
+            if (kasmBase) {
+              return { url: `${kasmBase}${kasmUrl}`, readOnly, type: "kasm" };
+            }
+            this.logger.warn({ taskId }, "KASM_API_URL not set — cannot resolve relative kasm_url");
+          } else {
+            // Absolute URL — treat as legacy Kasm Workspaces if it contains /api/public
+            const type = kasmUrl.includes("/api/public") ? "kasm" : "kasmvnc";
+            return { url: kasmUrl, readOnly, type };
+          }
         }
       } catch {
         // Fall through to sandbox-based lookup
