@@ -9,15 +9,17 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 
-const registerSchema = z.object({
-  name: z.string().min(1, "Name is required").max(255),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters").max(128),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords do not match",
-  path: ["confirmPassword"],
-});
+const registerSchema = z
+  .object({
+    name: z.string().min(1, "Name is required").max(255),
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(8, "Password must be at least 8 characters").max(128),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 type RegisterForm = z.infer<typeof registerSchema>;
 
@@ -29,6 +31,7 @@ export function RegisterPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<RegisterForm>({
+    // @ts-expect-error -- ts-rest deep type inference causes TS2589
     resolver: zodResolver(registerSchema),
   });
 
@@ -62,7 +65,8 @@ export function RegisterPage() {
             <div className="space-y-4 text-center">
               <h2 className="text-lg font-semibold">Check your email</h2>
               <p className="text-sm text-[var(--wk-text-secondary)]">
-                We sent a verification link to your email address. Please click the link to activate your account.
+                We sent a verification link to your email address. Please click the link to activate
+                your account.
               </p>
               <Link
                 to="/login"
@@ -86,9 +90,7 @@ export function RegisterPage() {
             <span className="text-2xl font-bold text-[var(--wk-surface-page)]">V</span>
           </div>
           <div className="text-center">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">
-              Create account
-            </h1>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Create account</h1>
             <p className="mt-2 text-sm text-[var(--wk-text-secondary)]">
               Get started with WeKruit Valet
             </p>
@@ -102,30 +104,16 @@ export function RegisterPage() {
               <label htmlFor="name" className="text-sm font-medium">
                 Full name
               </label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="Jane Smith"
-                {...register("name")}
-              />
-              {errors.name && (
-                <p className="text-xs text-red-500">{errors.name.message}</p>
-              )}
+              <Input id="name" type="text" placeholder="Jane Smith" {...register("name")} />
+              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
             </div>
 
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium">
                 Email
               </label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                {...register("email")}
-              />
-              {errors.email && (
-                <p className="text-xs text-red-500">{errors.email.message}</p>
-              )}
+              <Input id="email" type="email" placeholder="you@example.com" {...register("email")} />
+              {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
             </div>
 
             <div className="space-y-2">
@@ -138,9 +126,7 @@ export function RegisterPage() {
                 placeholder="Min. 8 characters"
                 {...register("password")}
               />
-              {errors.password && (
-                <p className="text-xs text-red-500">{errors.password.message}</p>
-              )}
+              {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
             </div>
 
             <div className="space-y-2">

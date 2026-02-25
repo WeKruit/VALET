@@ -24,6 +24,7 @@ export function EarlyAccessForm() {
     handleSubmit,
     formState: { errors },
   } = useForm<EarlyAccessFormValues>({
+    // @ts-expect-error -- ts-rest deep type inference causes TS2589
     resolver: zodResolver(earlyAccessFormSchema),
   });
 

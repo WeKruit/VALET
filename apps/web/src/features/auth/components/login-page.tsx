@@ -79,6 +79,7 @@ export function LoginPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<LoginForm>({
+    // @ts-expect-error -- ts-rest deep type inference causes TS2589
     resolver: zodResolver(loginSchema),
   });
 

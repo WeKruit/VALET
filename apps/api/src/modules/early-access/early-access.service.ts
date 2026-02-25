@@ -34,4 +34,60 @@ export class EarlyAccessService {
       position: count,
     };
   }
+
+  async listSubmissions(opts: {
+    page: number;
+    limit: number;
+    emailStatus?: string;
+    search?: string;
+  }) {
+    return this.earlyAccessRepo.list(opts);
+  }
+
+  async getStats() {
+    return this.earlyAccessRepo.getStats();
+  }
+
+  async promoteToBeta(id: string) {
+    const submission = await this.earlyAccessRepo.getById(id);
+    if (!submission) {
+      throw AppError.notFound("Early access submission not found");
+    }
+
+    // Update status to promoted
+    await this.earlyAccessRepo.updateEmailStatus(id, "promoted", new Date());
+
+    // Fire-and-forget beta welcome email
+    this.emailService.sendWelcome(submission.email, submission.name).catch(() => {});
+
+    return { message: `Promoted ${submission.email} to beta access` };
+  }
+
+  async resendEmail(id: string) {
+    const submission = await this.earlyAccessRepo.getById(id);
+    if (!submission) {
+      throw AppError.notFound("Early access submission not found");
+    }
+
+    const count = await this.earlyAccessRepo.countAll();
+
+    // Re-send confirmation email
+    await this.emailService.sendEarlyAccessConfirmation(submission.email, submission.name, count);
+
+    // Update email status
+    await this.earlyAccessRepo.updateEmailStatus(id, "sent", new Date());
+
+    return { message: `Resent confirmation email to ${submission.email}` };
+  }
+
+  async removeSubmission(id: string) {
+    const submission = await this.earlyAccessRepo.getById(id);
+    if (!submission) {
+      throw AppError.notFound("Early access submission not found");
+    }
+
+    await this.earlyAccessRepo.deleteById(id);
+
+    return { message: `Removed ${submission.email} from early access list` };
+  }
 }

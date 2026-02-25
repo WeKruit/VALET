@@ -16,6 +16,7 @@ import {
   Activity,
   Cpu,
   KeyRound,
+  Megaphone,
 } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
 import { useUIStore } from "@/stores/ui.store";
@@ -38,6 +39,7 @@ const adminNavItems = [
   { path: "/admin/sessions", label: "Sessions", icon: Globe },
   { path: "/admin/workers", label: "Workers", icon: Cpu },
   { path: "/admin/secrets", label: "Secrets", icon: KeyRound },
+  { path: "/operation-admin", label: "Operations", icon: Megaphone },
 ];
 
 interface SidebarContentProps {

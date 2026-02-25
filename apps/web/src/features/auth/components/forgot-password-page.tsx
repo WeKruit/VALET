@@ -23,6 +23,7 @@ export function ForgotPasswordPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<ForgotPasswordForm>({
+    // @ts-expect-error -- ts-rest deep type inference causes TS2589
     resolver: zodResolver(forgotPasswordSchema),
   });
 
@@ -52,7 +53,8 @@ export function ForgotPasswordPage() {
             <div className="space-y-4 text-center">
               <h2 className="text-lg font-semibold">Check your email</h2>
               <p className="text-sm text-[var(--wk-text-secondary)]">
-                If an account exists with that email, we sent a password reset link. Please check your inbox.
+                If an account exists with that email, we sent a password reset link. Please check
+                your inbox.
               </p>
               <Link
                 to="/login"
@@ -76,9 +78,7 @@ export function ForgotPasswordPage() {
             <span className="text-2xl font-bold text-[var(--wk-surface-page)]">V</span>
           </div>
           <div className="text-center">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">
-              Forgot password
-            </h1>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Forgot password</h1>
             <p className="mt-2 text-sm text-[var(--wk-text-secondary)]">
               Enter your email and we'll send you a reset link
             </p>
@@ -92,26 +92,12 @@ export function ForgotPasswordPage() {
               <label htmlFor="email" className="text-sm font-medium">
                 Email
               </label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                {...register("email")}
-              />
-              {errors.email && (
-                <p className="text-xs text-red-500">{errors.email.message}</p>
-              )}
+              <Input id="email" type="email" placeholder="you@example.com" {...register("email")} />
+              {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
             </div>
 
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full"
-              disabled={forgotMutation.isPending}
-            >
-              {forgotMutation.isPending ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : null}
+            <Button type="submit" size="lg" className="w-full" disabled={forgotMutation.isPending}>
+              {forgotMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
               {forgotMutation.isPending ? "Sending..." : "Send reset link"}
             </Button>
           </form>
