@@ -16,7 +16,7 @@ interface LiveViewProps {
   isVisible: boolean;
   onToggle: () => void;
   readOnly?: boolean;
-  type?: "novnc" | "kasm";
+  type?: "novnc" | "kasm" | "kasmvnc";
 }
 
 export function LiveView({
@@ -39,10 +39,12 @@ export function LiveView({
   }
 
   const isKasm = type === "kasm";
+  const isKasmVnc = type === "kasmvnc";
   // WEK-183: Feature flag — inline iframe requires kasm.wekruit.dev domain + real cert.
-  // Until then, default to new-tab for Kasm sessions.
+  // Until then, default to new-tab for Kasm/KasmVNC sessions with self-signed certs.
   const kasmInlineEnabled = import.meta.env.VITE_KASM_INLINE_IFRAME === "true";
   const useKasmIframe = isKasm && kasmInlineEnabled;
+  const useKasmVncIframe = isKasmVnc && kasmInlineEnabled;
 
   return (
     <Card>
@@ -53,7 +55,7 @@ export function LiveView({
             <CardTitle className="text-lg">Live View</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            {isVisible && (!isKasm || useKasmIframe) && (
+            {isVisible && (!isKasm || useKasmIframe) && (!isKasmVnc || useKasmVncIframe) && (
               <>
                 {!readOnly && !isKasm && (
                   <Button
@@ -106,7 +108,7 @@ export function LiveView({
         </div>
       </CardHeader>
       {isVisible &&
-        (isKasm && !useKasmIframe ? (
+        ((isKasm && !useKasmIframe) || (isKasmVnc && !useKasmVncIframe) ? (
           <CardContent>
             <div className="flex flex-col items-center justify-center gap-4 py-8 rounded-[var(--wk-radius-md)] border border-[var(--wk-border-primary)] bg-[var(--wk-bg-secondary)]">
               <Monitor className="h-12 w-12 text-[var(--wk-text-tertiary)]" />
@@ -139,18 +141,25 @@ export function LiveView({
             >
               <div className="aspect-video">
                 <iframe
-                  key={useKasmIframe ? "kasm" : String(viewOnly)}
-                  src={useKasmIframe ? url : iframeUrl}
-                  title={useKasmIframe ? "Kasm Live View" : "noVNC Live View"}
+                  key={useKasmIframe || useKasmVncIframe ? "kasm" : String(viewOnly)}
+                  src={useKasmIframe || useKasmVncIframe ? url : iframeUrl}
+                  title={
+                    useKasmIframe
+                      ? "Kasm Live View"
+                      : useKasmVncIframe
+                        ? "KasmVNC Live View"
+                        : "noVNC Live View"
+                  }
                   className="h-full w-full border-0"
                   allow="clipboard-read; clipboard-write"
-                  {...(!useKasmIframe && {
-                    sandbox: "allow-scripts allow-same-origin allow-popups allow-forms",
-                  })}
+                  {...(!useKasmIframe &&
+                    !useKasmVncIframe && {
+                      sandbox: "allow-scripts allow-same-origin allow-popups allow-forms",
+                    })}
                 />
               </div>
             </div>
-            {useKasmIframe ? (
+            {useKasmIframe || useKasmVncIframe ? (
               <div className="mt-2 flex items-center justify-between">
                 <p className="text-xs text-[var(--wk-text-tertiary)]">
                   Watching browser automation in real time
