@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type {
@@ -17,8 +16,6 @@ import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.
 import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
 import { QUEUE_APPLY_JOB, type TaskQueueService } from "./task-queue.service.js";
 import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
-import type { KasmClient } from "../sandboxes/kasm/kasm.client.js";
-import type { SecretsSyncService } from "../secrets/secrets-sync.service.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -62,8 +59,6 @@ export class TaskService {
   private redis: Redis;
   private logger: FastifyBaseLogger;
   private sandboxRepo: SandboxRepository;
-  private kasmClient: KasmClient | null;
-  private secretsSyncService: SecretsSyncService;
 
   constructor({
     taskRepo,
@@ -77,8 +72,6 @@ export class TaskService {
     redis,
     logger,
     sandboxRepo,
-    kasmClient,
-    secretsSyncService,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -91,8 +84,6 @@ export class TaskService {
     redis: Redis;
     logger: FastifyBaseLogger;
     sandboxRepo: SandboxRepository;
-    kasmClient?: KasmClient;
-    secretsSyncService: SecretsSyncService;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -105,8 +96,6 @@ export class TaskService {
     this.redis = redis;
     this.logger = logger;
     this.sandboxRepo = sandboxRepo;
-    this.kasmClient = kasmClient ?? null;
-    this.secretsSyncService = secretsSyncService;
   }
 
   async getById(id: string, userId: string) {
@@ -318,133 +307,6 @@ export class TaskService {
     }
   }
 
-  /**
-   * Check if Kasm is configured and enabled.
-   * Kasm is used only when KASM_ENABLED=true and KasmClient is available.
-   */
-  private isKasmEnabled(): boolean {
-    return (
-      process.env.KASM_ENABLED === "true" &&
-      this.kasmClient !== null &&
-      this.kasmClient !== undefined
-    );
-  }
-
-  /**
-   * WEK-147: Create a Kasm session for a task (optional).
-   * When Kasm is enabled, creates a live VNC session for browser visibility.
-   * Reads env vars from AWS Secrets Manager and injects them into the Kasm session.
-   *
-   * Throws on failure — callers should catch and fall back to general queue.
-   *
-   * @returns Kasm worker ID (used as targetWorkerId for queue routing) and session info
-   */
-  private async createKasmSession(
-    taskId: string,
-    ghJob: { id: string; metadata?: Record<string, unknown> | null },
-  ): Promise<{ kasmWorkerId: string; kasmId: string; kasmUrl: string }> {
-    if (!this.kasmClient) {
-      throw new Error("KasmClient not configured — cannot create Kasm session");
-    }
-
-    // Read env vars from AWS Secrets Manager (throws if SM unreachable)
-    const smVars = await this.secretsSyncService.readGhWorkerEnvVars();
-
-    const kasmWorkerId = crypto.randomUUID();
-
-    // Build env: SM vars + task-specific overrides
-    const kasmEnv: Record<string, string> = {};
-    for (const [key, value] of smVars) {
-      kasmEnv[key] = value;
-    }
-    // Override with task-specific values
-    kasmEnv.GH_WORKER_ID = kasmWorkerId;
-    kasmEnv.JOB_DISPATCH_MODE = "queue";
-    kasmEnv.MAX_CONCURRENT_JOBS = "1";
-    kasmEnv.GH_HEADLESS = "false";
-    kasmEnv.GHOSTHANDS_CALLBACK_URL = buildCallbackUrl();
-
-    const kasmResponse = await this.kasmClient.requestKasm({
-      image_id: process.env.KASM_DEFAULT_IMAGE_ID ?? "",
-      user_id: process.env.KASM_DEFAULT_USER_ID ?? "",
-      environment: kasmEnv,
-    });
-
-    // EC4: Poll session status to verify boot (up to 3 attempts, 2s delay).
-    // If Kasm doesn't reach "running", destroy the session and fall back.
-    const BOOT_POLL_ATTEMPTS = 5;
-    const BOOT_POLL_DELAY_MS = 2000;
-    let kasmBooted = false;
-
-    for (let attempt = 1; attempt <= BOOT_POLL_ATTEMPTS; attempt++) {
-      try {
-        const statusResp = await this.kasmClient.getKasmStatus(kasmResponse.kasm_id);
-        const opStatus = statusResp.kasm?.operational_status ?? statusResp.kasm?.status;
-        if (opStatus === "running") {
-          kasmBooted = true;
-          break;
-        }
-        this.logger.debug(
-          { taskId, kasmId: kasmResponse.kasm_id, attempt, opStatus },
-          "Kasm session not yet running, polling again",
-        );
-      } catch (err) {
-        this.logger.debug(
-          { err, taskId, kasmId: kasmResponse.kasm_id, attempt },
-          "Failed to poll Kasm session status",
-        );
-      }
-      if (attempt < BOOT_POLL_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, BOOT_POLL_DELAY_MS));
-      }
-    }
-
-    if (!kasmBooted) {
-      this.logger.warn(
-        { taskId, kasmId: kasmResponse.kasm_id },
-        "Kasm session failed to reach running state — destroying and falling back to general queue",
-      );
-      try {
-        await this.kasmClient.destroyKasm(kasmResponse.kasm_id);
-      } catch (destroyErr) {
-        this.logger.warn(
-          { err: destroyErr, kasmId: kasmResponse.kasm_id },
-          "Failed to destroy unbooted Kasm session (may already be gone)",
-        );
-      }
-      // Signal to caller that Kasm is unavailable — fall back to general queue
-      throw new Error("Kasm session failed to boot within timeout");
-    }
-
-    // Store Kasm session info in gh_automation_jobs metadata
-    await this.ghJobRepo.updateStatus(ghJob.id, {
-      status: "queued",
-      metadata: {
-        ...(ghJob.metadata ?? {}),
-        kasm_id: kasmResponse.kasm_id,
-        kasm_url: kasmResponse.kasm_url,
-        kasm_session_token: kasmResponse.session_token,
-        kasm_worker_id: kasmWorkerId,
-      },
-    });
-
-    this.logger.info(
-      {
-        taskId,
-        kasmId: kasmResponse.kasm_id,
-        kasmWorkerId,
-        kasmUrlPrefix: kasmResponse.kasm_url?.slice(0, 30),
-      },
-      "Created Kasm session for task",
-    );
-
-    return {
-      kasmWorkerId,
-      kasmId: kasmResponse.kasm_id,
-      kasmUrl: kasmResponse.kasm_url,
-    };
-  }
-
   async list(
     userId: string,
     query: {
@@ -620,27 +482,7 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Optionally create Kasm session for live VNC view.
-        // Falls back to general queue (ASG worker) if Kasm is disabled or fails.
-        let kasmWorkerId: string | undefined;
-        if (this.isKasmEnabled()) {
-          try {
-            const kasmResult = await this.createKasmSession(task.id, ghJob);
-            kasmWorkerId = kasmResult.kasmWorkerId;
-
-            // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
-            const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-            if (refreshedJob) ghJob = refreshedJob;
-          } catch (err) {
-            this.logger.warn(
-              { err, taskId: task.id },
-              "Kasm session creation failed — falling back to general queue",
-            );
-            // Continue without Kasm — job goes to general queue
-          }
-        }
-
-        // Enqueue: targeted queue if Kasm worker is available, general queue otherwise
+        // WEK-147: Jobs go to general queue — every ASG worker has KasmVNC built in.
         const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
           {
             ghJobId: ghJob.id,
@@ -651,20 +493,16 @@ export class TaskService {
             jobType: "apply",
             callbackUrl,
           },
-          { targetWorkerId: kasmWorkerId },
+          {},
         );
 
-        // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = kasmWorkerId
-          ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}`
-          : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
             status: "queued",
             metadata: {
               ...(ghJob.metadata ?? {}),
               pgBossJobId,
-              pgBossQueueName,
+              pgBossQueueName: QUEUE_APPLY_JOB,
             },
           });
         }
@@ -859,23 +697,7 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Optionally create Kasm session for live VNC view.
-        let kasmWorkerId: string | undefined;
-        if (this.isKasmEnabled()) {
-          try {
-            const kasmResult = await this.createKasmSession(task.id, ghJob);
-            kasmWorkerId = kasmResult.kasmWorkerId;
-
-            const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-            if (refreshedJob) ghJob = refreshedJob;
-          } catch (err) {
-            this.logger.warn(
-              { err, taskId: task.id },
-              "Kasm session creation failed for test task — falling back to general queue",
-            );
-          }
-        }
-
+        // WEK-147: Jobs go to general queue — every ASG worker has KasmVNC built in.
         const pgBossJobId = await this.taskQueueService.enqueueGenericTask(
           {
             ghJobId: ghJob.id,
@@ -886,20 +708,16 @@ export class TaskService {
             taskDescription,
             callbackUrl,
           },
-          { targetWorkerId: kasmWorkerId },
+          {},
         );
 
-        // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = kasmWorkerId
-          ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}`
-          : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
             status: "queued",
             metadata: {
               ...(ghJob.metadata ?? {}),
               pgBossJobId,
-              pgBossQueueName,
+              pgBossQueueName: QUEUE_APPLY_JOB,
             },
           });
         }
@@ -1014,23 +832,7 @@ export class TaskService {
         },
       });
 
-      // WEK-147: Optionally create Kasm session for live VNC view.
-      let kasmWorkerId: string | undefined;
-      if (this.isKasmEnabled()) {
-        try {
-          const kasmResult = await this.createKasmSession(id, ghJob);
-          kasmWorkerId = kasmResult.kasmWorkerId;
-
-          const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-          if (refreshedJob) ghJob = refreshedJob;
-        } catch (err) {
-          this.logger.warn(
-            { err, taskId: id },
-            "Kasm session creation failed on retry — falling back to general queue",
-          );
-        }
-      }
-
+      // WEK-147: Jobs go to general queue — every ASG worker has KasmVNC built in.
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
           ghJobId: ghJob.id,
@@ -1041,22 +843,19 @@ export class TaskService {
           jobType: "apply",
           callbackUrl,
         },
-        { targetWorkerId: kasmWorkerId },
+        {},
       );
 
-      // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-      const pgBossQueueName = kasmWorkerId ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}` : QUEUE_APPLY_JOB;
       if (pgBossJobId) {
         await this.ghJobRepo.updateStatus(ghJob.id, {
           status: "queued",
-          targetWorkerId: kasmWorkerId,
           metadata: {
             ...(((ghJob as unknown as Record<string, unknown>).metadata as Record<
               string,
               unknown
             >) ?? {}),
             pgBossJobId,
-            pgBossQueueName,
+            pgBossQueueName: QUEUE_APPLY_JOB,
           },
         });
       }
@@ -1142,25 +941,6 @@ export class TaskService {
           { err, taskId: id, jobId: task.workflowRunId },
           "Failed to cancel GhostHands job (may have already completed)",
         );
-      }
-
-      // WEK-147: Destroy Kasm session on cancel
-      if (this.kasmClient) {
-        try {
-          const ghJob = useQueueDispatch()
-            ? await this.ghJobRepo.findById(task.workflowRunId)
-            : null;
-          const kasmId = ghJob?.metadata?.kasm_id as string | undefined;
-          if (kasmId) {
-            await this.kasmClient.destroyKasm(kasmId);
-            this.logger.info({ kasmId, taskId: id }, "Destroyed Kasm session on cancel");
-          }
-        } catch (err) {
-          this.logger.warn(
-            { err, taskId: id },
-            "Failed to destroy Kasm session on cancel (may already be gone)",
-          );
-        }
       }
     }
 
@@ -1486,61 +1266,72 @@ export class TaskService {
   }
 
   /**
-   * WEK-134: Get the VNC live-view URL for the sandbox running this task.
-   * Returns the noVNC URL from the sandbox record, or null if unavailable.
+   * WEK-147: Get the VNC live-view URL for the worker running this task.
+   * Priority:
+   *   1. kasm_url from GH callback metadata — detects URL shape:
+   *      - Contains :6901 → direct KasmVNC (type "kasmvnc", HTTPS via snakeoil cert)
+   *      - Starts with / or /#/ → legacy Kasm Workspaces relative path (resolved via KASM_API_URL)
+   *      - Contains /api/public → legacy Kasm Workspaces absolute URL (type "kasm")
+   *      - Other absolute → treated as direct KasmVNC (type "kasmvnc")
+   *   2. Construct from sandbox publicIp (https://{IP}:6901) if no callback URL yet
+   *   3. Fallback to sandbox.novncUrl for backward compat (type "novnc")
    */
   async getVncUrl(
     taskId: string,
     userId: string,
-  ): Promise<{ url: string; readOnly: boolean; type: "novnc" | "kasm" } | null> {
+  ): Promise<{ url: string; readOnly: boolean; type: "novnc" | "kasm" | "kasmvnc" } | null> {
     const task = await this.taskRepo.findById(taskId, userId);
     if (!task) throw new TaskNotFoundError(taskId);
 
-    // Allow interactive control when task is waiting for human intervention
     const readOnly = task.status !== "waiting_human";
 
-    // WEK-147: Check for Kasm session URL in gh_automation_jobs metadata
+    // 1. Check kasm_url from GH callback (direct KasmVNC URL from worker)
     if (task.workflowRunId) {
       try {
         const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
         const kasmUrl = ghJob?.metadata?.kasm_url as string | undefined;
         if (kasmUrl) {
-          // WEK-183: Ensure kasm_url is absolute (Kasm API returns relative paths like /#/connect/...)
-          let absoluteUrl = kasmUrl;
-          if (kasmUrl.startsWith("/#/") || kasmUrl.startsWith("/")) {
-            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "");
-            if (!kasmBase) {
-              this.logger.warn(
-                { taskId },
-                "KASM_API_URL not set — cannot resolve relative kasm_url to absolute",
-              );
-              return null;
-            }
-            absoluteUrl = `${kasmBase}${kasmUrl}`;
+          // Detect type from URL shape
+          if (kasmUrl.includes(":6901")) {
+            // Direct KasmVNC on ASG worker (https://{IP}:6901)
+            return { url: kasmUrl, readOnly, type: "kasmvnc" };
           }
-          return { url: absoluteUrl, readOnly, type: "kasm" };
+          if (kasmUrl.startsWith("/#/") || kasmUrl.startsWith("/")) {
+            // Legacy Kasm Workspaces relative path — resolve against KASM_API_URL
+            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "");
+            if (kasmBase) {
+              return { url: `${kasmBase}${kasmUrl}`, readOnly, type: "kasm" };
+            }
+            this.logger.warn({ taskId }, "KASM_API_URL not set — cannot resolve relative kasm_url");
+          } else {
+            // Absolute URL — treat as legacy Kasm Workspaces if it contains /api/public
+            const type = kasmUrl.includes("/api/public") ? "kasm" : "kasmvnc";
+            return { url: kasmUrl, readOnly, type };
+          }
         }
       } catch {
         // Fall through to sandbox-based lookup
       }
     }
 
-    // Fallback: noVNC URL from sandbox record
-    if (!task.sandboxId) {
-      this.logger.debug({ taskId }, "Task has no sandboxId, cannot resolve VNC URL");
-      return null;
+    // 2. Construct from sandbox publicIp (worker hasn't reported kasm_url yet)
+    if (task.sandboxId) {
+      try {
+        const sandbox = await this.sandboxRepo.findById(task.sandboxId);
+        if (sandbox?.publicIp) {
+          return { url: `https://${sandbox.publicIp}:6901`, readOnly, type: "kasmvnc" };
+        }
+        // 3. Fallback to noVNC URL (backward compat)
+        if (sandbox?.novncUrl) {
+          return { url: sandbox.novncUrl, readOnly, type: "novnc" };
+        }
+      } catch {
+        // Fall through
+      }
     }
 
-    const sandbox = await this.sandboxRepo.findById(task.sandboxId);
-    if (!sandbox?.novncUrl) {
-      this.logger.debug(
-        { taskId, sandboxId: task.sandboxId },
-        "Sandbox has no novncUrl configured",
-      );
-      return null;
-    }
-
-    return { url: sandbox.novncUrl, readOnly, type: "novnc" };
+    this.logger.debug({ taskId }, "No VNC URL available for task");
+    return null;
   }
 
   /**
