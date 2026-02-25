@@ -48,6 +48,7 @@ export async function buildApp() {
       level: process.env.LOG_LEVEL ?? "info",
       transport: process.env.NODE_ENV === "development" ? { target: "pino-pretty" } : undefined,
     },
+    trustProxy: true,
   });
 
   // Global error handler
