@@ -25,6 +25,14 @@ import {
   auditLogListResponse,
   deployHistoryListResponse,
   deepHealthCheckResponse,
+  atmDeployHistoryResponse,
+  atmDeployRecordResponse,
+  atmRollbackResponse,
+  atmKamalStatusResponse,
+  atmKamalAuditResponse,
+  atmKamalDeployResponse,
+  atmSecretsStatusResponse,
+  atmEnabledResponse,
 } from "@valet/shared/schemas";
 
 const c = initContract();
@@ -321,5 +329,116 @@ export const sandboxContract = c.router({
       404: errorResponse,
     },
     summary: "Cancel an in-progress deploy",
+  },
+
+  // ─── ATM Operations (backward-compatible: 404-safe on legacy deploy-server) ───
+
+  atmDeployHistory: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/atm/deploys",
+    pathParams: z.object({ id: z.string().uuid() }),
+    query: z.object({ limit: z.coerce.number().int().min(1).max(100).optional() }),
+    responses: {
+      200: atmDeployHistoryResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Get ATM deploy history for a sandbox (empty array if legacy deploy-server)",
+  },
+  atmDeployRecord: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/atm/deploys/:deployId",
+    pathParams: z.object({ id: z.string().uuid(), deployId: z.string() }),
+    responses: {
+      200: atmDeployRecordResponse.nullable(),
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Get a single ATM deploy record (null if legacy deploy-server)",
+  },
+  atmRollback: {
+    method: "POST",
+    path: "/api/v1/admin/sandboxes/:id/atm/rollback",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      200: atmRollbackResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Trigger ATM rollback to previous image",
+  },
+  atmKamalStatus: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/atm/kamal-status",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: atmKamalStatusResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Get Kamal deploy status (null if not available)",
+  },
+  atmKamalAudit: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/atm/kamal-audit",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: atmKamalAuditResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Get Kamal audit log entries (empty array if not available)",
+  },
+  atmDeployKamal: {
+    method: "POST",
+    path: "/api/v1/admin/sandboxes/:id/atm/deploy-kamal",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({
+      destination: z.string().optional(),
+      version: z.string().optional(),
+    }),
+    responses: {
+      200: atmKamalDeployResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Trigger Kamal deploy on the sandbox",
+  },
+  atmRollbackKamal: {
+    method: "POST",
+    path: "/api/v1/admin/sandboxes/:id/atm/rollback-kamal",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({
+      destination: z.string().optional(),
+      version: z.string(),
+    }),
+    responses: {
+      200: atmKamalDeployResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Trigger Kamal rollback on the sandbox",
+  },
+  atmSecretsStatus: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/atm/secrets-status",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: atmSecretsStatusResponse,
+      404: errorResponse,
+      502: errorResponse,
+    },
+    summary: "Get Infisical secrets connection status (null if not available)",
+  },
+  atmEnabled: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/:id/atm/enabled",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: atmEnabledResponse,
+      404: errorResponse,
+    },
+    summary: "Check if sandbox is running ATM (vs legacy deploy-server)",
   },
 });

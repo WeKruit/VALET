@@ -288,6 +288,347 @@ describe("SandboxAgentClient", () => {
     });
   });
 
+  // -- ATM: getAtmDeployHistory ------------------------------------------------
+
+  describe("getAtmDeployHistory", () => {
+    const deployRecord = {
+      id: "deploy-1",
+      imageTag: "v2.0.0",
+      previousImageTag: "v1.0.0",
+      commitSha: "abc123",
+      status: "completed",
+      startedAt: "2026-02-24T00:00:00Z",
+      completedAt: "2026-02-24T00:05:00Z",
+      durationMs: 300000,
+      error: null,
+      triggeredBy: "ci",
+    };
+
+    it("sends GET /deploys and returns deploy records", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse([deployRecord]));
+
+      const res = await client.getAtmDeployHistory(AGENT_URL);
+
+      expect(res).toEqual([deployRecord]);
+      const [url] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/deploys`);
+      expectAuthHeaders();
+    });
+
+    it("sends GET /deploys?limit=5 when limit is provided", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse([deployRecord]));
+
+      await client.getAtmDeployHistory(AGENT_URL, 5);
+
+      const [url] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/deploys?limit=5`);
+    });
+
+    it("returns empty array on 404 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("not found", 404));
+
+      const res = await client.getAtmDeployHistory(AGENT_URL);
+
+      expect(res).toEqual([]);
+    });
+
+    it("returns empty array on 502 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("bad gateway", 502));
+
+      const res = await client.getAtmDeployHistory(AGENT_URL);
+
+      expect(res).toEqual([]);
+    });
+
+    it("throws AgentError on 500", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("server error", 500));
+
+      await expect(client.getAtmDeployHistory(AGENT_URL)).rejects.toThrow(AgentError);
+    });
+  });
+
+  // -- ATM: getAtmDeployRecord ------------------------------------------------
+
+  describe("getAtmDeployRecord", () => {
+    const deployRecord = {
+      id: "deploy-1",
+      imageTag: "v2.0.0",
+      previousImageTag: null,
+      commitSha: null,
+      status: "completed",
+      startedAt: "2026-02-24T00:00:00Z",
+      completedAt: "2026-02-24T00:03:00Z",
+      durationMs: 180000,
+      error: null,
+      triggeredBy: "manual",
+    };
+
+    it("sends GET /deploys/:id and returns deploy record", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse(deployRecord));
+
+      const res = await client.getAtmDeployRecord(AGENT_URL, "deploy-1");
+
+      expect(res).toEqual(deployRecord);
+      const [url] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/deploys/deploy-1`);
+    });
+
+    it("returns null on 404 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("not found", 404));
+
+      const res = await client.getAtmDeployRecord(AGENT_URL, "deploy-1");
+
+      expect(res).toBeNull();
+    });
+
+    it("returns null on 502 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("bad gateway", 502));
+
+      const res = await client.getAtmDeployRecord(AGENT_URL, "deploy-1");
+
+      expect(res).toBeNull();
+    });
+
+    it("throws AgentError on 500", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("server error", 500));
+
+      await expect(client.getAtmDeployRecord(AGENT_URL, "deploy-1")).rejects.toThrow(AgentError);
+    });
+  });
+
+  // -- ATM: atmRollback -------------------------------------------------------
+
+  describe("atmRollback", () => {
+    it("sends POST /rollback and returns result", async () => {
+      const result = { success: true, message: "Rolled back", rollbackImageTag: "v1.0.0" };
+      mockFetch.mockResolvedValueOnce(jsonResponse(result));
+
+      const res = await client.atmRollback(AGENT_URL);
+
+      expect(res).toEqual(result);
+      const [url, opts] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/rollback`);
+      expect(opts.method).toBe("POST");
+    });
+
+    it("throws AgentError on failure (no 404 swallow for POST)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("not found", 404));
+
+      await expect(client.atmRollback(AGENT_URL)).rejects.toThrow(AgentError);
+    });
+  });
+
+  // -- ATM: getKamalStatus ----------------------------------------------------
+
+  describe("getKamalStatus", () => {
+    it("sends GET /kamal/status and returns result", async () => {
+      const status = { available: true, locked: false };
+      mockFetch.mockResolvedValueOnce(jsonResponse(status));
+
+      const res = await client.getKamalStatus(AGENT_URL);
+
+      expect(res).toEqual(status);
+      const [url] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/kamal/status`);
+    });
+
+    it("returns null on 404 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("not found", 404));
+
+      const res = await client.getKamalStatus(AGENT_URL);
+
+      expect(res).toBeNull();
+    });
+
+    it("returns null on 502 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("bad gateway", 502));
+
+      const res = await client.getKamalStatus(AGENT_URL);
+
+      expect(res).toBeNull();
+    });
+
+    it("throws AgentError on 500", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("server error", 500));
+
+      await expect(client.getKamalStatus(AGENT_URL)).rejects.toThrow(AgentError);
+    });
+  });
+
+  // -- ATM: getKamalAudit -----------------------------------------------------
+
+  describe("getKamalAudit", () => {
+    const auditEntry = {
+      timestamp: "2026-02-24T00:00:00Z",
+      action: "deploy",
+      performer: "ci",
+      details: "Deployed v2.0.0",
+    };
+
+    it("sends GET /kamal/audit and returns entries", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse([auditEntry]));
+
+      const res = await client.getKamalAudit(AGENT_URL);
+
+      expect(res).toEqual([auditEntry]);
+      const [url] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/kamal/audit`);
+    });
+
+    it("returns empty array on 404 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("not found", 404));
+
+      const res = await client.getKamalAudit(AGENT_URL);
+
+      expect(res).toEqual([]);
+    });
+
+    it("returns empty array on 502 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("bad gateway", 502));
+
+      const res = await client.getKamalAudit(AGENT_URL);
+
+      expect(res).toEqual([]);
+    });
+
+    it("throws AgentError on 500", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("server error", 500));
+
+      await expect(client.getKamalAudit(AGENT_URL)).rejects.toThrow(AgentError);
+    });
+  });
+
+  // -- ATM: kamalDeploy -------------------------------------------------------
+
+  describe("kamalDeploy", () => {
+    const result = { exitCode: 0, stdout: "Deployed", stderr: "", durationMs: 5000 };
+
+    it("sends POST /deploy/kamal with options", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse(result));
+
+      const res = await client.kamalDeploy(AGENT_URL, { destination: "prod", version: "v2.0.0" });
+
+      expect(res).toEqual(result);
+      const [url, opts] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/deploy/kamal`);
+      expect(opts.method).toBe("POST");
+      expect(JSON.parse(opts.body as string)).toEqual({ destination: "prod", version: "v2.0.0" });
+    });
+
+    it("sends POST /deploy/kamal with empty body when no options", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse(result));
+
+      await client.kamalDeploy(AGENT_URL);
+
+      const [, opts] = mockFetch.mock.calls[0]!;
+      expect(JSON.parse(opts.body as string)).toEqual({});
+    });
+
+    it("throws AgentError on failure", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("server error", 500));
+
+      await expect(client.kamalDeploy(AGENT_URL)).rejects.toThrow(AgentError);
+    });
+  });
+
+  // -- ATM: kamalRollback -----------------------------------------------------
+
+  describe("kamalRollback", () => {
+    const result = { exitCode: 0, stdout: "Rolled back", stderr: "", durationMs: 3000 };
+
+    it("sends POST /rollback/kamal with options", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse(result));
+
+      const res = await client.kamalRollback(AGENT_URL, { version: "v1.0.0" });
+
+      expect(res).toEqual(result);
+      const [url, opts] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/rollback/kamal`);
+      expect(opts.method).toBe("POST");
+      expect(JSON.parse(opts.body as string)).toEqual({ version: "v1.0.0" });
+    });
+
+    it("throws AgentError on failure", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("server error", 500));
+
+      await expect(client.kamalRollback(AGENT_URL, { version: "v1.0.0" })).rejects.toThrow(
+        AgentError,
+      );
+    });
+  });
+
+  // -- ATM: getSecretsStatus --------------------------------------------------
+
+  describe("getSecretsStatus", () => {
+    it("sends GET /secrets/status and returns result", async () => {
+      const status = {
+        connected: true,
+        projectId: "proj-1",
+        environment: "staging",
+        secretCount: 12,
+      };
+      mockFetch.mockResolvedValueOnce(jsonResponse(status));
+
+      const res = await client.getSecretsStatus(AGENT_URL);
+
+      expect(res).toEqual(status);
+      const [url] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/secrets/status`);
+    });
+
+    it("returns null on 404 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("not found", 404));
+
+      const res = await client.getSecretsStatus(AGENT_URL);
+
+      expect(res).toBeNull();
+    });
+
+    it("returns null on 502 (backward compat)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("bad gateway", 502));
+
+      const res = await client.getSecretsStatus(AGENT_URL);
+
+      expect(res).toBeNull();
+    });
+
+    it("throws AgentError on 500", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("server error", 500));
+
+      await expect(client.getSecretsStatus(AGENT_URL)).rejects.toThrow(AgentError);
+    });
+  });
+
+  // -- ATM: isAtmEnabled ------------------------------------------------------
+
+  describe("isAtmEnabled", () => {
+    it("returns true when /deploys responds OK", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse([]));
+
+      const res = await client.isAtmEnabled(AGENT_URL);
+
+      expect(res).toBe(true);
+      const [url] = mockFetch.mock.calls[0]!;
+      expect(url).toBe(`${AGENT_URL}/deploys?limit=1`);
+    });
+
+    it("returns false on 404 (legacy deploy-server)", async () => {
+      mockFetch.mockResolvedValueOnce(textResponse("not found", 404));
+
+      const res = await client.isAtmEnabled(AGENT_URL);
+
+      expect(res).toBe(false);
+    });
+
+    it("returns false on network error", async () => {
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      const res = await client.isAtmEnabled(AGENT_URL);
+
+      expect(res).toBe(false);
+    });
+  });
+
   // -- AgentError -------------------------------------------------------------
 
   describe("AgentError", () => {

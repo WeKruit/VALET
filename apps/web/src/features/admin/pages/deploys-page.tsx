@@ -24,18 +24,23 @@ import {
   GitBranch,
   GitCommitHorizontal,
   AlertTriangle,
+  Cog,
+  ArrowRight,
 } from "lucide-react";
 import { Switch } from "@valet/ui/components/switch";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 import { formatRelativeTime } from "@/lib/utils";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import {
   useDeploys,
+  useSandboxes,
   useTriggerDeploy,
   useDeployStatus,
   useCancelDeploy,
   useAutoDeployConfig,
   useUpdateAutoDeployConfig,
+  useAtmEnabled,
 } from "../hooks/use-sandboxes";
 
 type DeployStatusValue =
@@ -160,6 +165,9 @@ export function DeploysPage() {
           }}
         />
       )}
+
+      {/* ATM Operations — non-intrusive aggregate view */}
+      <AtmOperationsSection />
     </div>
   );
 }
@@ -507,5 +515,70 @@ function DeployConfirmDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── ATM Operations Section ───
+
+function AtmOperationsSection() {
+  const sandboxesQuery = useSandboxes({ pageSize: 50 });
+  const sandboxes = sandboxesQuery.data?.status === 200 ? sandboxesQuery.data.body.data : [];
+
+  // Only render if we have sandboxes to check
+  if (sandboxesQuery.isLoading || sandboxes.length === 0) return null;
+
+  return <AtmOperationsInner sandboxIds={sandboxes.map((s) => s.id)} />;
+}
+
+/**
+ * Inner component that checks ATM status for each sandbox.
+ * Separated to avoid conditional hook calls.
+ */
+function AtmOperationsInner({ sandboxIds }: { sandboxIds: string[] }) {
+  // We check the first sandbox as a proxy — if any sandbox has ATM, show the card.
+  // This is a lightweight check; the full per-sandbox detail is in the sandbox detail page.
+  const firstId = sandboxIds[0];
+  const atmQuery = useAtmEnabled(firstId ?? "");
+  const atmEnabled = atmQuery.data?.enabled ?? false;
+
+  if (!atmEnabled) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Cog className="h-4 w-4" />
+          ATM Operations
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-[var(--wk-text-secondary)] mb-3">
+          ATM-managed sandboxes have machine-level deploy history, Kamal integration, and Infisical
+          secrets management. View details on each sandbox's ATM tab.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {sandboxIds.map((id) => (
+            <AtmSandboxLink key={id} sandboxId={id} />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AtmSandboxLink({ sandboxId }: { sandboxId: string }) {
+  const atmQuery = useAtmEnabled(sandboxId);
+  const isAtm = atmQuery.data?.enabled ?? false;
+
+  if (!isAtm) return null;
+
+  return (
+    <Button variant="secondary" size="sm" asChild>
+      <Link to={`/admin/sandboxes/${sandboxId}`} className="gap-1.5">
+        <Cog className="h-3.5 w-3.5" />
+        <span className="font-mono text-xs">{sandboxId.slice(0, 8)}</span>
+        <ArrowRight className="h-3 w-3" />
+      </Link>
+    </Button>
   );
 }

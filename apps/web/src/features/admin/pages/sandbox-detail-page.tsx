@@ -44,6 +44,7 @@ import {
   Container,
   ScrollText,
   Rocket,
+  Cog,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatRelativeTime } from "@/lib/utils";
@@ -63,6 +64,9 @@ import { SandboxContainersTab } from "../components/sandbox-containers-tab";
 import { SandboxAuditLogTab } from "../components/sandbox-audit-log-tab";
 import { SandboxDeployHistoryTab } from "../components/sandbox-deploy-history-tab";
 import { DeployBanner } from "../components/deploy-banner";
+import { AtmDeployHistory } from "../components/atm-deploy-history";
+import { AtmKamalCard } from "../components/atm-kamal-card";
+import { AtmSecretsCard } from "../components/atm-secrets-card";
 import {
   useSandbox,
   useSandboxMetrics,
@@ -73,6 +77,7 @@ import {
   useStartSandbox,
   useStopSandbox,
   useUpdateSandbox,
+  useAtmEnabled,
 } from "../hooks/use-sandboxes";
 import type { SandboxEnvironment } from "../types";
 
@@ -99,6 +104,8 @@ export function SandboxDetailPage() {
   const startMutation = useStartSandbox();
   const stopMutation = useStopSandbox();
   const updateMutation = useUpdateSandbox();
+  const atmEnabledQuery = useAtmEnabled(id ?? "");
+  const atmEnabled = atmEnabledQuery.data?.enabled ?? false;
 
   // Trigger a fresh health check on mount so we don't show stale cached data
   const mountRefreshDone = useRef(false);
@@ -537,6 +544,12 @@ export function SandboxDetailPage() {
                 <Rocket className="h-3.5 w-3.5" />
                 Deploy History
               </TabsTrigger>
+              {atmEnabled && (
+                <TabsTrigger value="atm" className="gap-1.5">
+                  <Cog className="h-3.5 w-3.5" />
+                  ATM
+                </TabsTrigger>
+              )}
             </TabsList>
             <TabsContent value="workers">
               <SandboxWorkersTab sandboxId={id!} />
@@ -549,7 +562,21 @@ export function SandboxDetailPage() {
             </TabsContent>
             <TabsContent value="deploy-history">
               <SandboxDeployHistoryTab sandboxId={id!} />
+              {atmEnabled && (
+                <div className="mt-6 border-t border-[var(--wk-border-subtle)] pt-6">
+                  <AtmDeployHistory sandboxId={id!} />
+                </div>
+              )}
             </TabsContent>
+            {atmEnabled && (
+              <TabsContent value="atm">
+                <div className="space-y-6">
+                  <AtmDeployHistory sandboxId={id!} />
+                  <AtmKamalCard sandboxId={id!} />
+                  <AtmSecretsCard sandboxId={id!} />
+                </div>
+              </TabsContent>
+            )}
           </Tabs>
         </CardContent>
       </Card>

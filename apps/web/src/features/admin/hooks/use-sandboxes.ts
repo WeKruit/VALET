@@ -374,3 +374,189 @@ export function useUpdateAutoDeployConfig() {
     },
   });
 }
+
+// ─── ATM Integration ───
+// These hooks use fetchWithAuth (manual fetch) since the ATM endpoints are not
+// part of the ts-rest contract. All gracefully handle 404/empty responses so the
+// UI is backward-compatible with sandboxes that run the legacy deploy-server.
+
+export interface AtmDeployRecord {
+  id: string;
+  imageTag: string;
+  status: "deploying" | "completed" | "failed" | "rolled_back";
+  triggeredBy: string;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  commitSha: string | null;
+  error: string | null;
+}
+
+export interface AtmKamalStatus {
+  available: boolean;
+  locked: boolean;
+  lockedBy: string | null;
+  lockReason: string | null;
+  version: string | null;
+}
+
+export interface AtmKamalAuditEntry {
+  id: string;
+  action: string;
+  performer: string;
+  destination: string | null;
+  version: string | null;
+  status: "success" | "failure";
+  createdAt: string;
+  durationMs: number | null;
+  error: string | null;
+}
+
+export interface AtmSecretsStatus {
+  connected: boolean;
+  provider: string;
+  projectId: string | null;
+  environment: string | null;
+  secretCount: number;
+  lastSyncAt: string | null;
+}
+
+/**
+ * Variant of fetchWithAuth that returns null instead of throwing on 404/500.
+ * Used by ATM hooks so the UI gracefully degrades for legacy sandboxes.
+ */
+async function fetchAtm<T>(
+  url: string,
+  options?: { method?: string; body?: string },
+): Promise<T | null> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(url, { ...options, headers, credentials: "include" });
+  if (res.status === 404 || res.status === 501) return null;
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+export function useAtmEnabled(sandboxId: string) {
+  return useQuery<{ enabled: boolean }>({
+    queryKey: ["admin", "sandboxes", sandboxId, "atm", "enabled"],
+    queryFn: async () => {
+      const result = await fetchAtm<{ enabled: boolean }>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/enabled`,
+      );
+      return result ?? { enabled: false };
+    },
+    enabled: Boolean(sandboxId),
+    staleTime: 1000 * 60,
+  });
+}
+
+export function useAtmDeployHistory(sandboxId: string, enabled = true) {
+  return useQuery<AtmDeployRecord[]>({
+    queryKey: ["admin", "sandboxes", sandboxId, "atm", "deploys"],
+    queryFn: async () => {
+      const result = await fetchAtm<AtmDeployRecord[]>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/deploys`,
+      );
+      return result ?? [];
+    },
+    enabled: Boolean(sandboxId) && enabled,
+    staleTime: 1000 * 10,
+    refetchInterval: 1000 * 30,
+  });
+}
+
+export function useAtmRollback(sandboxId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean }, Error, void>({
+    mutationFn: () =>
+      fetchWithAuth<{ success: boolean }>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/rollback`,
+        { method: "POST", body: JSON.stringify({}) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["admin", "sandboxes", sandboxId, "atm", "deploys"],
+      });
+    },
+  });
+}
+
+export function useAtmKamalStatus(sandboxId: string, enabled = true) {
+  return useQuery<AtmKamalStatus | null>({
+    queryKey: ["admin", "sandboxes", sandboxId, "atm", "kamal-status"],
+    queryFn: () =>
+      fetchAtm<AtmKamalStatus>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/kamal-status`,
+      ),
+    enabled: Boolean(sandboxId) && enabled,
+    staleTime: 1000 * 15,
+  });
+}
+
+export function useAtmKamalAudit(sandboxId: string, enabled = true) {
+  return useQuery<AtmKamalAuditEntry[]>({
+    queryKey: ["admin", "sandboxes", sandboxId, "atm", "kamal-audit"],
+    queryFn: async () => {
+      const result = await fetchAtm<AtmKamalAuditEntry[]>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/kamal-audit`,
+      );
+      return result ?? [];
+    },
+    enabled: Boolean(sandboxId) && enabled,
+    staleTime: 1000 * 15,
+  });
+}
+
+export function useAtmKamalDeploy(sandboxId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean }, Error, { destination?: string; version?: string }>({
+    mutationFn: (body) =>
+      fetchWithAuth<{ success: boolean }>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/deploy-kamal`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["admin", "sandboxes", sandboxId, "atm", "kamal-status"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["admin", "sandboxes", sandboxId, "atm", "kamal-audit"],
+      });
+    },
+  });
+}
+
+export function useAtmKamalRollback(sandboxId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean }, Error, { destination?: string; version: string }>({
+    mutationFn: (body) =>
+      fetchWithAuth<{ success: boolean }>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/rollback-kamal`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["admin", "sandboxes", sandboxId, "atm", "kamal-status"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["admin", "sandboxes", sandboxId, "atm", "kamal-audit"],
+      });
+    },
+  });
+}
+
+export function useAtmSecretsStatus(sandboxId: string, enabled = true) {
+  return useQuery<AtmSecretsStatus | null>({
+    queryKey: ["admin", "sandboxes", sandboxId, "atm", "secrets-status"],
+    queryFn: () =>
+      fetchAtm<AtmSecretsStatus>(
+        `${API_BASE_URL}/api/v1/admin/sandboxes/${sandboxId}/atm/secrets-status`,
+      ),
+    enabled: Boolean(sandboxId) && enabled,
+    staleTime: 1000 * 30,
+  });
+}
