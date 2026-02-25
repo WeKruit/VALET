@@ -70,7 +70,7 @@ const ROUTE_LIMITS: RouteLimit[] = [
   {
     path: "/api/v1/early-access",
     method: "POST",
-    max: 3,
+    max: 10,
     windowSecs: 3600,
     keyPrefix: "rl:early-access",
     message: "Too many waitlist submissions. Try again later.",
