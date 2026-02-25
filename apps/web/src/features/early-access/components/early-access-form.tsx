@@ -15,7 +15,11 @@ const earlyAccessFormSchema = z.object({
 
 type EarlyAccessFormValues = z.infer<typeof earlyAccessFormSchema>;
 
-export function EarlyAccessForm() {
+interface EarlyAccessFormProps {
+  onDark?: boolean;
+}
+
+export function EarlyAccessForm({ onDark = false }: EarlyAccessFormProps) {
   const [submitted, setSubmitted] = useState(false);
   const [position, setPosition] = useState<number | null>(null);
 
@@ -67,21 +71,33 @@ export function EarlyAccessForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="w-full">
-      <div className="flex flex-col gap-3 sm:flex-row sm:gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-2">
         <div className="flex-1">
-          <Input placeholder="Your name" {...register("name")} aria-invalid={!!errors.name} />
+          <Input
+            placeholder="Your name"
+            className="h-12"
+            {...register("name")}
+            aria-invalid={!!errors.name}
+          />
           {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name.message}</p>}
         </div>
         <div className="flex-1">
           <Input
             type="email"
             placeholder="you@example.com"
+            className="h-12"
             {...register("email")}
             aria-invalid={!!errors.email}
           />
           {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
         </div>
-        <Button type="submit" variant="cta" size="lg" disabled={mutation.isPending}>
+        <Button
+          type="submit"
+          variant={onDark ? "ctaInverse" : "cta"}
+          size="lg"
+          disabled={mutation.isPending}
+          className="h-12 shrink-0"
+        >
           {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Join Waitlist"}
         </Button>
       </div>
