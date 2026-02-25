@@ -20,3 +20,4 @@ export * from "./gh-browser-sessions.js";
 export * from "./gh-job-events.js";
 export * from "./relations.js";
 export * from "./early-access.js";
+export * from "./email-templates.js";

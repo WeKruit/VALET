@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "./components/layout/app-layout";
 import { AuthGuard } from "./components/common/auth-guard";
 import { AdminGuard } from "./lib/guards/admin-guard";
@@ -122,6 +122,21 @@ const WorkersPage = lazy(() =>
 const SecretsStatusPage = lazy(() =>
   import("./features/admin/pages/secrets-status-page").then((m) => ({
     default: m.SecretsStatusPage,
+  })),
+);
+const OperationAdminLayout = lazy(() =>
+  import("./features/operation-admin/layout/operation-admin-layout").then((m) => ({
+    default: m.OperationAdminLayout,
+  })),
+);
+const EarlyAccessAdminPage = lazy(() =>
+  import("./features/operation-admin/pages/early-access-admin-page").then((m) => ({
+    default: m.EarlyAccessAdminPage,
+  })),
+);
+const EmailTemplatesAdminPage = lazy(() =>
+  import("./features/operation-admin/pages/email-templates-admin-page").then((m) => ({
+    default: m.EmailTemplatesAdminPage,
   })),
 );
 
@@ -253,6 +268,20 @@ export function AppRouter() {
               </AdminGuard>
             }
           />
+
+          {/* Operation Admin routes */}
+          <Route
+            path="/operation-admin"
+            element={
+              <AdminGuard>
+                <OperationAdminLayout />
+              </AdminGuard>
+            }
+          >
+            <Route index element={<Navigate to="early-access" replace />} />
+            <Route path="early-access" element={<EarlyAccessAdminPage />} />
+            <Route path="email-templates" element={<EmailTemplatesAdminPage />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

@@ -39,6 +39,8 @@ import { syncAdminRoutes } from "./modules/sync/sync.routes.js";
 import { taskUserRoutes } from "./modules/tasks/task.user-routes.js";
 import { taskEventsSSERoutes } from "./modules/tasks/task-events-sse.routes.js";
 import { earlyAccessRouter } from "./modules/early-access/early-access.routes.js";
+import { earlyAccessAdminRouter } from "./modules/early-access/early-access.admin-routes.js";
+import { emailTemplatesAdminRouter } from "./modules/email-templates/email-templates.admin-routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -128,6 +130,8 @@ export async function buildApp() {
   fastify.register(s.plugin(sandboxRouter));
   fastify.register(s.plugin(modelRouter));
   fastify.register(s.plugin(earlyAccessRouter));
+  fastify.register(s.plugin(earlyAccessAdminRouter));
+  fastify.register(s.plugin(emailTemplatesAdminRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);

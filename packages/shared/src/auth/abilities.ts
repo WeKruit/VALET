@@ -21,7 +21,22 @@ export function defineAbilitiesFor(role: string): AppAbility {
       can("manage", "Settings");
       break;
     case "user":
-      // No permissions — waitlisted
+      can("manage", "Task");
+      can("manage", "Resume");
+      can("manage", "QaBank");
+      can("manage", "Dashboard");
+      can("manage", "Settings");
+      break;
+    case "beta":
+      can("read", "Task");
+      can("create", "Task");
+      can("read", "Resume");
+      can("manage", "Resume");
+      can("read", "QaBank");
+      can("read", "Dashboard");
+      break;
+    case "waitlist":
+      // No permissions — redirected to /early-access
       break;
     default:
       // Unknown roles get no permissions

@@ -14,6 +14,8 @@ import { notificationContract } from "./notifications.js";
 import { sandboxContract } from "./sandbox.js";
 import { modelContract } from "./models.js";
 import { earlyAccessContract } from "./early-access.js";
+import { earlyAccessAdminContract } from "./admin/early-access-admin.js";
+import { emailTemplatesAdminContract } from "./admin/email-templates-admin.js";
 
 const c = initContract();
 
@@ -33,6 +35,8 @@ export const apiContract = c.router({
   sandboxes: sandboxContract,
   models: modelContract,
   earlyAccess: earlyAccessContract,
+  earlyAccessAdmin: earlyAccessAdminContract,
+  emailTemplatesAdmin: emailTemplatesAdminContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -53,4 +57,6 @@ export {
   sandboxContract,
   modelContract,
   earlyAccessContract,
+  earlyAccessAdminContract,
+  emailTemplatesAdminContract,
 };

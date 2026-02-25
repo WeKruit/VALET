@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@valet/ui/components/button";
@@ -9,13 +9,15 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 
-const resetPasswordSchema = z.object({
-  password: z.string().min(8, "Password must be at least 8 characters").max(128),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords do not match",
-  path: ["confirmPassword"],
-});
+const resetPasswordSchema = z
+  .object({
+    password: z.string().min(8, "Password must be at least 8 characters").max(128),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
 
@@ -29,7 +31,8 @@ export function ResetPasswordPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<ResetPasswordForm>({
-    resolver: zodResolver(resetPasswordSchema),
+    // @ts-ignore -- TS2589 locally due to deep ts-rest type inference
+    resolver: zodResolver(resetPasswordSchema) as Resolver<ResetPasswordForm>,
   });
 
   const resetMutation = api.auth.resetPassword.useMutation({
@@ -106,12 +109,8 @@ export function ResetPasswordPage() {
             <span className="text-2xl font-bold text-[var(--wk-surface-page)]">V</span>
           </div>
           <div className="text-center">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">
-              Reset password
-            </h1>
-            <p className="mt-2 text-sm text-[var(--wk-text-secondary)]">
-              Enter your new password
-            </p>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Reset password</h1>
+            <p className="mt-2 text-sm text-[var(--wk-text-secondary)]">Enter your new password</p>
           </div>
         </div>
 
@@ -128,9 +127,7 @@ export function ResetPasswordPage() {
                 placeholder="Min. 8 characters"
                 {...register("password")}
               />
-              {errors.password && (
-                <p className="text-xs text-red-500">{errors.password.message}</p>
-              )}
+              {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
             </div>
 
             <div className="space-y-2">
@@ -155,15 +152,8 @@ export function ResetPasswordPage() {
               </p>
             )}
 
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full"
-              disabled={resetMutation.isPending}
-            >
-              {resetMutation.isPending ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : null}
+            <Button type="submit" size="lg" className="w-full" disabled={resetMutation.isPending}>
+              {resetMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
               {resetMutation.isPending ? "Resetting..." : "Reset password"}
             </Button>
           </form>
