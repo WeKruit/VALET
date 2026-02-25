@@ -237,8 +237,8 @@ export function LandingPage() {
             Join thousands of job seekers who apply smarter, not harder. Start with 5 free
             applications every month.
           </p>
-          <div className="mt-8 mx-auto max-w-xl">
-            <EarlyAccessForm />
+          <div className="mt-8 mx-auto max-w-2xl">
+            <EarlyAccessForm onDark />
           </div>
         </div>
       </section>
