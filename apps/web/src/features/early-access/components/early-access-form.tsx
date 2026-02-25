@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@valet/ui/components/button";
@@ -24,8 +24,8 @@ export function EarlyAccessForm() {
     handleSubmit,
     formState: { errors },
   } = useForm<EarlyAccessFormValues>({
-    // @ts-expect-error -- ts-rest deep type inference causes TS2589
-    resolver: zodResolver(earlyAccessFormSchema),
+    // @ts-ignore -- TS2589 locally due to deep ts-rest type inference
+    resolver: zodResolver(earlyAccessFormSchema) as Resolver<EarlyAccessFormValues>,
   });
 
   const mutation = api.earlyAccess.submit.useMutation({

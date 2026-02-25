@@ -29,10 +29,8 @@ export default [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/consistent-type-imports": [
-        "error",
-        { prefer: "type-imports" },
-      ],
+      "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
+      "@typescript-eslint/ban-ts-comment": ["error", { "ts-ignore": "allow-with-description" }],
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },

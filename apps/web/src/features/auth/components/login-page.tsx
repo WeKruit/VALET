@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@valet/ui/components/button";
@@ -79,8 +79,8 @@ export function LoginPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<LoginForm>({
-    // @ts-expect-error -- ts-rest deep type inference causes TS2589
-    resolver: zodResolver(loginSchema),
+    // @ts-ignore -- TS2589 locally due to deep ts-rest type inference
+    resolver: zodResolver(loginSchema) as Resolver<LoginForm>,
   });
 
   function onEmailSubmit(data: LoginForm) {

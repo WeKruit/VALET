@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Button } from "@valet/ui/components/button";
 import { Input } from "@valet/ui/components/input";
@@ -52,6 +52,15 @@ import {
 const ALL = "__all__" as const;
 
 type EmailStatusFilter = typeof ALL | "pending" | "sent" | "promoted" | "failed";
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
 
 interface ConfirmAction {
   type: "promote" | "delete";
@@ -120,15 +129,21 @@ function StatCard({
 }
 
 export function EarlyAccessAdminPage() {
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebounce(searchInput, 300);
   const [statusFilter, setStatusFilter] = useState<EmailStatusFilter>(ALL);
   const [page, setPage] = useState(1);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
+  // Reset to page 1 when debounced search changes
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
   const listQuery = useEarlyAccessList({
     page,
     limit: 25,
-    ...(search ? { search } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(statusFilter !== ALL ? { emailStatus: statusFilter } : {}),
   });
   const statsQuery = useEarlyAccessStats();
@@ -239,11 +254,8 @@ export function EarlyAccessAdminPage() {
                 placeholder="Search by name or email..."
                 aria-label="Search submissions by name or email"
                 className="pl-9"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
               />
             </div>
             <Select
@@ -309,7 +321,7 @@ export function EarlyAccessAdminPage() {
                 No submissions found
               </p>
               <p className="mt-1 text-sm text-[var(--wk-text-secondary)]">
-                {search || statusFilter !== ALL
+                {debouncedSearch || statusFilter !== ALL
                   ? "Try adjusting your filters."
                   : "No one has signed up for early access yet."}
               </p>

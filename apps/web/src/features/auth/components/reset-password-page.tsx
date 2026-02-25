@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@valet/ui/components/button";
@@ -31,8 +31,8 @@ export function ResetPasswordPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<ResetPasswordForm>({
-    // @ts-expect-error -- ts-rest deep type inference causes TS2589
-    resolver: zodResolver(resetPasswordSchema),
+    // @ts-ignore -- TS2589 locally due to deep ts-rest type inference
+    resolver: zodResolver(resetPasswordSchema) as Resolver<ResetPasswordForm>,
   });
 
   const resetMutation = api.auth.resetPassword.useMutation({

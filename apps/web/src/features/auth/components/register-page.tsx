@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@valet/ui/components/button";
@@ -31,8 +31,8 @@ export function RegisterPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<RegisterForm>({
-    // @ts-expect-error -- ts-rest deep type inference causes TS2589
-    resolver: zodResolver(registerSchema),
+    // @ts-ignore -- TS2589 locally due to deep ts-rest type inference
+    resolver: zodResolver(registerSchema) as Resolver<RegisterForm>,
   });
 
   const registerMutation = api.auth.register.useMutation({

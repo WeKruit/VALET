@@ -98,6 +98,12 @@ function templateToForm(t: EmailTemplate): TemplateFormState {
   };
 }
 
+const TEMPLATE_NAME_REGEX = /^[a-z0-9_-]+$/;
+
+function isValidTemplateName(name: string): boolean {
+  return TEMPLATE_NAME_REGEX.test(name);
+}
+
 function parseVariables(raw: string): TemplateVariable[] | undefined {
   try {
     const parsed = JSON.parse(raw);
@@ -151,6 +157,13 @@ export function EmailTemplatesAdminPage() {
   }
 
   function handleSave() {
+    if (view === "create" && !isValidTemplateName(form.name)) {
+      toast.error(
+        "Template name must use only lowercase letters, numbers, hyphens, and underscores.",
+      );
+      return;
+    }
+
     const variables = parseVariables(form.variables);
     if (form.variables.trim() && !variables) {
       toast.error("Variables must be a valid JSON array.");
@@ -459,6 +472,7 @@ export function EmailTemplatesAdminPage() {
                                 onClick={() => {
                                   setSendTestTemplateName(t.name);
                                   setForm(templateToForm(t as EmailTemplate));
+                                  setSendTestEmail("");
                                   setSendTestOpen(true);
                                 }}
                               >
@@ -572,7 +586,11 @@ export function EmailTemplatesAdminPage() {
   // ─── Edit / Create View ───
 
   const isEditing = view === "edit";
-  const canSave = form.name.trim() && form.subject.trim() && form.mjmlBody.trim();
+  const canSave =
+    form.name.trim() &&
+    form.subject.trim() &&
+    form.mjmlBody.trim() &&
+    (isEditing || isValidTemplateName(form.name));
 
   return (
     <div className="space-y-6">
@@ -613,6 +631,7 @@ export function EmailTemplatesAdminPage() {
                 size="sm"
                 onClick={() => {
                   setSendTestTemplateName(editingTemplate.name);
+                  setSendTestEmail("");
                   setSendTestOpen(true);
                 }}
               >
@@ -661,9 +680,13 @@ export function EmailTemplatesAdminPage() {
                   disabled={isEditing}
                   className={isEditing ? "opacity-60" : ""}
                 />
-                {isEditing && (
+                {isEditing ? (
                   <p className="text-xs text-[var(--wk-text-tertiary)]">
                     Template name cannot be changed after creation.
+                  </p>
+                ) : (
+                  <p className="text-xs text-[var(--wk-text-tertiary)]">
+                    Lowercase letters, numbers, hyphens, and underscores only.
                   </p>
                 )}
               </div>
@@ -785,6 +808,7 @@ export function EmailTemplatesAdminPage() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
+                    aria-label="Close preview"
                     onClick={() => setPreviewHtml(null)}
                   >
                     <X className="h-3.5 w-3.5" />
@@ -820,6 +844,7 @@ export function EmailTemplatesAdminPage() {
             <Input
               placeholder="recipient@example.com"
               type="email"
+              aria-label="Test email recipient address"
               value={sendTestEmail}
               onChange={(e) => setSendTestEmail(e.target.value)}
             />
