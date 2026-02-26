@@ -427,6 +427,24 @@ export class SandboxRepository {
   }
 
   /**
+   * Find workers registered from a given EC2 IP in gh_worker_registry.
+   * Used as a DB fallback when the deploy-server agent is unreachable.
+   */
+  async findWorkersByIp(
+    ec2Ip: string,
+  ): Promise<Array<{ worker_id: string; status: string; uptime_seconds: number | null }>> {
+    const rows = (await this.db.execute(
+      sql`SELECT worker_id, status, uptime_seconds
+          FROM gh_worker_registry
+          WHERE ec2_ip = ${ec2Ip}
+            AND status IN ('active', 'draining')
+          ORDER BY last_heartbeat DESC`,
+    )) as Array<{ worker_id: string; status: string; uptime_seconds: number | null }>;
+
+    return rows;
+  }
+
+  /**
    * Cross-reference gh_worker_registry with sandboxes table.
    * Returns discrepancies found for logging by the health monitor.
    */

@@ -282,12 +282,19 @@ export const sandboxRouter = s.router(sandboxContract, {
 
   listContainers: async ({ params, request }) => {
     await adminOnly(request);
-    const { sandboxService, sandboxProviderFactory, sandboxAgentClient, auditLogService } =
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient, auditLogService, logger } =
       request.diScope.cradle;
 
     const sandbox = await sandboxService.getById(params.id);
     const provider = sandboxProviderFactory.getProvider(sandbox);
-    const agentUrl = provider.getAgentUrl(sandbox);
+
+    let agentUrl: string;
+    try {
+      agentUrl = provider.getAgentUrl(sandbox);
+    } catch {
+      logger.debug({ sandboxId: params.id }, "No agent URL for sandbox (no publicIp)");
+      return { status: 200 as const, body: { data: [] } };
+    }
 
     try {
       const containers = await sandboxAgentClient.getContainers(agentUrl);
@@ -303,46 +310,78 @@ export const sandboxRouter = s.router(sandboxContract, {
 
       return { status: 200 as const, body: { data: containers } };
     } catch (err) {
-      return {
-        status: 502 as const,
-        body: {
-          error: "AGENT_UNREACHABLE",
-          message: err instanceof Error ? err.message : "Agent unreachable",
-        },
-      };
+      logger.debug({ sandboxId: params.id, err }, "Agent unreachable for listContainers");
+      return { status: 200 as const, body: { data: [] } };
     }
   },
 
   listWorkers: async ({ params, request }) => {
     await adminOnly(request);
-    const { sandboxService, sandboxProviderFactory, sandboxAgentClient, auditLogService } =
-      request.diScope.cradle;
+    const {
+      sandboxService,
+      sandboxProviderFactory,
+      sandboxAgentClient,
+      auditLogService,
+      sandboxRepo,
+      logger,
+    } = request.diScope.cradle;
 
     const sandbox = await sandboxService.getById(params.id);
     const provider = sandboxProviderFactory.getProvider(sandbox);
-    const agentUrl = provider.getAgentUrl(sandbox);
 
+    // Try live agent first; fall back to DB-based worker info from gh_worker_registry
+    let agentUrl: string | null = null;
     try {
-      const workers = await sandboxAgentClient.getWorkers(agentUrl);
+      agentUrl = provider.getAgentUrl(sandbox);
+    } catch {
+      logger.debug({ sandboxId: params.id }, "No agent URL for sandbox (no publicIp)");
+    }
 
-      await auditLogService.log({
-        sandboxId: sandbox.id,
-        userId: request.userId,
-        action: "list_workers",
-        details: { count: workers.length },
-        ipAddress: request.ip,
-        result: "success",
-      });
+    if (agentUrl) {
+      try {
+        const workers = await sandboxAgentClient.getWorkers(agentUrl);
 
-      return { status: 200 as const, body: { data: workers } };
+        await auditLogService.log({
+          sandboxId: sandbox.id,
+          userId: request.userId,
+          action: "list_workers",
+          details: { count: workers.length },
+          ipAddress: request.ip,
+          result: "success",
+        });
+
+        return { status: 200 as const, body: { data: workers } };
+      } catch (err) {
+        logger.debug(
+          { sandboxId: params.id, err },
+          "Agent unreachable for listWorkers, using DB fallback",
+        );
+      }
+    }
+
+    // Fallback: build worker list from gh_worker_registry matched by sandbox publicIp
+    try {
+      const ip = sandbox.publicIp;
+      if (!ip) {
+        return { status: 200 as const, body: { data: [] } };
+      }
+
+      const rows = await sandboxRepo.findWorkersByIp(ip);
+      const dbWorkers = rows.map((r) => ({
+        workerId: r.worker_id,
+        containerId: "unknown",
+        containerName: "unknown",
+        status: r.status === "active" ? ("idle" as const) : ("draining" as const),
+        activeJobs: 0,
+        statusPort: 3101,
+        uptime: r.uptime_seconds ?? 0,
+        image: "unknown",
+      }));
+
+      return { status: 200 as const, body: { data: dbWorkers } };
     } catch (err) {
-      return {
-        status: 502 as const,
-        body: {
-          error: "AGENT_UNREACHABLE",
-          message: err instanceof Error ? err.message : "Agent unreachable",
-        },
-      };
+      logger.warn({ sandboxId: params.id, err }, "DB fallback for listWorkers also failed");
+      return { status: 200 as const, body: { data: [] } };
     }
   },
 
