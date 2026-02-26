@@ -18,7 +18,8 @@ import type {
 } from "./types.js";
 
 /** ATM agent port — configurable via GH_AGENT_PORT env var (default 8080). */
-export const SANDBOX_AGENT_PORT = parseInt(process.env.GH_AGENT_PORT || "8080", 10);
+const _parsed = parseInt(process.env.GH_AGENT_PORT || "8080", 10);
+export const SANDBOX_AGENT_PORT = Number.isNaN(_parsed) ? 8080 : _parsed;
 
 /**
  * HTTP client for communicating with the Sandbox Agent
