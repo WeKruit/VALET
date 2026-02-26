@@ -363,7 +363,7 @@ export class TaskRepository {
   }
 
   async findStuckJobs(stuckMinutes = 30): Promise<TaskRecord[]> {
-    const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000);
+    const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000).toISOString();
     const rows = await this.db
       .select()
       .from(tasks)
