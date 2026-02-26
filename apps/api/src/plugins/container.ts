@@ -199,13 +199,14 @@ export default fp(async (fastify: FastifyInstance) => {
     ),
     deepHealthChecker: asClass(DeepHealthChecker, { lifetime: Lifetime.SINGLETON }),
     ghosthandsClient: asFunction(
-      ({ logger, sandboxRepo }) => {
+      ({ logger, sandboxRepo, ghJobRepo }) => {
         const client = new GhostHandsClient({
           ghosthandsApiUrl: process.env.GHOSTHANDS_API_URL ?? "http://localhost:3100",
           ghosthandsServiceKey: process.env.GH_SERVICE_SECRET ?? "",
           logger,
         });
         client.setSandboxRepository(sandboxRepo);
+        client.setGhJobRepository(ghJobRepo);
         return client;
       },
       { lifetime: Lifetime.SINGLETON },

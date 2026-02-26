@@ -320,6 +320,24 @@ export class SandboxRepository {
   }
 
   /**
+   * Resolve a worker ID to its EC2 IP address via the gh_worker_registry table.
+   * Includes 'draining' status because cancel/resume must still reach draining workers.
+   * Returns null if no matching worker is found.
+   */
+  async findWorkerIp(workerId: string): Promise<string | null> {
+    const rows = (await this.db.execute(
+      sql`SELECT ec2_ip FROM gh_worker_registry
+          WHERE worker_id = ${workerId}
+            AND status IN ('active', 'draining')
+            AND ec2_ip IS NOT NULL
+          ORDER BY last_heartbeat DESC
+          LIMIT 1`,
+    )) as Array<{ ec2_ip: string }>;
+
+    return rows[0]?.ec2_ip ?? null;
+  }
+
+  /**
    * Find active sandboxes whose last health check is older than `staleThresholdMs`
    * or who have never been health-checked (lastHealthCheckAt is null).
    */
