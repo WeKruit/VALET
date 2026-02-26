@@ -5,6 +5,7 @@ import type {
 } from "./sandbox-provider.interface.js";
 import type { EC2Service } from "../ec2.service.js";
 import type { SandboxRecord } from "../sandbox.repository.js";
+import { SANDBOX_AGENT_PORT } from "../agent/sandbox-agent.client.js";
 
 export class Ec2SandboxProvider implements SandboxProvider {
   readonly type = "ec2" as const;
@@ -44,7 +45,7 @@ export class Ec2SandboxProvider implements SandboxProvider {
 
   getAgentUrl(sandbox: SandboxRecord): string {
     if (!sandbox.publicIp) throw new Error(`Sandbox ${sandbox.id} has no public IP`);
-    return `http://${sandbox.publicIp}:8000`;
+    return `http://${sandbox.publicIp}:${SANDBOX_AGENT_PORT}`;
   }
 
   async pingAgent(sandbox: SandboxRecord): Promise<boolean> {

@@ -9,7 +9,7 @@ function makeMockProvider(type: "ec2" | "macos" | "local_docker"): SandboxProvid
     startMachine: async () => ({ success: true, message: "started" }),
     stopMachine: async () => ({ success: true, message: "stopped" }),
     getMachineStatus: async () => ({ state: "running" as const }),
-    getAgentUrl: () => `http://127.0.0.1:8000`,
+    getAgentUrl: () => `http://127.0.0.1:8080`,
     pingAgent: async () => true,
   };
 }

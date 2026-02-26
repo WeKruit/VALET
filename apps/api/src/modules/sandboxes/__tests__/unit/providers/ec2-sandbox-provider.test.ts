@@ -135,9 +135,9 @@ describe("Ec2SandboxProvider", () => {
   });
 
   describe("getAgentUrl", () => {
-    it("returns HTTP URL with port 8000", () => {
+    it("returns HTTP URL with port 8080", () => {
       const url = provider.getAgentUrl(SANDBOX_FIXTURE);
-      expect(url).toBe("http://34.197.248.80:8000");
+      expect(url).toBe("http://34.197.248.80:8080");
     });
 
     it("throws when sandbox has no public IP", () => {

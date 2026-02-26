@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { SandboxRecord } from "./sandbox.repository.js";
 import type { SandboxProviderFactory } from "./providers/provider-factory.js";
 import type { KasmClient } from "./kasm/kasm.client.js";
+import { SANDBOX_AGENT_PORT } from "./agent/sandbox-agent.client.js";
 
 // ─── Types ───
 
@@ -21,18 +22,18 @@ export interface DeepHealthResult {
 
 // ─── Port Definitions ───
 
-const EC2_PORTS = [
+const EC2_PORTS: ReadonlyArray<{ name: string; port: number; path: string; critical: boolean }> = [
   { name: "GH API", port: 3100, path: "/health", critical: true },
   { name: "GH Worker", port: 3101, path: "/worker/health", critical: false },
-  { name: "Deploy Server", port: 8000, path: "/health", critical: false },
-] as const;
+  { name: "Deploy Server", port: SANDBOX_AGENT_PORT, path: "/health", critical: false },
+];
 
 const PROBE_TIMEOUT_MS = 8_000;
 
 /**
  * Performs multi-port health probes against sandbox instances.
  *
- * EC2 sandboxes: probes ports 3100, 3101, 8000
+ * EC2 sandboxes: probes ports 3100, 3101, 8080 (ATM agent)
  * Kasm sandboxes: checks Kasm session status + probes the mapped GH API port
  */
 export class DeepHealthChecker {

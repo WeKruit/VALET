@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { adminOnly } from "../../common/middleware/admin.js";
+import { AgentError } from "../sandboxes/agent/sandbox-agent.client.js";
 
 function enrichWorker(
   w: {
@@ -128,6 +129,69 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       } catch (err) {
         request.log.error({ err }, "Failed to deregister worker");
         return reply.status(502).send({ error: "GhostHands API unreachable" });
+      }
+    },
+  );
+
+  fastify.post(
+    "/api/v1/admin/workers/:workerId/drain",
+    async (
+      request: FastifyRequest<{
+        Params: { workerId: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      await adminOnly(request);
+      const { ghosthandsClient, sandboxRepo, sandboxProviderFactory, sandboxAgentClient } =
+        request.diScope.cradle;
+      const { workerId } = request.params;
+
+      try {
+        // 1. Find the worker in the fleet
+        const [fleetData, activeSandboxes] = await Promise.all([
+          ghosthandsClient.getWorkerFleet(),
+          sandboxRepo.findAllActive(),
+        ]);
+        const worker = fleetData.workers.find((w) => w.worker_id === workerId);
+        if (!worker) {
+          return reply.status(404).send({ error: "Worker not found in fleet" });
+        }
+
+        // 2. Find the sandbox — try ec2_ip match first, fall back to worker_id/target_worker_id
+        const sandboxByIp = worker.ec2_ip
+          ? activeSandboxes.find((s) => s.publicIp === worker.ec2_ip)
+          : null;
+        const sandboxById =
+          activeSandboxes.find((s) => s.id === worker.worker_id) ??
+          activeSandboxes.find((s) => s.id === worker.target_worker_id);
+        const sandbox = sandboxByIp ?? sandboxById ?? null;
+        if (!sandbox) {
+          return reply.status(404).send({ error: `No sandbox found for worker ${workerId}` });
+        }
+
+        // 3. Get agent URL via provider and call drain
+        const provider = sandboxProviderFactory.getProvider(sandbox);
+        const agentUrl = provider.getAgentUrl(sandbox);
+        const result = await sandboxAgentClient.drain(agentUrl, workerId);
+
+        return reply.send({
+          success: result.success,
+          drainedWorkers: result.drainedWorkers,
+          message: result.message,
+          workerId,
+          sandboxId: sandbox.id,
+          sandboxName: sandbox.name,
+        });
+      } catch (err) {
+        if (err instanceof AgentError) {
+          request.log.error({ err, workerId }, "Agent error during drain");
+          return reply.status(502).send({
+            error: "Agent unreachable",
+            message: err.responseBody,
+          });
+        }
+        request.log.error({ err, workerId }, "Failed to drain worker");
+        return reply.status(502).send({ error: "Failed to drain worker" });
       }
     },
   );

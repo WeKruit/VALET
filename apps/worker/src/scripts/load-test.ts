@@ -38,6 +38,7 @@ function getArg(name: string, fallback: string): string {
 }
 
 const SANDBOX_IP = process.env.SANDBOX_IP ?? "44.198.167.49";
+const AGENT_PORT = process.env.GH_AGENT_PORT ?? "8080";
 const ADSPOWER_API_URL = process.env.ADSPOWER_API_URL ?? `http://${SANDBOX_IP}:50325`;
 const CONCURRENCY = parseInt(getArg("concurrency", process.env.CONCURRENCY ?? "20"), 10);
 const SCENARIO = getArg("scenario", "all") as "all" | "health-only" | "browser-only" | "api-stress";
@@ -192,7 +193,7 @@ async function healthCheckTask(taskId: number): Promise<TaskResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
 
-    const response = await fetch(`http://${SANDBOX_IP}:8000/health`, {
+    const response = await fetch(`http://${SANDBOX_IP}:${AGENT_PORT}/health`, {
       signal: controller.signal,
     });
 
@@ -331,7 +332,7 @@ async function apiStressTask(taskId: number): Promise<TaskResult> {
   try {
     // Rapid-fire multiple health check requests to stress the endpoint
     const requests = Array.from({ length: 5 }, () =>
-      fetch(`http://${SANDBOX_IP}:8000/health`, {
+      fetch(`http://${SANDBOX_IP}:${AGENT_PORT}/health`, {
         signal: AbortSignal.timeout(5000),
       }).then((r) => r.json()),
     );

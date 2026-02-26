@@ -558,7 +558,7 @@ export const sandboxRouter = s.router(sandboxContract, {
     const sandbox = await sandboxService.getById(params.id);
     const provider = sandboxProviderFactory.getProvider(sandbox);
 
-    // Get Docker container count from deploy-server health (EC2/macOS only — port 8000)
+    // Get Docker container count from ATM agent health (EC2/macOS only — port 8080)
     // Kasm sandboxes run a single container without a deploy-server, so we skip this check
     let dockerContainers: number | null = null;
     if (provider.type !== "kasm") {

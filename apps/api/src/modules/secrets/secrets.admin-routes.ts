@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { AppError } from "../../common/errors.js";
 import { adminOnly } from "../../common/middleware/admin.js";
+import { SANDBOX_AGENT_PORT } from "../sandboxes/agent/sandbox-agent.client.js";
 
 export async function secretsAdminRoutes(fastify: FastifyInstance) {
   // GET /api/v1/admin/secrets/diff?env=staging
@@ -235,7 +236,7 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
                 reason: "No public IP",
               };
             }
-            const agentUrl = `http://${sb.publicIp}:8000`;
+            const agentUrl = `http://${sb.publicIp}:${SANDBOX_AGENT_PORT}`;
             const result = await sandboxAgentClient.refreshSecrets(agentUrl);
             return {
               sandboxId: sb.id,
@@ -311,7 +312,7 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
           return reply.status(400).send({ error: "Sandbox has no public IP" });
         }
 
-        const agentUrl = `http://${sandbox.publicIp}:8000`;
+        const agentUrl = `http://${sandbox.publicIp}:${SANDBOX_AGENT_PORT}`;
         const result = await sandboxAgentClient.refreshSecrets(agentUrl);
 
         return reply.send({
