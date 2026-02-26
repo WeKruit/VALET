@@ -457,7 +457,7 @@ export class TaskService {
     if (useQueueDispatch()) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        let ghJob = await this.ghJobRepo.insertPendingJob({
+        let ghJob = await this.ghJobRepo.createJob({
           userId,
           jobType: "apply",
           targetUrl: task.jobUrl,
@@ -679,7 +679,7 @@ export class TaskService {
     if (useQueueDispatch()) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        let ghJob = await this.ghJobRepo.insertPendingJob({
+        let ghJob = await this.ghJobRepo.createJob({
           userId,
           jobType: "custom",
           targetUrl: "https://www.google.com",
@@ -812,7 +812,7 @@ export class TaskService {
       }
 
       const callbackUrl = buildCallbackUrl();
-      let ghJob = await this.ghJobRepo.insertPendingJob({
+      let ghJob = await this.ghJobRepo.createJob({
         userId,
         jobType: originalGhJob.jobType ?? "apply",
         targetUrl: task.jobUrl,

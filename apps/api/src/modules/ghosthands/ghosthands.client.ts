@@ -144,9 +144,22 @@ export class GhostHandsClient {
 
     try {
       const job = await this.ghJobRepo.findById(jobId);
-      if (!job?.workerId) return null;
+      if (!job?.workerId) {
+        this.logger.warn(
+          { jobId },
+          "Fleet routing fallback — job has no workerId, cancel/resume may reach wrong EC2",
+        );
+        return null;
+      }
 
-      return await this.sandboxRepo.findWorkerIp(job.workerId);
+      const ip = await this.sandboxRepo.findWorkerIp(job.workerId);
+      if (!ip) {
+        this.logger.error(
+          { jobId, workerId: job.workerId },
+          "Fleet routing error — workerId not found in gh_worker_registry, cancel/resume will reach wrong EC2",
+        );
+      }
+      return ip;
     } catch (err) {
       this.logger.warn({ err, jobId }, "Failed to resolve worker IP for job, falling back");
       return null;

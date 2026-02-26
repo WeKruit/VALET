@@ -82,11 +82,9 @@ export class TaskQueueService {
       ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
 
-    // pg-boss requires queues to exist before sending. For targeted queues
-    // (Kasm workers), the worker may not have booted yet, so create it first.
-    if (options?.targetWorkerId) {
-      await boss.createQueue(queueName);
-    }
+    // Ensure queue exists before sending. pg-boss requires queues to be created first.
+    // TODO: Align GH PgBossConsumer.ts expiry from 1800s to 14400s (tracked for GH session)
+    await boss.createQueue(queueName);
 
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves
@@ -121,9 +119,9 @@ export class TaskQueueService {
       ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
 
-    if (options?.targetWorkerId) {
-      await boss.createQueue(queueName);
-    }
+    // Ensure queue exists before sending. pg-boss requires queues to be created first.
+    // TODO: Align GH PgBossConsumer.ts expiry from 1800s to 14400s (tracked for GH session)
+    await boss.createQueue(queueName);
 
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves

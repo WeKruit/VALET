@@ -63,6 +63,9 @@ export class SandboxHealthMonitor {
   private async runHealthChecks() {
     try {
       this.logger.debug("Running scheduled sandbox health checks");
+      // TODO (WEK-406): Replace direct GH health probing with ATM /fleet/:id/health endpoint
+      // to avoid health state divergence between VALET and ATM. Currently VALET probes
+      // GH independently, which may disagree with ATM's health determination.
       const results = await this.sandboxService.checkAllSandboxes();
 
       if (results.length === 0) {
@@ -159,6 +162,13 @@ export class SandboxHealthMonitor {
         }
       } catch (err) {
         this.logger.error({ err }, "Failed to enforce state consistency");
+      }
+
+      // Cross-reference worker registry with sandboxes (M1 audit fix)
+      try {
+        await this.sandboxRepo.syncWorkerRegistryWithSandboxes(this.logger);
+      } catch (err) {
+        this.logger.warn({ err }, "Worker registry sync failed (non-critical)");
       }
     } catch (err) {
       this.logger.error({ err }, "Failed to run scheduled health checks");

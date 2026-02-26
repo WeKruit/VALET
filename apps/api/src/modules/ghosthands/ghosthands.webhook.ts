@@ -23,6 +23,7 @@ function verifyServiceKey(request: FastifyRequest): boolean {
     }
   }
 
+  // TODO: Remove query param auth after GH callbackNotifier sends X-GH-Service-Key header
   // 2. Check query param (for GH callbackNotifier which doesn't send auth headers)
   const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
   const tokenParam = url.searchParams.get("token");

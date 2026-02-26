@@ -33,7 +33,7 @@ export const ghAutomationJobs = pgTable(
     maxRetries: integer("max_retries").default(3),
     retryCount: integer("retry_count").default(0),
     timeoutSeconds: integer("timeout_seconds"),
-    status: varchar("status", { length: 50 }).default("queued").notNull(),
+    status: varchar("status", { length: 50 }).default("pending").notNull(),
     statusMessage: text("status_message"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),

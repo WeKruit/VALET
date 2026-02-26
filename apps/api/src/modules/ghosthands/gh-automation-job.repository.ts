@@ -162,10 +162,10 @@ export class GhAutomationJobRepository {
   }
 
   /**
-   * Insert a pending gh_automation_jobs record directly from VALET.
+   * Create a gh_automation_jobs record directly from VALET.
    * Used when dispatching via pg-boss queue instead of GH REST API.
    */
-  async insertPendingJob(params: {
+  async createJob(params: {
     userId: string;
     jobType: string;
     targetUrl: string;

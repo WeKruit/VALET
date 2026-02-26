@@ -425,4 +425,69 @@ export class SandboxRepository {
         return tags?.asg_managed === true;
       });
   }
+
+  /**
+   * Cross-reference gh_worker_registry with sandboxes table.
+   * Returns discrepancies found for logging by the health monitor.
+   */
+  async syncWorkerRegistryWithSandboxes(logger: {
+    info: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+  }): Promise<{ orphanedWorkers: number; sandboxesWithoutWorkers: number }> {
+    // 1. Get all active/draining workers from gh_worker_registry
+    const workers = (await this.db.execute(
+      sql`SELECT worker_id, ec2_ip, ec2_instance_id, status
+          FROM gh_worker_registry
+          WHERE status IN ('active', 'draining')
+            AND ec2_ip IS NOT NULL`,
+    )) as Array<{
+      worker_id: string;
+      ec2_ip: string;
+      ec2_instance_id: string | null;
+      status: string;
+    }>;
+
+    // 2. Get all active sandboxes
+    const activeSandboxes = await this.findAllActive();
+    const sandboxByIp = new Map(
+      activeSandboxes.filter((s) => s.publicIp).map((s) => [s.publicIp!, s]),
+    );
+    const sandboxIpsWithWorkers = new Set<string>();
+
+    // 3. Check each worker's EC2 IP against sandboxes
+    let orphanedWorkers = 0;
+    for (const worker of workers) {
+      const sandbox = sandboxByIp.get(worker.ec2_ip);
+      if (!sandbox) {
+        orphanedWorkers++;
+        logger.warn(
+          { workerId: worker.worker_id, ec2Ip: worker.ec2_ip },
+          "Worker registered from unknown IP — no matching sandbox",
+        );
+      } else {
+        sandboxIpsWithWorkers.add(worker.ec2_ip);
+      }
+    }
+
+    // 4. Check for sandboxes with no workers
+    let sandboxesWithoutWorkers = 0;
+    for (const sandbox of activeSandboxes) {
+      if (sandbox.publicIp && !sandboxIpsWithWorkers.has(sandbox.publicIp)) {
+        sandboxesWithoutWorkers++;
+        logger.warn(
+          { sandboxId: sandbox.id, sandboxName: sandbox.name, publicIp: sandbox.publicIp },
+          "Active sandbox has no registered workers",
+        );
+      }
+    }
+
+    if (orphanedWorkers === 0 && sandboxesWithoutWorkers === 0) {
+      logger.info(
+        { workerCount: workers.length, sandboxCount: activeSandboxes.length },
+        "Worker registry ↔ sandbox cross-reference OK",
+      );
+    }
+
+    return { orphanedWorkers, sandboxesWithoutWorkers };
+  }
 }
