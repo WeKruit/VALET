@@ -2,7 +2,6 @@ import type { FastifyBaseLogger } from "fastify";
 import type { SandboxRecord } from "./sandbox.repository.js";
 import type { SandboxProviderFactory } from "./providers/provider-factory.js";
 import type { KasmClient } from "./kasm/kasm.client.js";
-import { SANDBOX_AGENT_PORT } from "./agent/sandbox-agent.client.js";
 
 // ─── Types ───
 
@@ -21,11 +20,12 @@ export interface DeepHealthResult {
 }
 
 // ─── Port Definitions ───
+// Note: ATM (Deploy Server) runs on its own EC2, not on each sandbox's EC2.
+// Per-sandbox checks only probe GH services that run on the sandbox host.
 
 const EC2_PORTS: ReadonlyArray<{ name: string; port: number; path: string; critical: boolean }> = [
   { name: "GH API", port: 3100, path: "/health", critical: true },
   { name: "GH Worker", port: 3101, path: "/worker/health", critical: false },
-  { name: "Deploy Server", port: SANDBOX_AGENT_PORT, path: "/health", critical: false },
 ];
 
 const PROBE_TIMEOUT_MS = 8_000;

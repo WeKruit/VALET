@@ -116,8 +116,6 @@ function makeMockDeepHealthChecker() {
       checks: [
         { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
         { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
-        { name: "Deploy Server", port: 8080, status: "up", responseTimeMs: 25 },
-        { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
       ],
       timestamp: Date.now(),
     }),
@@ -418,20 +416,6 @@ describe("SandboxService", () => {
             responseTimeMs: 0,
             details: { error: "No public IP configured" },
           },
-          {
-            name: "Deploy Server",
-            port: 8080,
-            status: "down",
-            responseTimeMs: 0,
-            details: { error: "No public IP configured" },
-          },
-          {
-            name: "noVNC",
-            port: 6080,
-            status: "down",
-            responseTimeMs: 0,
-            details: { error: "No public IP configured" },
-          },
         ],
         timestamp: Date.now(),
       });
@@ -470,8 +454,6 @@ describe("SandboxService", () => {
         checks: [
           { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
           { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
-          { name: "Deploy Server", port: 8080, status: "up", responseTimeMs: 25 },
-          { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
         ],
         timestamp: ts,
       });
@@ -496,8 +478,6 @@ describe("SandboxService", () => {
         checks: [
           { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
           { name: "GH Worker", port: 3101, status: "down", responseTimeMs: 0 },
-          { name: "Deploy Server", port: 8080, status: "up", responseTimeMs: 25 },
-          { name: "noVNC", port: 6080, status: "timeout", responseTimeMs: 8000 },
         ],
         timestamp: Date.now(),
       });

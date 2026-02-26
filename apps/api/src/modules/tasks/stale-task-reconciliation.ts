@@ -128,7 +128,7 @@ export class StaleTaskReconciliationMonitor {
     task: { id: string; userId: string; workflowRunId: string | null; updatedAt: Date },
     summary: ReconciliationSummary,
   ) {
-    const stuckMinutes = (Date.now() - task.updatedAt.getTime()) / 60_000;
+    const stuckMinutes = (Date.now() - new Date(task.updatedAt).getTime()) / 60_000;
 
     if (!task.workflowRunId) {
       if (stuckMinutes >= TIMEOUT_THRESHOLD_MINUTES) {

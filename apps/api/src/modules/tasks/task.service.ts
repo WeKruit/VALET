@@ -226,9 +226,9 @@ export class TaskService {
                 }
               : null,
           timestamps: {
-            createdAt: job.createdAt.toISOString(),
-            startedAt: job.startedAt?.toISOString() ?? null,
-            completedAt: job.completedAt?.toISOString() ?? null,
+            createdAt: new Date(job.createdAt).toISOString(),
+            startedAt: job.startedAt ? new Date(job.startedAt).toISOString() : null,
+            completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : null,
           },
           targetWorkerId: job.targetWorkerId ?? null,
         };
@@ -1353,7 +1353,7 @@ export class TaskService {
         try {
           const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
           if (ghJob?.lastHeartbeat) {
-            const heartbeatAge = Date.now() - ghJob.lastHeartbeat.getTime();
+            const heartbeatAge = Date.now() - new Date(ghJob.lastHeartbeat).getTime();
             if (heartbeatAge < HEARTBEAT_THRESHOLD_MS) {
               // GH job is still alive — skip
               continue;
@@ -1373,7 +1373,7 @@ export class TaskService {
           taskId: task.id,
           status: task.status,
           workflowRunId: task.workflowRunId,
-          updatedAt: task.updatedAt.toISOString(),
+          updatedAt: new Date(task.updatedAt).toISOString(),
         },
         "Failing stale task — no recent GH job heartbeat",
       );
