@@ -7,6 +7,7 @@ const envPath = resolve(import.meta.dirname, "../../../.env");
 if (existsSync(envPath)) process.loadEnvFile(envPath);
 
 import { buildApp } from "./app.js";
+import { SANDBOX_AGENT_PORT } from "./modules/sandboxes/agent/sandbox-agent.client.js";
 
 const PORT = Number(process.env.PORT ?? 8000);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -17,9 +18,7 @@ async function main() {
   // Prevent unhandled socket errors (ECONNRESET, EPIPE, etc.) from crashing the process
   process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
     // Socket errors are expected when clients disconnect abruptly
-    if (err.code === "ECONNRESET" ||
-        err.code === "EPIPE" ||
-        err.code === "ECONNABORTED") {
+    if (err.code === "ECONNRESET" || err.code === "EPIPE" || err.code === "ECONNABORTED") {
       app.log.warn({ err: err.message }, "Ignored socket error");
       return;
     }
@@ -35,6 +34,13 @@ async function main() {
     await app.listen({ port: PORT, host: HOST });
     app.log.info(`Server listening on http://${HOST}:${PORT}`);
     app.log.info(`API docs at http://${HOST}:${PORT}/docs`);
+
+    if (SANDBOX_AGENT_PORT !== 8080) {
+      app.log.warn(
+        `GH_AGENT_PORT=${SANDBOX_AGENT_PORT} — UI health links and tests assume 8080. ` +
+          `Set GH_AGENT_PORT=8080 or update frontend/tests to match.`,
+      );
+    }
   } catch (err) {
     app.log.fatal(err);
     process.exit(1);
