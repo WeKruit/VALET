@@ -73,7 +73,11 @@ export class GhostHandsClient {
 
     try {
       const sandboxes = await this.sandboxRepo.findActive("ec2");
-      const healthy = sandboxes.find((s) => s.healthStatus === "healthy" && s.publicIp);
+      // Accept "healthy" or "degraded" — degraded means the GH API (port 3100) is up
+      // but a non-critical service (e.g. deploy-server) is down.
+      const healthy = sandboxes.find(
+        (s) => (s.healthStatus === "healthy" || s.healthStatus === "degraded") && s.publicIp,
+      );
       if (healthy?.publicIp) {
         this._cachedIp = healthy.publicIp;
         this._cachedIpTimestamp = now;
