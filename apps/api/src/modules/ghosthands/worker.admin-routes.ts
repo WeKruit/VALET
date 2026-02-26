@@ -73,9 +73,11 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       const { ghosthandsClient, sandboxRepo, ghJobRepo } = request.diScope.cradle;
       const { workerId } = request.params;
       try {
-        const [fleetData, activeSandboxes] = await Promise.all([
+        const [fleetData, activeSandboxes, workerStatus, workerHealth] = await Promise.all([
           ghosthandsClient.getWorkerFleet(),
           sandboxRepo.findAllActive(),
+          ghosthandsClient.getWorkerStatus(workerId).catch(() => null),
+          ghosthandsClient.getWorkerHealth(workerId).catch(() => null),
         ]);
         const worker = fleetData.workers.find((w) => w.worker_id === workerId);
         if (!worker) return reply.status(404).send({ error: "Worker not found" });
@@ -89,7 +91,12 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         }
 
         const sandboxMap = new Map(activeSandboxes.map((s) => [s.id, s]));
-        return reply.send(enrichWorker(worker, sandboxMap, jobTaskMap));
+        const enriched = enrichWorker(worker, sandboxMap, jobTaskMap);
+        return reply.send({
+          ...enriched,
+          live_status: workerStatus ?? null,
+          live_health: workerHealth ?? null,
+        });
       } catch (err) {
         request.log.error({ err }, "Failed to fetch worker detail");
         return reply.status(502).send({ error: "GhostHands API unreachable" });

@@ -58,8 +58,9 @@ export async function ghosthandsMonitoringRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       await adminOnly(request);
       const { ghosthandsClient } = request.diScope.cradle;
+      const workerId = (request.query as Record<string, string | undefined>).workerId;
       try {
-        const data = await ghosthandsClient.getWorkerStatus();
+        const data = await ghosthandsClient.getWorkerStatus(workerId);
         return reply.send(data);
       } catch (err) {
         request.log.error({ err }, "Failed to fetch GH worker status");
@@ -74,8 +75,9 @@ export async function ghosthandsMonitoringRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       await adminOnly(request);
       const { ghosthandsClient } = request.diScope.cradle;
+      const workerId = (request.query as Record<string, string | undefined>).workerId;
       try {
-        const data = await ghosthandsClient.getWorkerHealth();
+        const data = await ghosthandsClient.getWorkerHealth(workerId);
         return reply.send(data);
       } catch (err) {
         request.log.error({ err }, "Failed to fetch GH worker health");

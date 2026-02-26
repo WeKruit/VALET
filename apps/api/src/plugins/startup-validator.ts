@@ -26,8 +26,8 @@ async function startupValidatorPlugin(app: FastifyInstance) {
   if (!ghApiUrl) {
     results.push({
       check: "GHOSTHANDS_API_URL",
-      status: "fail",
-      message: "GHOSTHANDS_API_URL not set — job dispatch will fail",
+      status: "warn",
+      message: "GHOSTHANDS_API_URL not set — fleet mode will resolve worker URLs from DB",
     });
   } else {
     try {

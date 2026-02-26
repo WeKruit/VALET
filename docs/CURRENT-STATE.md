@@ -830,23 +830,23 @@ From `.env.example`, grouped by service:
 
 ### Required
 
-| Variable             | Description                                                  |
-| -------------------- | ------------------------------------------------------------ |
-| DATABASE_URL         | Supabase Postgres transaction pooler (port 6543)             |
-| DATABASE_DIRECT_URL  | Supabase Postgres session pooler (port 5432, for migrations) |
-| REDIS_URL            | Upstash Redis URL (rediss:// for TLS)                        |
-| GOOGLE_CLIENT_ID     | Google OAuth client ID                                       |
-| GOOGLE_CLIENT_SECRET | Google OAuth client secret                                   |
-| JWT_SECRET           | JWT signing secret (min 32 chars)                            |
-| JWT_REFRESH_SECRET   | Refresh token signing secret                                 |
-| RABBITMQ_URL         | CloudAMQP URL (amqps://)                                     |
-| S3_ENDPOINT          | Supabase Storage S3 endpoint                                 |
-| S3_ACCESS_KEY        | S3 access key                                                |
-| S3_SECRET_KEY        | S3 secret key                                                |
-| ANTHROPIC_API_KEY    | Anthropic API key                                            |
-| OPENAI_API_KEY       | OpenAI API key                                               |
-| GHOSTHANDS_API_URL   | GhostHands API URL (default http://localhost:3100)           |
-| GH_SERVICE_SECRET    | Service-to-service auth key                                  |
+| Variable             | Description                                                    |
+| -------------------- | -------------------------------------------------------------- |
+| DATABASE_URL         | Supabase Postgres transaction pooler (port 6543)               |
+| DATABASE_DIRECT_URL  | Supabase Postgres session pooler (port 5432, for migrations)   |
+| REDIS_URL            | Upstash Redis URL (rediss:// for TLS)                          |
+| GOOGLE_CLIENT_ID     | Google OAuth client ID                                         |
+| GOOGLE_CLIENT_SECRET | Google OAuth client secret                                     |
+| JWT_SECRET           | JWT signing secret (min 32 chars)                              |
+| JWT_REFRESH_SECRET   | Refresh token signing secret                                   |
+| RABBITMQ_URL         | CloudAMQP URL (amqps://)                                       |
+| S3_ENDPOINT          | Supabase Storage S3 endpoint                                   |
+| S3_ACCESS_KEY        | S3 access key                                                  |
+| S3_SECRET_KEY        | S3 secret key                                                  |
+| ANTHROPIC_API_KEY    | Anthropic API key                                              |
+| OPENAI_API_KEY       | OpenAI API key                                                 |
+| GHOSTHANDS_API_URL   | GhostHands API URL — optional in fleet mode (resolved from DB) |
+| GH_SERVICE_SECRET    | Service-to-service auth key                                    |
 
 ### Optional
 
@@ -901,6 +901,6 @@ From `.env.example`, grouped by service:
 
 - The worker dispatches jobs to GhostHands API via REST (POST /api/v1/gh/valet/apply with X-GH-Service-Key auth) and receives callbacks at POST /api/v1/webhooks/ghosthands
 - GH-owned tables (`gh_automation_jobs`, `gh_browser_sessions`, `gh_job_events`) exist in the same database. VALET must NOT create migrations for them.
-- The GhostHands client has two base URLs (port 3100 for API, port 3101 for worker status) -- both derived from `GHOSTHANDS_API_URL`
+- The GhostHands client resolves worker URLs from `gh_worker_registry` in fleet mode, falling back to `GHOSTHANDS_API_URL` for local dev. Port 3100 is the API, port 3101 is the worker status endpoint.
 - The webhook handler includes self-healing: if task is terminal but GH job record is not, it reconciles the gh_automation_jobs status
 - Frontend uses React Router (not TanStack Router as mentioned in some older docs)

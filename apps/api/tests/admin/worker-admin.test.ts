@@ -41,8 +41,12 @@ const mockSandboxes = [
   { id: "sandbox-uuid-1", name: "sandbox-prod-1", environment: "production" },
   { id: "sandbox-uuid-2", name: "sandbox-stg-1", environment: "staging" },
 ];
+const mockWorkerStatus = { worker_id: "sandbox-uuid-1", status: "idle", current_job: null };
+const mockWorkerHealth = { healthy: true, uptime_seconds: 86400 };
 const mockGh = {
   getWorkerFleet: vi.fn().mockResolvedValue(mockFleet),
+  getWorkerStatus: vi.fn().mockResolvedValue(mockWorkerStatus),
+  getWorkerHealth: vi.fn().mockResolvedValue(mockWorkerHealth),
   deregisterWorker: vi.fn().mockResolvedValue({
     deregistered: ["sandbox-uuid-1"],
     cancelled_jobs: ["job-1"],
@@ -137,15 +141,24 @@ describe("Worker Admin Routes", () => {
     expect(rp._sc).toBe(502);
   });
 
-  it("GET detail returns worker data", async () => {
+  it("GET detail returns worker data with live status", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
     await routes.get("GET:/api/v1/admin/workers/:workerId")!(
       mkReq({ params: { workerId: "sandbox-uuid-1" } }) as unknown as FastifyRequest,
       rp,
     );
-    const b = rp._b as { worker_id: string; sandbox_name: string };
+    const b = rp._b as {
+      worker_id: string;
+      sandbox_name: string;
+      live_status: unknown;
+      live_health: unknown;
+    };
     expect(b.worker_id).toBe("sandbox-uuid-1");
     expect(b.sandbox_name).toBe("sandbox-prod-1");
+    expect(b.live_status).toEqual(mockWorkerStatus);
+    expect(b.live_health).toEqual(mockWorkerHealth);
+    expect(mockGh.getWorkerStatus).toHaveBeenCalledWith("sandbox-uuid-1");
+    expect(mockGh.getWorkerHealth).toHaveBeenCalledWith("sandbox-uuid-1");
   });
 
   it("GET detail returns 404 for unknown worker", async () => {
