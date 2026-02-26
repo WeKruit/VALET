@@ -34,7 +34,7 @@ import {
 import { toast } from "sonner";
 import { useWorkerFleet, useDeregisterWorker } from "../hooks/use-workers";
 import type { WorkerEntry } from "../hooks/use-workers";
-import { useSandboxMetrics, useDrainWorker } from "../hooks/use-fleet-metrics";
+import { useFleetSandboxMetrics, useDrainWorker } from "../hooks/use-fleet-metrics";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "default"> = {
   active: "success",
@@ -117,7 +117,7 @@ function SandboxResourceCard({
   sandboxId: string;
   sandboxName: string;
 }) {
-  const { data: metrics, isLoading, isError } = useSandboxMetrics(sandboxId);
+  const { data: metrics, isLoading, isError } = useFleetSandboxMetrics(sandboxId);
 
   return (
     <Card>
@@ -139,8 +139,8 @@ function SandboxResourceCard({
             <MetricBar
               label="Memory"
               icon={MemoryStick}
-              used={metrics?.memoryUsedMb ? metrics.memoryUsedMb / 1024 : null}
-              total={metrics?.memoryTotalMb ? metrics.memoryTotalMb / 1024 : null}
+              used={metrics?.memoryUsedMb != null ? metrics.memoryUsedMb / 1024 : null}
+              total={metrics?.memoryTotalMb != null ? metrics.memoryTotalMb / 1024 : null}
               unit="GB"
             />
             <MetricBar

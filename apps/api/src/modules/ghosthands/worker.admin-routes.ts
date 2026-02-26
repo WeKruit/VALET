@@ -147,23 +147,26 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       const { workerId } = request.params;
 
       try {
-        // 1. Find the worker in the fleet to get its ec2_ip
-        const fleetData = await ghosthandsClient.getWorkerFleet();
+        // 1. Find the worker in the fleet
+        const [fleetData, activeSandboxes] = await Promise.all([
+          ghosthandsClient.getWorkerFleet(),
+          sandboxRepo.findAllActive(),
+        ]);
         const worker = fleetData.workers.find((w) => w.worker_id === workerId);
         if (!worker) {
           return reply.status(404).send({ error: "Worker not found in fleet" });
         }
 
-        const ec2Ip = worker.ec2_ip;
-        if (!ec2Ip) {
-          return reply.status(400).send({ error: "Worker has no associated EC2 IP" });
-        }
-
-        // 2. Find the sandbox by the worker's ec2_ip
-        const activeSandboxes = await sandboxRepo.findAllActive();
-        const sandbox = activeSandboxes.find((s) => s.publicIp === ec2Ip);
+        // 2. Find the sandbox — try ec2_ip match first, fall back to worker_id/target_worker_id
+        const sandboxByIp = worker.ec2_ip
+          ? activeSandboxes.find((s) => s.publicIp === worker.ec2_ip)
+          : null;
+        const sandboxById =
+          activeSandboxes.find((s) => s.id === worker.worker_id) ??
+          activeSandboxes.find((s) => s.id === worker.target_worker_id);
+        const sandbox = sandboxByIp ?? sandboxById ?? null;
         if (!sandbox) {
-          return reply.status(404).send({ error: `No sandbox found for EC2 IP ${ec2Ip}` });
+          return reply.status(404).send({ error: `No sandbox found for worker ${workerId}` });
         }
 
         // 3. Get agent URL via provider and call drain

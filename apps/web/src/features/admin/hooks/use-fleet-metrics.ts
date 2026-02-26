@@ -59,9 +59,9 @@ export interface DrainResponse {
  * Fetch resource metrics (CPU, memory, disk) for a specific sandbox.
  * Uses the existing GET /api/v1/admin/sandboxes/:id/metrics endpoint.
  */
-export function useSandboxMetrics(sandboxId: string) {
+export function useFleetSandboxMetrics(sandboxId: string) {
   return useQuery<SandboxMetrics>({
-    queryKey: ["admin", "sandboxes", sandboxId, "metrics"],
+    queryKey: ["admin", "fleet", sandboxId, "metrics"],
     queryFn: () =>
       fetchWithAuth<SandboxMetrics>(
         `${API_BASE_URL}/api/v1/admin/sandboxes/${encodeURIComponent(sandboxId)}/metrics`,
