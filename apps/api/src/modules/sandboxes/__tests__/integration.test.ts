@@ -79,7 +79,7 @@ function makeMockProviderFactory() {
       startMachine: vi.fn().mockResolvedValue({ success: true, message: "started" }),
       stopMachine: vi.fn().mockResolvedValue({ success: true, message: "stopped" }),
       getMachineStatus: vi.fn().mockResolvedValue({ state: "running" }),
-      getAgentUrl: vi.fn().mockReturnValue("http://34.197.248.80:8000"),
+      getAgentUrl: vi.fn().mockReturnValue("http://34.197.248.80:8080"),
       pingAgent: vi.fn().mockResolvedValue(true),
     }),
     getByType: vi.fn(),
@@ -116,7 +116,7 @@ function makeMockDeepHealthChecker() {
       checks: [
         { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
         { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
-        { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
+        { name: "Deploy Server", port: 8080, status: "up", responseTimeMs: 25 },
         { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
       ],
       timestamp: Date.now(),
@@ -420,7 +420,7 @@ describe("SandboxService", () => {
           },
           {
             name: "Deploy Server",
-            port: 8000,
+            port: 8080,
             status: "down",
             responseTimeMs: 0,
             details: { error: "No public IP configured" },
@@ -470,7 +470,7 @@ describe("SandboxService", () => {
         checks: [
           { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
           { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
-          { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
+          { name: "Deploy Server", port: 8080, status: "up", responseTimeMs: 25 },
           { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
         ],
         timestamp: ts,
@@ -496,7 +496,7 @@ describe("SandboxService", () => {
         checks: [
           { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
           { name: "GH Worker", port: 3101, status: "down", responseTimeMs: 0 },
-          { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
+          { name: "Deploy Server", port: 8080, status: "up", responseTimeMs: 25 },
           { name: "noVNC", port: 6080, status: "timeout", responseTimeMs: 8000 },
         ],
         timestamp: Date.now(),

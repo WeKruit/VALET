@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SandboxAgentClient, AgentError } from "../../../agent/sandbox-agent.client.js";
 
-const AGENT_URL = "http://10.0.0.1:8000";
+const AGENT_URL = "http://10.0.0.1:8080";
 const DEPLOY_SECRET = "test-deploy-secret";
 
 function jsonResponse(body: unknown, status = 200): Response {

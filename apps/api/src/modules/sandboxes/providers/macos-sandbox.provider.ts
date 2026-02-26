@@ -4,6 +4,7 @@ import type {
   MachineStatus,
 } from "./sandbox-provider.interface.js";
 import type { SandboxRecord } from "../sandbox.repository.js";
+import { SANDBOX_AGENT_PORT } from "../agent/sandbox-agent.client.js";
 
 export class MacOsSandboxProvider implements SandboxProvider {
   readonly type = "macos" as const;
@@ -38,7 +39,7 @@ export class MacOsSandboxProvider implements SandboxProvider {
   getAgentUrl(sandbox: SandboxRecord): string {
     const host = sandbox.publicIp ?? sandbox.privateIp;
     if (!host) throw new Error(`Sandbox ${sandbox.id} has no IP configured`);
-    return `http://${host}:8000`;
+    return `http://${host}:${SANDBOX_AGENT_PORT}`;
   }
 
   async pingAgent(sandbox: SandboxRecord): Promise<boolean> {
