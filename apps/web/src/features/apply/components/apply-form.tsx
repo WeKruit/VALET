@@ -21,6 +21,7 @@ import {
   StickyNote,
   Briefcase,
   Globe,
+  Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -29,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { QualitySelector } from "./quality-selector";
 import { WorkerSelector } from "./worker-selector";
+import { ModelSelectors } from "./model-selectors";
 
 type PlatformInfo = {
   name: string;
@@ -101,6 +103,8 @@ export function ApplyForm() {
   const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
   const [selectedResumeId, setSelectedResumeId] = useState<string>("");
   const [targetWorkerId, setTargetWorkerId] = useState<string>("");
+  const [reasoningModel, setReasoningModel] = useState<string>("auto");
+  const [visionModel, setVisionModel] = useState<string>("auto");
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
@@ -159,6 +163,8 @@ export function ApplyForm() {
         quality,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
+        ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
+        ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
       },
     });
   }
@@ -341,6 +347,27 @@ export function ApplyForm() {
           <QualitySelector value={quality} onChange={setQuality} />
         </CardContent>
       </Card>
+
+      {/* Model override (admin only) */}
+      {isAdmin && (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Cpu className="h-4 w-4 text-[var(--wk-text-secondary)]" />
+              <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+                Model Override
+                <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(admin)</span>
+              </label>
+            </div>
+            <ModelSelectors
+              reasoningModel={reasoningModel}
+              onReasoningModelChange={setReasoningModel}
+              visionModel={visionModel}
+              onVisionModelChange={setVisionModel}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Worker selector (admin only) */}
       {isAdmin && <WorkerSelector value={targetWorkerId} onChange={setTargetWorkerId} />}

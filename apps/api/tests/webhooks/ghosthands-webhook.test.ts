@@ -111,15 +111,6 @@ function createMockCradle() {
         task.interactionData = null;
       }
     }),
-    updateProgress: vi
-      .fn()
-      .mockImplementation(async (id: string, data: Record<string, unknown>) => {
-        const task = taskStore.get(id);
-        if (task) {
-          if (data.progress != null) task.progress = data.progress as number;
-          if (data.currentStep != null) task.currentStep = data.currentStep as string;
-        }
-      }),
   };
 
   const ghJobRepo = {
