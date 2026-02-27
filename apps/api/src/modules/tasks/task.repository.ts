@@ -177,9 +177,6 @@ export class TaskRepository {
     const extra: Record<string, unknown> = { updatedAt: now };
     if (status === "completed" || status === "failed" || status === "cancelled") {
       extra.completedAt = now;
-      if (status === "completed") {
-        extra.progress = 100;
-      }
     }
     if (status === "in_progress") {
       extra.startedAt = now;
@@ -208,9 +205,6 @@ export class TaskRepository {
     };
     if (status === "completed" || status === "failed" || status === "cancelled") {
       extra.completedAt = now;
-      if (status === "completed") {
-        extra.progress = 100;
-      }
     }
     if (status === "in_progress") {
       extra.startedAt = now;
@@ -229,17 +223,6 @@ export class TaskRepository {
 
   async cancel(id: string) {
     return this.updateStatus(id, "cancelled");
-  }
-
-  async updateProgress(id: string, data: { progress?: number; currentStep?: string }) {
-    await this.db
-      .update(tasks)
-      .set({
-        ...(data.progress !== undefined ? { progress: data.progress } : {}),
-        ...(data.currentStep !== undefined ? { currentStep: data.currentStep } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(tasks.id, id));
   }
 
   async updateWorkflowRunId(id: string, workflowRunId: string) {

@@ -365,9 +365,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         });
       } else {
         // Standard task_update for completed/failed/cancelled
-        // WEK-71: No longer persist currentStep to tasks table.
-        // Progress is computed from gh_job_events; terminal progress (100)
-        // is still set by updateStatus() for completed tasks.
+        // WEK-71: Progress is computed from gh_job_events at read time.
+        // No progress writes to tasks table.
         const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
         const stepLabel =
           taskStatus === "completed"
