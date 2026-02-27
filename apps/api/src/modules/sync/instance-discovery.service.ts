@@ -310,7 +310,12 @@ export class InstanceDiscoveryService {
 
     const asgInstanceIds = (asgResult.AutoScalingInstances ?? [])
       .filter((i) => i.AutoScalingGroupName === this.asgName)
-      .filter((i) => i.LifecycleState === "InService" || i.LifecycleState === "Pending")
+      .filter(
+        (i) =>
+          i.LifecycleState === "InService" ||
+          i.LifecycleState === "Pending" ||
+          i.LifecycleState === "Standby",
+      )
       .map((i) => ({
         instanceId: i.InstanceId!,
         lifecycleState: i.LifecycleState ?? "Unknown",
@@ -402,6 +407,45 @@ export class InstanceDiscoveryService {
       { instanceId: instance.instanceId, publicIp: instance.publicIp },
       "Auto-registering new ASG instance as sandbox",
     );
+
+    // If a terminated/stopped record exists with the same instanceId, reactivate it
+    // instead of creating a duplicate (the unique constraint on instance_id would block INSERT)
+    const existing = await this.sandboxRepo.findByInstanceId(instance.instanceId);
+    if (existing) {
+      if (existing.status === "terminated" || existing.status === "stopping") {
+        this.logger.info(
+          { sandboxId: existing.id, instanceId: instance.instanceId, oldStatus: existing.status },
+          "Reactivating terminated sandbox record for returning instance",
+        );
+        await this.sandboxRepo.update(existing.id, {
+          status: "provisioning",
+          ec2Status: "running",
+          healthStatus: "degraded",
+          publicIp: instance.publicIp,
+          instanceType: instance.instanceType,
+        });
+
+        // Schedule health probe
+        const timeoutId = setTimeout(() => {
+          this.pendingTimeouts.delete(timeoutId);
+          this.probeAndActivate(existing.id).catch((err) => {
+            this.logger.error(
+              { err, sandboxId: existing.id },
+              "Health probe after reactivation failed",
+            );
+          });
+        }, HEALTH_PROBE_DELAY_MS);
+        this.pendingTimeouts.add(timeoutId);
+
+        return;
+      }
+
+      // Already active with this instanceId — just update IP if changed
+      if (existing.publicIp !== instance.publicIp) {
+        await this.updateSandboxIp(existing, instance);
+      }
+      return;
+    }
 
     // Determine sandbox name using sequential numbering
     const existingAsg = await this.sandboxRepo.findAsgManaged();

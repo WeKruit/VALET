@@ -32,6 +32,7 @@ function makeSandboxRepo() {
   return {
     findActive: vi.fn().mockResolvedValue([]),
     findById: vi.fn().mockResolvedValue(null),
+    findByInstanceId: vi.fn().mockResolvedValue(null),
     findAsgManaged: vi.fn().mockResolvedValue([]),
     findByMachineTypeWithStatuses: vi.fn().mockResolvedValue([]),
     create: vi.fn().mockImplementation((data: Record<string, unknown>) =>

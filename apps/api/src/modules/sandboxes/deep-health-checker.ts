@@ -76,28 +76,20 @@ export class DeepHealthChecker {
   // ─── EC2 Health Check ───
 
   private async checkEc2(sandbox: SandboxRecord): Promise<DeepHealthResult> {
-    // Gap 2: Use ATM fleet health as single source of truth
-    const hasClient = !!this.atmFleetClient;
-    const isConfigured = this.atmFleetClient?.isConfigured ?? false;
-    this.logger.info(
-      { sandboxId: sandbox.id, hasClient, isConfigured, instanceId: sandbox.instanceId },
-      "checkEc2: ATM path check",
-    );
-
+    // Use ATM fleet health as single source of truth when configured
     if (this.atmFleetClient?.isConfigured) {
       try {
         const fleetId = await this.atmFleetClient.resolveFleetId(sandbox);
-        this.logger.info({ sandboxId: sandbox.id, fleetId }, "checkEc2: resolved fleet ID");
         if (fleetId) {
           const atmHealth = await this.atmFleetClient.getWorkerHealth(fleetId);
-          this.logger.info(
-            { sandboxId: sandbox.id, atmHealthStatus: atmHealth.status },
-            "checkEc2: got ATM health",
-          );
           return this.mapAtmHealthToDeepResult(atmHealth);
         }
+        this.logger.warn(
+          { sandboxId: sandbox.id, instanceId: sandbox.instanceId },
+          "ATM configured but no fleet ID resolved — falling back to direct probing",
+        );
       } catch (err) {
-        this.logger.info(
+        this.logger.warn(
           { sandboxId: sandbox.id, err: err instanceof Error ? err.message : String(err) },
           "ATM fleet health unavailable, falling back to direct probing",
         );
