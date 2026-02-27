@@ -348,7 +348,7 @@ export function ApplyForm() {
         </CardContent>
       </Card>
 
-      {/* Model override (admin only) */}
+      {/* Model override (power-user convenience, hidden for simplicity) */}
       {isAdmin && (
         <Card>
           <CardContent className="p-6">
@@ -356,7 +356,7 @@ export function ApplyForm() {
               <Cpu className="h-4 w-4 text-[var(--wk-text-secondary)]" />
               <label className="text-sm font-medium text-[var(--wk-text-primary)]">
                 Model Override
-                <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(admin)</span>
+                <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(advanced)</span>
               </label>
             </div>
             <ModelSelectors
