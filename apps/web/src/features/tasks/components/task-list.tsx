@@ -15,6 +15,7 @@ interface TaskItem {
   mode: "copilot" | "autopilot";
   progress: number;
   currentStep?: string | null;
+  notes?: string | null;
   createdAt: Date;
 }
 
@@ -80,6 +81,9 @@ export function TaskList({ tasks }: TaskListProps) {
                     <Badge variant={task.mode === "copilot" ? "copilot" : "autopilot"}>
                       {task.mode}
                     </Badge>
+                    {task.notes?.startsWith("[e2e-test]") && (
+                      <Badge variant="secondary">test</Badge>
+                    )}
                     {task.externalStatus && (
                       <Badge variant={externalStatusBadgeVariant[task.externalStatus] ?? "default"}>
                         {task.externalStatus}

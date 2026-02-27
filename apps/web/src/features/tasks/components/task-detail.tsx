@@ -211,6 +211,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
               <Badge variant={statusBadgeVariant[task.status] ?? "default"} className="capitalize">
                 {task.status.replace("_", " ")}
               </Badge>
+              {task.notes?.startsWith("[e2e-test]") && <Badge variant="secondary">test</Badge>}
             </div>
           </div>
         </CardHeader>
