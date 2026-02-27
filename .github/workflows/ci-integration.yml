@@ -25,7 +25,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Real integration tests (DB + Redis)
-        run: pnpm test:integration
+        run: pnpm -w test:integration
         env:
           INTEGRATION_TEST: "true"
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -50,7 +50,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Staging E2E tests
-        run: pnpm test:e2e:staging
+        run: pnpm -w test:e2e:staging
         env:
           STAGING_E2E: "true"
           STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
