@@ -61,6 +61,8 @@ function resetStore() {
 function createMockCradle() {
   const mockRedis = {
     publish: vi.fn().mockResolvedValue(1),
+    xadd: vi.fn().mockResolvedValue("1-0"),
+    expire: vi.fn().mockResolvedValue(1),
   };
 
   const taskRepo = {

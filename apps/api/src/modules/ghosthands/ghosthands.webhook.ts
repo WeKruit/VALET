@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { GHCallbackPayload, GHDeployWebhookPayload } from "./ghosthands.types.js";
 import type { TaskStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
+import { streamKey } from "../../lib/redis-streams.js";
 
 /**
  * Verify shared service key from GhostHands.
@@ -299,6 +300,37 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           );
         }
       }
+
+      // ── Publish to Redis Stream (SSE bridge) ─────────────────
+      // The SSE endpoint (task-events-sse.routes.ts) reads from Redis Streams
+      // via XREAD. GH can't publish directly to VALET's Redis, so the webhook
+      // handler bridges GH events → Redis Streams for real-time SSE delivery.
+      const sseKey = streamKey(payload.job_id);
+      await redis
+        .xadd(
+          sseKey,
+          "*",
+          "event_type",
+          payload.status,
+          "job_id",
+          payload.job_id,
+          "task_id",
+          valetTaskId,
+          "status",
+          taskStatus,
+          "message",
+          payload.result_summary ?? payload.error_message ?? "",
+          "payload",
+          JSON.stringify(payload),
+        )
+        .catch((err: unknown) => {
+          request.log.warn(
+            { err, jobId: payload.job_id },
+            "Failed to publish event to Redis stream",
+          );
+        });
+      // TTL so old streams get cleaned up (1 hour)
+      await redis.expire(sseKey, 3600).catch(() => {});
 
       // Publish WebSocket events based on status
       if (taskStatus === "waiting_human" && payload.interaction) {
