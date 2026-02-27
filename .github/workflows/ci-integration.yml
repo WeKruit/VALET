@@ -54,7 +54,6 @@ jobs:
         env:
           STAGING_E2E: "true"
           STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
-          STAGING_GH_IP: ${{ secrets.STAGING_GH_IP }}
           GH_SERVICE_SECRET: ${{ secrets.GH_SERVICE_SECRET }}
           STAGING_JWT: ${{ secrets.STAGING_JWT }}
           ATM_BASE_URL: ${{ secrets.ATM_BASE_URL }}

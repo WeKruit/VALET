@@ -2,9 +2,12 @@
  * Staging E2E test setup.
  *
  * Three-layer auth:
- *   ATM Direct  → bootstrap (wake/health, independent of VALET)
+ *   ATM Direct  → bootstrap (wake/health, discover worker IP)
  *   VALET API   → test cases (tasks, sandboxes, monitoring)
  *   GH API      → test cases (GH health, models)
+ *
+ * Worker IP is discovered from ATM fleet — NOT hardcoded or env-injected.
+ * This supports multi-worker fleets where IPs change on start/stop.
  *
  * Gated behind STAGING_E2E=true — skipped during normal `pnpm test`.
  */
@@ -15,7 +18,6 @@ export function isAvailable(): boolean {
   return (
     process.env.STAGING_E2E === "true" &&
     Boolean(process.env.STAGING_API_URL) &&
-    Boolean(process.env.STAGING_GH_IP) &&
     Boolean(process.env.GH_SERVICE_SECRET) &&
     Boolean(process.env.ATM_BASE_URL) &&
     Boolean(process.env.ATM_DEPLOY_SECRET)
@@ -27,7 +29,6 @@ export function isAvailable(): boolean {
 export function getConfig() {
   return {
     apiUrl: process.env.STAGING_API_URL ?? "https://valet-api-stg.fly.dev",
-    ghIp: process.env.STAGING_GH_IP ?? "44.198.167.49",
     ghServiceSecret: process.env.GH_SERVICE_SECRET!,
     jwt: process.env.STAGING_JWT,
     atmBaseUrl: process.env.ATM_BASE_URL!,
@@ -115,33 +116,70 @@ function getAtmClient() {
   };
 }
 
-// ── Fleet ID Discovery ──────────────────────────────────────────────
+// ── Fleet Discovery ─────────────────────────────────────────────────
 
-async function discoverFleetId(): Promise<string> {
-  // 1. Check env override
-  if (process.env.ATM_FLEET_ID) return process.env.ATM_FLEET_ID;
+interface FleetWorker {
+  fleetId: string;
+  ip: string;
+}
 
-  // 2. Query ATM idle-status, match by known staging IP or instanceId
+/**
+ * Discovers fleet ID and worker IP from ATM.
+ * Priority: ATM_FLEET_ID env → first worker from idle-status.
+ */
+async function discoverFleet(): Promise<FleetWorker> {
   const atm = getAtmClient();
   const res = await atm.idleStatus();
   const workers = (res.data as any)?.workers ?? [];
-  const staging = workers.find(
-    (w: any) => w.instanceId === "i-0baf28dd8bb630810" || w.ip === process.env.STAGING_GH_IP,
-  );
-  if (staging?.serverId) return staging.serverId;
 
-  throw new Error("Cannot discover fleet ID — set ATM_FLEET_ID env var");
+  // If fleet ID is pinned, find that specific worker
+  if (process.env.ATM_FLEET_ID) {
+    const pinned = workers.find((w: any) => w.serverId === process.env.ATM_FLEET_ID);
+    if (pinned?.ip) return { fleetId: pinned.serverId, ip: pinned.ip };
+    // Fleet ID set but not found in idle-status — still use it, IP comes after wake
+    return { fleetId: process.env.ATM_FLEET_ID, ip: "" };
+  }
+
+  // Otherwise pick first worker
+  if (workers.length > 0) {
+    const w = workers[0];
+    return { fleetId: w.serverId, ip: w.ip ?? "" };
+  }
+
+  throw new Error("No workers found in ATM fleet — check ATM_BASE_URL or set ATM_FLEET_ID");
+}
+
+/**
+ * Resolves the worker IP from ATM idle-status after wake.
+ * The wake response or subsequent idle-status will have the IP.
+ */
+async function resolveWorkerIp(fleetId: string): Promise<string> {
+  const atm = getAtmClient();
+  const res = await atm.idleStatus();
+  const workers = (res.data as any)?.workers ?? [];
+  const worker = workers.find((w: any) => w.serverId === fleetId);
+  if (worker?.ip) return worker.ip;
+  throw new Error(`Worker ${fleetId} has no IP in ATM idle-status — EC2 may not have a public IP`);
 }
 
 // ── Worker Lifecycle (singleton) ────────────────────────────────────
 
+/** Discovered worker IP, set by ensureWorkerUp() */
+let _discoveredIp: string | null = null;
+
+/** Get the discovered worker IP. Throws if ensureWorkerUp() hasn't run. */
+export function getWorkerIp(): string {
+  if (!_discoveredIp) throw new Error("Call ensureWorkerUp() before getWorkerIp()");
+  return _discoveredIp;
+}
+
 let _workerReady: Promise<void> | null = null;
 
 /**
- * Ensures the EC2 worker is up and healthy.
+ * Ensures the EC2 worker is up and healthy, discovers its IP.
  * Call from `beforeAll` in every test file — singleton guarantees it runs once.
  *
- * Flow: check liveness → wake if needed → poll until healthy → hard-fail if can't.
+ * Flow: discover fleet → check liveness → wake if needed → resolve IP → done.
  */
 export function ensureWorkerUp(): Promise<void> {
   if (!_workerReady) _workerReady = _doEnsureWorkerUp();
@@ -149,17 +187,19 @@ export function ensureWorkerUp(): Promise<void> {
 }
 
 async function _doEnsureWorkerUp(): Promise<void> {
-  const fleetId = await discoverFleetId();
+  const fleet = await discoverFleet();
   const atm = getAtmClient();
 
   // Step 1: check liveness first
-  console.log(`[e2e] Checking liveness for fleet ${fleetId}...`);
+  console.log(`[e2e] Checking liveness for fleet ${fleet.fleetId}...`);
   try {
-    const healthRes = await atm.health(fleetId);
+    const healthRes = await atm.health(fleet.fleetId);
     const isHealthy = healthRes.ok && (healthRes.data as any)?.status === "healthy";
 
     if (isHealthy) {
-      console.log(`[e2e] Fleet ${fleetId} already healthy — no wake needed`);
+      console.log(`[e2e] Fleet ${fleet.fleetId} already healthy — no wake needed`);
+      _discoveredIp = fleet.ip || (await resolveWorkerIp(fleet.fleetId));
+      console.log(`[e2e] Worker IP: ${_discoveredIp}`);
       return;
     }
   } catch {
@@ -167,19 +207,23 @@ async function _doEnsureWorkerUp(): Promise<void> {
   }
 
   // Step 2: wake via ATM (may take up to 130s for EC2 cold start)
-  console.log(`[e2e] Fleet ${fleetId} not live — waking via ATM (this may take 1-2 min)...`);
-  const wakeRes = await atm.wake(fleetId);
+  console.log(`[e2e] Fleet ${fleet.fleetId} not live — waking via ATM (this may take 1-2 min)...`);
+  const wakeRes = await atm.wake(fleet.fleetId);
   if (!wakeRes.ok) {
     throw new Error(`ATM wake failed: ${wakeRes.status} ${JSON.stringify(wakeRes.data)}`);
   }
+
+  // Wake response may contain the IP
+  const wakeIp = (wakeRes.data as any)?.ip;
 
   // Step 3: poll health every 5s up to 120s until healthy
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     try {
-      const h = await atm.health(fleetId);
+      const h = await atm.health(fleet.fleetId);
       if (h.ok && (h.data as any)?.status === "healthy") {
-        console.log(`[e2e] Fleet ${fleetId} healthy after wake`);
+        _discoveredIp = wakeIp || (await resolveWorkerIp(fleet.fleetId));
+        console.log(`[e2e] Fleet ${fleet.fleetId} healthy after wake — IP: ${_discoveredIp}`);
         return;
       }
     } catch {
@@ -188,13 +232,19 @@ async function _doEnsureWorkerUp(): Promise<void> {
     await new Promise((r) => setTimeout(r, 5_000));
   }
 
-  throw new Error(`Fleet ${fleetId} not healthy after 120s — HARD FAIL`);
+  throw new Error(`Fleet ${fleet.fleetId} not healthy after 120s — HARD FAIL`);
 }
 
 // ── Clients ──────────────────────────────────────────────────────────
 
+/**
+ * Creates staging test clients.
+ * GH/deploy/worker clients use the IP discovered by ensureWorkerUp().
+ * Must call ensureWorkerUp() before getStagingClient().
+ */
 export function getStagingClient() {
   const cfg = getConfig();
+  const ghIp = getWorkerIp();
 
   const authHeader: Record<string, string> = cfg.jwt ? { Authorization: `Bearer ${cfg.jwt}` } : {};
 
@@ -216,28 +266,28 @@ export function getStagingClient() {
       delete: (path: string, opts?: RequestOptions) =>
         request(cfg.apiUrl, path, "DELETE", { ...opts, authHeader }),
     },
-    /** GhostHands EC2 client (direct IP) */
+    /** GhostHands EC2 client (discovered IP, port 3100) */
     gh: {
       get: (path: string, opts?: RequestOptions) =>
-        request(`http://${cfg.ghIp}:3100`, path, "GET", {
+        request(`http://${ghIp}:3100`, path, "GET", {
           ...opts,
           authHeader: ghAuthHeader,
         }),
       post: (path: string, opts?: RequestOptions) =>
-        request(`http://${cfg.ghIp}:3100`, path, "POST", {
+        request(`http://${ghIp}:3100`, path, "POST", {
           ...opts,
           authHeader: ghAuthHeader,
         }),
     },
-    /** EC2 deploy server client (port 8000, no auth) */
+    /** EC2 deploy server client (discovered IP, port 8000, no auth) */
     deploy: {
       get: (path: string, opts?: RequestOptions) =>
-        request(`http://${cfg.ghIp}:8000`, path, "GET", opts),
+        request(`http://${ghIp}:8000`, path, "GET", opts),
     },
-    /** EC2 worker client (port 3101, no auth) */
+    /** EC2 worker client (discovered IP, port 3101, no auth) */
     worker: {
       get: (path: string, opts?: RequestOptions) =>
-        request(`http://${cfg.ghIp}:3101`, path, "GET", opts),
+        request(`http://${ghIp}:3101`, path, "GET", opts),
     },
   };
 }
