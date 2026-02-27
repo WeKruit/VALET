@@ -9,14 +9,28 @@ import { browserProfiles } from "./browser-profiles.js";
 import { applicationResults } from "./application-results.js";
 import { applicationFields } from "./application-fields.js";
 import { notifications } from "./notifications.js";
+import { userSandboxes } from "./user-sandboxes.js";
+import { sandboxes } from "./sandboxes.js";
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   tasks: many(tasks),
   resumes: many(resumes),
   qaBank: many(qaBank),
   consentRecords: many(consentRecords),
   browserProfiles: many(browserProfiles),
   notifications: many(notifications),
+  sandboxAssignment: one(userSandboxes),
+}));
+
+export const userSandboxesRelations = relations(userSandboxes, ({ one }) => ({
+  user: one(users, {
+    fields: [userSandboxes.userId],
+    references: [users.id],
+  }),
+  sandbox: one(sandboxes, {
+    fields: [userSandboxes.sandboxId],
+    references: [sandboxes.id],
+  }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({

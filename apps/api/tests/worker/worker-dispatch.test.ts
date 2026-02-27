@@ -110,6 +110,11 @@ function createService() {
     ghSessionRepo: mockGhSessionRepo as any,
     redis: mockRedis,
     logger: mockLogger,
+    userSandboxRepo: {
+      findByUserId: vi.fn().mockResolvedValue(null),
+      findBestAvailableSandbox: vi.fn().mockResolvedValue(null),
+      assign: vi.fn().mockResolvedValue(undefined),
+    },
   });
 }
 

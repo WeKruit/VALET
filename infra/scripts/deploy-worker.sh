@@ -88,20 +88,20 @@ if [[ -z "$EC2_IP" ]]; then
     echo -e "${BOLD}Usage:${NC} $0 --host <ip> --key <path-to-key> [--skip-build] [--rollback-on-failure]"
     echo ""
     echo "  --host <ip>            Public IP or hostname of the EC2 instance"
-    echo "  --key <path>           Path to SSH private key (default: ~/.ssh/valet-worker.pem)"
+    echo "  --key <path>           Path to SSH private key (default: ~/.ssh/wekruit-atm-server.pem)"
     echo "  --skip-build           Skip local build (use existing dist/ artifacts)"
     echo "  --rollback-on-failure  Auto-rollback on health check failure (no prompt)"
     echo ""
     echo "Positional args also supported: $0 <ec2-ip> [ssh-key-path]"
     echo ""
     echo "Examples:"
-    echo "  $0 --host 54.123.45.67 --key ~/.ssh/valet-worker.pem"
+    echo "  $0 --host 54.123.45.67 --key ~/.ssh/wekruit-atm-server.pem"
     echo "  $0 --host 54.123.45.67 --key /tmp/deploy-key.pem --skip-build"
     echo "  $0 54.123.45.67"
     exit 1
 fi
 
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/valet-worker.pem}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/wekruit-atm-server.pem}"
 SSH_USER="ubuntu"
 REMOTE_APP_DIR="/opt/valet/app"
 REMOTE_ENV_DIR="/opt/valet"

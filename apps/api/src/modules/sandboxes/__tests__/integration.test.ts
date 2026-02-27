@@ -187,6 +187,7 @@ describe("SandboxService", () => {
       sandboxProviderFactory: providerFactory as unknown as SandboxProviderFactory,
       sandboxAgentClient: agentClient as unknown as SandboxAgentClient,
       deepHealthChecker: deepHealthChecker as unknown as DeepHealthChecker,
+      userSandboxRepo: { unassignBySandboxId: vi.fn().mockResolvedValue(0) } as never,
     });
   });
 

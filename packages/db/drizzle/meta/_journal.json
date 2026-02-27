@@ -141,6 +141,13 @@
       "when": 1745798000000,
       "tag": "0019_add_roles_and_email_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1745884000000,
+      "tag": "0020_add_user_sandboxes",
+      "breakpoints": true
     }
   ]
 }

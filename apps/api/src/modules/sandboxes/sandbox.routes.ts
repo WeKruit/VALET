@@ -550,6 +550,65 @@ export const sandboxRouter = s.router(sandboxContract, {
     }
   },
 
+  // ─── User Sandbox Assignments ───
+
+  listUserAssignments: async ({ query, request }) => {
+    await adminOnly(request);
+    const { userSandboxRepo } = request.diScope.cradle;
+    const assignments = await userSandboxRepo.findAll(query.sandboxId);
+    return {
+      status: 200 as const,
+      body: { data: assignments },
+    };
+  },
+
+  getUserAssignment: async ({ params, request }) => {
+    await adminOnly(request);
+    const { userSandboxRepo } = request.diScope.cradle;
+    const assignment = await userSandboxRepo.findByUserId(params.userId);
+    if (!assignment) {
+      throw AppError.notFound("No sandbox assignment found for this user");
+    }
+    return { status: 200 as const, body: assignment };
+  },
+
+  assignUserToSandbox: async ({ body, request }) => {
+    await adminOnly(request);
+    const { userSandboxRepo, sandboxService, userService } = request.diScope.cradle;
+
+    // Validate sandbox exists and is active
+    const sandbox = await sandboxService.getById(body.sandboxId);
+    if (sandbox.status !== "active") {
+      throw AppError.conflict(`Sandbox is ${sandbox.status}, must be active to assign users`);
+    }
+
+    // Validate user exists
+    try {
+      await userService.getById(body.userId);
+    } catch {
+      throw AppError.notFound("User not found");
+    }
+
+    // Check capacity
+    const currentCount = await userSandboxRepo.countBySandbox(body.sandboxId);
+    if (currentCount >= sandbox.capacity) {
+      throw AppError.conflict(`Sandbox is at capacity (${currentCount}/${sandbox.capacity})`);
+    }
+
+    const assignment = await userSandboxRepo.assign(body.userId, body.sandboxId, request.userId);
+    return { status: 200 as const, body: assignment };
+  },
+
+  unassignUser: async ({ params, request }) => {
+    await adminOnly(request);
+    const { userSandboxRepo } = request.diScope.cradle;
+    const removed = await userSandboxRepo.unassign(params.userId);
+    if (!removed) {
+      throw AppError.notFound("No sandbox assignment found for this user");
+    }
+    return { status: 200 as const, body: { message: "User unassigned from sandbox" } };
+  },
+
   workerStatus: async ({ params, request }) => {
     await adminOnly(request);
     const { sandboxService, sandboxProviderFactory, taskRepo, ghosthandsClient, logger } =

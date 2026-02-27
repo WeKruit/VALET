@@ -63,9 +63,8 @@ export class SandboxHealthMonitor {
   private async runHealthChecks() {
     try {
       this.logger.debug("Running scheduled sandbox health checks");
-      // TODO (WEK-406): Replace direct GH health probing with ATM /fleet/:id/health endpoint
-      // to avoid health state divergence between VALET and ATM. Currently VALET probes
-      // GH independently, which may disagree with ATM's health determination.
+      // WEK-406: EC2 health checks now delegate to ATM /fleet/:id/health via
+      // DeepHealthChecker → AtmFleetClient, avoiding state divergence.
       const results = await this.sandboxService.checkAllSandboxes();
 
       if (results.length === 0) {

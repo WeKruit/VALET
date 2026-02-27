@@ -698,10 +698,10 @@ GhostHands workers run on EC2 instances managed via the sandbox system.
 
 ```bash
 # 1. Check current deploy status
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<sandbox-ip> "cat /opt/ghost-hands/DEPLOY_VERSION"
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<sandbox-ip> "cat /opt/ghost-hands/DEPLOY_VERSION"
 
 # 2. If the latest deploy broke things, roll back the Docker image
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<sandbox-ip> \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<sandbox-ip> \
   "cd /opt/ghost-hands && docker compose down && \
    docker tag ghost-hands:latest ghost-hands:broken && \
    docker tag ghost-hands:previous ghost-hands:latest && \

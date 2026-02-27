@@ -83,11 +83,11 @@ gh secret set FLY_API_TOKEN
 ### 2. SSH Key for EC2
 
 ```bash
-# If you don't have the valet-worker.pem key, create a new one:
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/valet-worker.pem -N ""
+# If you don't have the wekruit-atm-server.pem key, create a new one:
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/wekruit-atm-server.pem -N ""
 
 # Add to GitHub (paste the entire PEM file)
-gh secret set SANDBOX_SSH_KEY < ~/.ssh/valet-worker.pem
+gh secret set SANDBOX_SSH_KEY < ~/.ssh/wekruit-atm-server.pem
 ```
 
 **Important:** The corresponding public key must be added to AWS EC2 as "valet-worker" key pair.

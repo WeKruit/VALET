@@ -196,7 +196,7 @@ curl https://valet-api-stg.fly.dev/api/v1/tasks/{taskId} \
 #### SSH to EC2 Instance
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80
 ```
 
 #### Tail Worker Logs
@@ -358,7 +358,7 @@ aws ec2 wait instance-running --instance-ids i-0428f12557f075129
 #### 2. Verify Worker is Running
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80 \
   "sudo systemctl status valet-worker"
 ```
 
@@ -367,7 +367,7 @@ ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 \
 #### 3. Check GhostHands API Connection
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80 \
   "sudo journalctl -u valet-worker -n 20 | grep -i 'ghost\|connected\|ready'"
 ```
 
@@ -398,7 +398,7 @@ echo "Task created: $TASK_ID"
 #### 5. Watch Worker Logs in Real-Time
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80 \
   "sudo journalctl -u valet-worker -f"
 ```
 
@@ -446,14 +446,14 @@ curl https://valet-api-stg.fly.dev/api/v1/tasks/$TASK_ID \
 ### Restart Worker
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80 \
   "sudo systemctl restart valet-worker"
 ```
 
 ### View Worker Environment
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80 \
   "sudo cat /opt/valet/.env"
 ```
 
@@ -482,9 +482,9 @@ tar -czf worker.tar.gz \
   pnpm-workspace.yaml \
   pnpm-lock.yaml
 
-scp -i ~/.ssh/valet-worker.pem worker.tar.gz ubuntu@34.197.248.80:/tmp/
+scp -i ~/.ssh/wekruit-atm-server.pem worker.tar.gz ubuntu@34.197.248.80:/tmp/
 
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 << 'EOF'
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80 << 'EOF'
 sudo systemctl stop valet-worker
 sudo tar -xzf /tmp/worker.tar.gz -C /opt/valet/app
 cd /opt/valet/app
@@ -550,7 +550,7 @@ sudo apt-get install -y libgbm1 libasound2
 Check browser provider health:
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@34.197.248.80 \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@34.197.248.80 \
   "sudo journalctl -u valet-worker | grep 'provider initialized'"
 ```
 

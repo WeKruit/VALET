@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { SandboxRecord } from "./sandbox.repository.js";
 import type { SandboxProviderFactory } from "./providers/provider-factory.js";
 import type { KasmClient } from "./kasm/kasm.client.js";
+import type { AtmFleetClient, AtmHealthResult } from "./atm-fleet.client.js";
 
 // ─── Types ───
 
@@ -20,8 +21,7 @@ export interface DeepHealthResult {
 }
 
 // ─── Port Definitions ───
-// Note: ATM (Deploy Server) runs on its own EC2, not on each sandbox's EC2.
-// Per-sandbox checks only probe GH services that run on the sandbox host.
+// Fallback port probes when ATM fleet health is unavailable.
 
 const EC2_PORTS: ReadonlyArray<{ name: string; port: number; path: string; critical: boolean }> = [
   { name: "GH API", port: 3100, path: "/health", critical: true },
@@ -31,28 +31,32 @@ const EC2_PORTS: ReadonlyArray<{ name: string; port: number; path: string; criti
 const PROBE_TIMEOUT_MS = 8_000;
 
 /**
- * Performs multi-port health probes against sandbox instances.
+ * Performs health probes against sandbox instances.
  *
- * EC2 sandboxes: probes ports 3100, 3101, 8080 (ATM agent)
+ * EC2 sandboxes: delegates to ATM fleet health proxy, falls back to direct port probing
  * Kasm sandboxes: checks Kasm session status + probes the mapped GH API port
  */
 export class DeepHealthChecker {
   private logger: FastifyBaseLogger;
   private providerFactory: SandboxProviderFactory;
   private kasmClient: KasmClient | null;
+  private atmFleetClient: AtmFleetClient | null;
 
   constructor({
     logger,
     sandboxProviderFactory,
     kasmClient,
+    atmFleetClient,
   }: {
     logger: FastifyBaseLogger;
     sandboxProviderFactory: SandboxProviderFactory;
     kasmClient?: KasmClient | null;
+    atmFleetClient?: AtmFleetClient | null;
   }) {
     this.logger = logger;
     this.providerFactory = sandboxProviderFactory;
     this.kasmClient = kasmClient ?? null;
+    this.atmFleetClient = atmFleetClient ?? null;
   }
 
   /**
@@ -72,6 +76,23 @@ export class DeepHealthChecker {
   // ─── EC2 Health Check ───
 
   private async checkEc2(sandbox: SandboxRecord): Promise<DeepHealthResult> {
+    // Gap 2: Use ATM fleet health as single source of truth
+    if (this.atmFleetClient?.isConfigured) {
+      try {
+        const fleetId = await this.atmFleetClient.resolveFleetId(sandbox);
+        if (fleetId) {
+          const atmHealth = await this.atmFleetClient.getWorkerHealth(fleetId);
+          return this.mapAtmHealthToDeepResult(atmHealth);
+        }
+      } catch (err) {
+        this.logger.debug(
+          { sandboxId: sandbox.id, err },
+          "ATM fleet health unavailable, falling back to direct probing",
+        );
+      }
+    }
+
+    // Fallback: direct port probing
     const ip = sandbox.publicIp;
     if (!ip) {
       return {
@@ -93,6 +114,43 @@ export class DeepHealthChecker {
 
     return {
       overall: this.computeOverall(checks),
+      checks,
+      timestamp: Date.now(),
+    };
+  }
+
+  /** Map ATM aggregated health to DeepHealthResult format */
+  private mapAtmHealthToDeepResult(atmHealth: AtmHealthResult): DeepHealthResult {
+    const checks: PortCheckResult[] = [
+      {
+        name: "GH API",
+        port: 3100,
+        status: atmHealth.apiHealthy ? "up" : "down",
+        responseTimeMs: 0,
+        details: { source: "atm-fleet-proxy", apiHealthy: atmHealth.apiHealthy },
+      },
+      {
+        name: "GH Worker",
+        port: 3101,
+        status: atmHealth.workerStatus !== "unreachable" ? "up" : "down",
+        responseTimeMs: 0,
+        details: {
+          source: "atm-fleet-proxy",
+          workerStatus: atmHealth.workerStatus,
+          activeWorkers: atmHealth.activeWorkers,
+          deploySafe: atmHealth.deploySafe,
+        },
+      },
+    ];
+
+    const overallMap: Record<string, DeepHealthResult["overall"]> = {
+      healthy: "healthy",
+      degraded: "degraded",
+      offline: "unhealthy",
+    };
+
+    return {
+      overall: overallMap[atmHealth.status] ?? "unhealthy",
       checks,
       timestamp: Date.now(),
     };
