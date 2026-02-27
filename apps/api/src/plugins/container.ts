@@ -46,7 +46,9 @@ import { AuditLogRepository } from "../modules/sandboxes/audit-log.repository.js
 import { AuditLogService } from "../modules/sandboxes/audit-log.service.js";
 import { SandboxAgentClient } from "../modules/sandboxes/agent/sandbox-agent.client.js";
 import { DeepHealthChecker } from "../modules/sandboxes/deep-health-checker.js";
+import { AtmFleetClient } from "../modules/sandboxes/atm-fleet.client.js";
 import { DeployHistoryRepository } from "../modules/sandboxes/deploy-history.repository.js";
+import { UserSandboxRepository } from "../modules/sandboxes/user-sandbox.repository.js";
 import { PgBossService } from "../services/pgboss.service.js";
 import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
 import { AutoScaleService } from "../services/auto-scale.service.js";
@@ -101,6 +103,7 @@ export interface AppCradle {
   auditLogRepo: AuditLogRepository;
   auditLogService: AuditLogService;
   sandboxAgentClient: SandboxAgentClient;
+  atmFleetClient: AtmFleetClient;
   deepHealthChecker: DeepHealthChecker;
   deployHistoryRepo: DeployHistoryRepository;
   pgBossService: PgBossService;
@@ -112,6 +115,7 @@ export interface AppCradle {
   earlyAccessRepo: EarlyAccessRepository;
   earlyAccessService: EarlyAccessService;
   emailTemplatesRepo: EmailTemplatesRepository;
+  userSandboxRepo: UserSandboxRepository;
 }
 
 declare module "@fastify/awilix" {
@@ -197,6 +201,7 @@ export default fp(async (fastify: FastifyInstance) => {
       () => new SandboxAgentClient(process.env.GH_DEPLOY_SECRET ?? ""),
       { lifetime: Lifetime.SINGLETON },
     ),
+    atmFleetClient: asClass(AtmFleetClient, { lifetime: Lifetime.SINGLETON }),
     deepHealthChecker: asClass(DeepHealthChecker, { lifetime: Lifetime.SINGLETON }),
     ghosthandsClient: asFunction(
       ({ logger, sandboxRepo, ghJobRepo }) => {
@@ -226,5 +231,6 @@ export default fp(async (fastify: FastifyInstance) => {
     earlyAccessRepo: asClass(EarlyAccessRepository, { lifetime: Lifetime.SINGLETON }),
     earlyAccessService: asClass(EarlyAccessService, { lifetime: Lifetime.SINGLETON }),
     emailTemplatesRepo: asClass(EmailTemplatesRepository, { lifetime: Lifetime.SINGLETON }),
+    userSandboxRepo: asClass(UserSandboxRepository, { lifetime: Lifetime.SINGLETON }),
   });
 });

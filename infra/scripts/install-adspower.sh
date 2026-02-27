@@ -4,7 +4,7 @@
 # =============================================================================
 # Usage: Run on the EC2 instance via SSH or VNC terminal
 #
-#   ssh -i ~/.ssh/valet-worker.pem ubuntu@<ec2-ip> 'bash -s' < install-adspower.sh
+#   ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<ec2-ip> 'bash -s' < install-adspower.sh
 #   OR
 #   ./install-adspower.sh   (when already on the instance)
 #
@@ -99,7 +99,7 @@ if [[ "$DOWNLOAD_SUCCESS" == "false" ]]; then
     echo "  1. Visit https://www.adspower.com/download on your local machine"
     echo "  2. Download the Linux .deb package"
     echo "  3. Upload it to the EC2 instance:"
-    echo "     scp -i ~/.ssh/valet-worker.pem AdsPower*.deb ubuntu@<ec2-ip>:/tmp/adspower.deb"
+    echo "     scp -i ~/.ssh/wekruit-atm-server.pem AdsPower*.deb ubuntu@<ec2-ip>:/tmp/adspower.deb"
     echo "  4. Re-run this script"
     echo ""
     echo "  Or download directly on the instance via the noVNC browser."

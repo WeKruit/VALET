@@ -12,6 +12,7 @@ import type { SandboxProviderFactory } from "./providers/provider-factory.js";
 import type { SandboxAgentClient } from "./agent/sandbox-agent.client.js";
 import type { MachineStatus } from "./providers/sandbox-provider.interface.js";
 import type { DeepHealthChecker, DeepHealthResult } from "./deep-health-checker.js";
+import type { UserSandboxRepository } from "./user-sandbox.repository.js";
 import {
   SandboxNotFoundError,
   SandboxDuplicateInstanceError,
@@ -27,6 +28,7 @@ export class SandboxService {
   private providerFactory: SandboxProviderFactory;
   private sandboxAgentClient: SandboxAgentClient;
   private deepHealthChecker: DeepHealthChecker;
+  private userSandboxRepo: UserSandboxRepository;
 
   constructor({
     sandboxRepo,
@@ -36,6 +38,7 @@ export class SandboxService {
     sandboxProviderFactory,
     sandboxAgentClient,
     deepHealthChecker,
+    userSandboxRepo,
   }: {
     sandboxRepo: SandboxRepository;
     logger: FastifyBaseLogger;
@@ -44,6 +47,7 @@ export class SandboxService {
     sandboxProviderFactory: SandboxProviderFactory;
     sandboxAgentClient: SandboxAgentClient;
     deepHealthChecker: DeepHealthChecker;
+    userSandboxRepo: UserSandboxRepository;
   }) {
     this.sandboxRepo = sandboxRepo;
     this.logger = logger;
@@ -52,6 +56,7 @@ export class SandboxService {
     this.providerFactory = sandboxProviderFactory;
     this.sandboxAgentClient = sandboxAgentClient;
     this.deepHealthChecker = deepHealthChecker;
+    this.userSandboxRepo = userSandboxRepo;
   }
 
   async getById(id: string) {
@@ -154,6 +159,22 @@ export class SandboxService {
           "Failed to cancel tasks during sandbox termination",
         );
       }
+    }
+
+    // Clear user-sandbox assignments so users auto-assign on next task
+    try {
+      const cleared = await this.userSandboxRepo.unassignBySandboxId(id);
+      if (cleared > 0) {
+        this.logger.info(
+          { sandboxId: id, clearedAssignments: cleared },
+          "Cleared user-sandbox assignments",
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        { err, sandboxId: id },
+        "Failed to clear user-sandbox assignments (non-critical)",
+      );
     }
 
     const terminated = await this.sandboxRepo.terminate(id);
@@ -375,14 +396,18 @@ export class SandboxService {
       updateData.tags = { ...(sandbox.tags ?? {}), ...result.metadata };
     }
 
-    await this.sandboxRepo.updateEc2Status(id, "pending", updateData);
+    // Gap 3: Respect newStatus from provider (ATM may report already_running)
+    const targetStatus = (result.newStatus === "running" ? "running" : "pending") as Ec2Status;
+    await this.sandboxRepo.updateEc2Status(id, targetStatus, updateData);
 
-    // Poll in background — don't block the response
-    this.pollMachineStatusUntilStable(id, "running").catch((err) => {
-      this.logger.error({ sandboxId: id, err }, "Failed to poll machine status after start");
-    });
+    // Poll in background — don't block the response (skip if ATM already confirmed running)
+    if (targetStatus !== "running") {
+      this.pollMachineStatusUntilStable(id, "running").catch((err) => {
+        this.logger.error({ sandboxId: id, err }, "Failed to poll machine status after start");
+      });
+    }
 
-    return { message: `Starting sandbox ${sandbox.name}`, ec2Status: "pending" };
+    return { message: `Starting sandbox ${sandbox.name}`, ec2Status: targetStatus };
   }
 
   async stopSandbox(id: string) {

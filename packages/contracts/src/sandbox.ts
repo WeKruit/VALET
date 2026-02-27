@@ -25,6 +25,9 @@ import {
   auditLogListResponse,
   deployHistoryListResponse,
   deepHealthCheckResponse,
+  userSandboxAssignRequest,
+  userSandboxAssignmentResponse,
+  userSandboxListResponse,
 } from "@valet/shared/schemas";
 
 const c = initContract();
@@ -321,5 +324,52 @@ export const sandboxContract = c.router({
       404: errorResponse,
     },
     summary: "Cancel an in-progress deploy",
+  },
+
+  // ─── User Sandbox Assignments ───
+
+  listUserAssignments: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/user-assignments",
+    query: z.object({
+      sandboxId: z.string().uuid().optional(),
+    }),
+    responses: {
+      200: userSandboxListResponse,
+    },
+    summary: "List all user-to-sandbox assignments (optionally filter by sandboxId)",
+  },
+  getUserAssignment: {
+    method: "GET",
+    path: "/api/v1/admin/sandboxes/user-assignments/:userId",
+    pathParams: z.object({ userId: z.string().uuid() }),
+    responses: {
+      200: userSandboxAssignmentResponse,
+      404: errorResponse,
+    },
+    summary: "Get a user's sandbox assignment",
+  },
+  assignUserToSandbox: {
+    method: "POST",
+    path: "/api/v1/admin/sandboxes/user-assignments",
+    body: userSandboxAssignRequest,
+    responses: {
+      200: userSandboxAssignmentResponse,
+      400: errorResponse,
+      404: errorResponse,
+      409: errorResponse,
+    },
+    summary: "Assign a user to a sandbox (upserts — one sandbox per user)",
+  },
+  unassignUser: {
+    method: "DELETE",
+    path: "/api/v1/admin/sandboxes/user-assignments/:userId",
+    pathParams: z.object({ userId: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      200: z.object({ message: z.string() }),
+      404: errorResponse,
+    },
+    summary: "Remove a user's sandbox assignment",
   },
 });

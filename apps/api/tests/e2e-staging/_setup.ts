@@ -239,7 +239,7 @@ async function _doEnsureWorkerUp(): Promise<void> {
 
 /**
  * Creates staging test clients.
- * GH/deploy/worker clients use the IP discovered by ensureWorkerUp().
+ * GH/worker clients use the IP discovered by ensureWorkerUp().
  * Must call ensureWorkerUp() before getStagingClient().
  */
 export function getStagingClient() {
@@ -278,11 +278,6 @@ export function getStagingClient() {
           ...opts,
           authHeader: ghAuthHeader,
         }),
-    },
-    /** EC2 deploy server client (discovered IP, port 8000, no auth) */
-    deploy: {
-      get: (path: string, opts?: RequestOptions) =>
-        request(`http://${ghIp}:8000`, path, "GET", opts),
     },
     /** EC2 worker client (discovered IP, port 3101, no auth) */
     worker: {

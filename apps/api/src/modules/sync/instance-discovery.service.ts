@@ -13,6 +13,7 @@ import type { DeepHealthChecker, DeepHealthResult } from "../sandboxes/deep-heal
 import type { AuditLogService } from "../sandboxes/audit-log.service.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { TaskRepository } from "../tasks/task.repository.js";
+import type { UserSandboxRepository } from "../sandboxes/user-sandbox.repository.js";
 import { publishToUser } from "../../websocket/handler.js";
 
 // ─── Types ───
@@ -73,6 +74,7 @@ export class InstanceDiscoveryService {
   private auditLogService: AuditLogService;
   private ghJobRepo: GhAutomationJobRepository;
   private taskRepo: TaskRepository;
+  private userSandboxRepo: UserSandboxRepository;
 
   private asgClient: AutoScalingClient | null;
   private ec2Client: EC2Client | null;
@@ -93,6 +95,7 @@ export class InstanceDiscoveryService {
     auditLogService,
     ghJobRepo,
     taskRepo,
+    userSandboxRepo,
   }: {
     logger: FastifyBaseLogger;
     db: Database;
@@ -102,6 +105,7 @@ export class InstanceDiscoveryService {
     auditLogService: AuditLogService;
     ghJobRepo: GhAutomationJobRepository;
     taskRepo: TaskRepository;
+    userSandboxRepo: UserSandboxRepository;
   }) {
     this.logger = logger;
     this.db = db;
@@ -111,6 +115,7 @@ export class InstanceDiscoveryService {
     this.auditLogService = auditLogService;
     this.ghJobRepo = ghJobRepo;
     this.taskRepo = taskRepo;
+    this.userSandboxRepo = userSandboxRepo;
 
     this.asgName = process.env.AWS_ASG_NAME ?? "";
     this.environment = resolveEnvironment();
@@ -413,7 +418,7 @@ export class InstanceDiscoveryService {
       instanceType: instance.instanceType,
       publicIp: instance.publicIp,
       capacity: 1,
-      sshKeyName: "valet-worker.pem",
+      sshKeyName: "wekruit-atm-server.pem",
       tags: {
         asg_managed: true,
         asg_name: this.asgName,
@@ -525,6 +530,9 @@ export class InstanceDiscoveryService {
       status: "terminated",
     });
 
+    // Step 3b: Clear user-sandbox assignments
+    const clearedAssignments = await this.userSandboxRepo.unassignBySandboxId(sandbox.id);
+
     // Step 4: Audit log
     await this.auditLogService.log({
       sandboxId: sandbox.id,
@@ -533,6 +541,7 @@ export class InstanceDiscoveryService {
         instanceId: sandbox.instanceId,
         reason: "not_in_asg",
         orphanedJobsRecovered: orphanCount,
+        clearedAssignments,
         source: "instance_discovery",
       },
       result: "success",

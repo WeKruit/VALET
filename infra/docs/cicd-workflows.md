@@ -6,33 +6,33 @@ This document describes the GitHub Actions workflows for managing the EC2 browse
 
 Three workflows manage the sandbox lifecycle:
 
-| Workflow | File | Trigger | Purpose |
-|----------|------|---------|---------|
-| **Provision Sandbox** | `provision-sandbox.yml` | Manual | Create a new EC2 instance |
-| **Terminate Sandbox** | `terminate-sandbox.yml` | Manual | Destroy an EC2 instance |
-| **CD -> EC2 Worker** | `cd-ec2.yml` | Push / Manual | Deploy code to fleet |
+| Workflow              | File                    | Trigger       | Purpose                   |
+| --------------------- | ----------------------- | ------------- | ------------------------- |
+| **Provision Sandbox** | `provision-sandbox.yml` | Manual        | Create a new EC2 instance |
+| **Terminate Sandbox** | `terminate-sandbox.yml` | Manual        | Destroy an EC2 instance   |
+| **CD -> EC2 Worker**  | `cd-ec2.yml`            | Push / Manual | Deploy code to fleet      |
 
 ## GitHub Secrets
 
 ### Required
 
-| Secret | Description |
-|--------|-------------|
-| `AWS_ACCESS_KEY_ID` | AWS IAM access key for Terraform |
-| `AWS_SECRET_ACCESS_KEY` | AWS IAM secret key for Terraform |
-| `VALET_API_TOKEN` | Admin API token for sandbox management endpoints |
-| `SANDBOX_SSH_KEY` | SSH private key (PEM) shared across all sandboxes |
+| Secret                  | Description                                       |
+| ----------------------- | ------------------------------------------------- |
+| `AWS_ACCESS_KEY_ID`     | AWS IAM access key for Terraform                  |
+| `AWS_SECRET_ACCESS_KEY` | AWS IAM secret key for Terraform                  |
+| `VALET_API_TOKEN`       | Admin API token for sandbox management endpoints  |
+| `SANDBOX_SSH_KEY`       | SSH private key (PEM) shared across all sandboxes |
 
 ### Deprecated (can be removed)
 
-| Secret | Status |
-|--------|--------|
-| ~~`SANDBOX_IPS`~~ | Replaced by API fleet discovery |
-| ~~`EC2_IP_STG`~~ | Replaced by API fleet discovery |
-| ~~`EC2_IP_PROD`~~ | Replaced by API fleet discovery |
-| ~~`EC2_SSH_KEY_STG`~~ | Replaced by `SANDBOX_SSH_KEY` |
-| ~~`EC2_SSH_KEY_PROD`~~ | Replaced by `SANDBOX_SSH_KEY` |
-| ~~`SANDBOX_SECRETS_KEY`~~ | No longer needed |
+| Secret                    | Status                          |
+| ------------------------- | ------------------------------- |
+| ~~`SANDBOX_IPS`~~         | Replaced by API fleet discovery |
+| ~~`EC2_IP_STG`~~          | Replaced by API fleet discovery |
+| ~~`EC2_IP_PROD`~~         | Replaced by API fleet discovery |
+| ~~`EC2_SSH_KEY_STG`~~     | Replaced by `SANDBOX_SSH_KEY`   |
+| ~~`EC2_SSH_KEY_PROD`~~    | Replaced by `SANDBOX_SSH_KEY`   |
+| ~~`SANDBOX_SECRETS_KEY`~~ | No longer needed                |
 
 ---
 
@@ -49,6 +49,7 @@ Three workflows manage the sandbox lifecycle:
 3. Click **Run workflow**
 
 The workflow will:
+
 - Provision an EC2 instance via Terraform
 - Wait for cloud-init to complete
 - Install the selected browser engine
@@ -61,11 +62,13 @@ The workflow will:
 After the workflow completes:
 
 1. **Configure secrets** on the instance:
+
    ```bash
    ./infra/scripts/set-secrets.sh <public-ip>
    ```
 
 2. **If using AdsPower**: connect via noVNC to activate the license:
+
    ```
    http://<public-ip>:6080/vnc.html
    ```
@@ -95,6 +98,7 @@ Then manually run `deploy-worker.sh` and `set-secrets.sh`.
 ### Automatic deployment
 
 Code is automatically deployed when changes are pushed to `staging` or `main` branches in these paths:
+
 - `apps/worker/**`
 - `packages/shared/**`, `packages/contracts/**`, `packages/db/**`, `packages/llm/**`
 - `pnpm-lock.yaml`
@@ -117,6 +121,7 @@ The deployment workflow discovers sandboxes in this priority order:
 ### Deployment process
 
 For each sandbox:
+
 1. Mark status as `deploying` via API
 2. Upload build artifact (tarball)
 3. Create backup of current deployment
@@ -138,6 +143,7 @@ For each sandbox:
 3. Click **Run workflow**
 
 The workflow will:
+
 - Fetch sandbox details from the API
 - Mark status as `terminating`
 - Stop the worker service via SSH
@@ -152,6 +158,7 @@ The workflow will:
 ### Automatic rollback
 
 If a deployment passes the deploy step but fails the health check, the workflow automatically:
+
 1. Restores the previous version from `/opt/valet/app-backup`
 2. Restarts the `valet-worker` service
 3. Marks the sandbox as `unhealthy` in the API
@@ -160,13 +167,13 @@ If a deployment passes the deploy step but fails the health check, the workflow 
 
 ```bash
 # Check service logs
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<ip> 'sudo journalctl -u valet-worker -n 100 --no-pager'
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<ip> 'sudo journalctl -u valet-worker -n 100 --no-pager'
 
 # Check service status
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<ip> 'sudo systemctl status valet-worker'
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<ip> 'sudo systemctl status valet-worker'
 
 # Manual rollback
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<ip> << 'EOF'
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<ip> << 'EOF'
 sudo rm -rf /opt/valet/app
 sudo mv /opt/valet/app-backup /opt/valet/app
 sudo systemctl restart valet-worker
@@ -196,7 +203,7 @@ done
 ### Force restart a sandbox
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<ip> << 'EOF'
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<ip> << 'EOF'
 sudo systemctl restart xvfb
 sudo systemctl restart x11vnc
 sudo systemctl restart novnc
@@ -208,6 +215,7 @@ EOF
 ### Instance replacement
 
 If an instance is unrecoverable:
+
 1. Terminate the sandbox via the workflow
 2. Provision a new sandbox with the same configuration
 3. Reconfigure secrets on the new instance
@@ -215,6 +223,7 @@ If an instance is unrecoverable:
 ### AWS Console access
 
 If Terraform state is corrupted or GitHub Actions are down:
+
 1. Go to AWS Console > EC2 > Instances
 2. Filter by tag: `Project=valet`
 3. Terminate instances manually

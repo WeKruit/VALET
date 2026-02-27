@@ -10,6 +10,7 @@ import type { TaskRepository } from "./task.repository.js";
 import type { ResumeRepository } from "../resumes/resume.repository.js";
 import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
 import type { SandboxRepository } from "../sandboxes/sandbox.repository.js";
+import type { UserSandboxRepository } from "../sandboxes/user-sandbox.repository.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
@@ -59,6 +60,7 @@ export class TaskService {
   private redis: Redis;
   private logger: FastifyBaseLogger;
   private sandboxRepo: SandboxRepository;
+  private userSandboxRepo: UserSandboxRepository;
 
   constructor({
     taskRepo,
@@ -72,6 +74,7 @@ export class TaskService {
     redis,
     logger,
     sandboxRepo,
+    userSandboxRepo,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -84,6 +87,7 @@ export class TaskService {
     redis: Redis;
     logger: FastifyBaseLogger;
     sandboxRepo: SandboxRepository;
+    userSandboxRepo: UserSandboxRepository;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -96,6 +100,45 @@ export class TaskService {
     this.redis = redis;
     this.logger = logger;
     this.sandboxRepo = sandboxRepo;
+    this.userSandboxRepo = userSandboxRepo;
+  }
+
+  /**
+   * Resolve the sandbox assignment for a user. Auto-assigns if no existing assignment.
+   * Returns null when no healthy sandbox is available (falls back to general queue).
+   */
+  private async resolveUserSandbox(userId: string): Promise<string | null> {
+    // 1. Check existing assignment
+    const existing = await this.userSandboxRepo.findByUserId(userId);
+    if (existing) {
+      const sandbox = await this.sandboxRepo.findById(existing.sandboxId);
+      if (sandbox && sandbox.status === "active" && sandbox.healthStatus === "healthy") {
+        return existing.sandboxId;
+      }
+      this.logger.warn(
+        {
+          userId,
+          sandboxId: existing.sandboxId,
+          sandboxStatus: sandbox?.status,
+          sandboxHealth: sandbox?.healthStatus,
+        },
+        "User's assigned sandbox is unavailable — attempting auto-reassign",
+      );
+    }
+
+    // 2. Auto-assign to best available sandbox
+    const bestSandboxId = await this.userSandboxRepo.findBestAvailableSandbox();
+    if (!bestSandboxId) {
+      this.logger.warn(
+        { userId },
+        "No healthy sandbox available for auto-assignment — using general queue",
+      );
+      return null;
+    }
+
+    await this.userSandboxRepo.assign(userId, bestSandboxId);
+    this.logger.info({ userId, sandboxId: bestSandboxId }, "Auto-assigned user to sandbox");
+    return bestSandboxId;
   }
 
   async getById(id: string, userId: string) {
@@ -365,25 +408,20 @@ export class TaskService {
   /**
    * Create a new application task and dispatch it to GhostHands.
    *
-   * ## Worker routing (targetWorkerId)
+   * ## Worker routing
    *
-   * - **Path 1 — Normal user (no targetWorkerId):** Job is enqueued to the
-   *   general pg-boss queue (`gh_apply_job`). Any available GH worker picks it
-   *   up. This works today because the ASG fleet has min=1 (single-worker), so
-   *   all jobs land on the same instance.
+   * - **Path 1 — Admin explicit (targetWorkerId set):** The caller passes a
+   *   sandbox UUID (e.g. from the admin test page). We resolve it to an actual
+   *   GH worker UUID via `sandboxRepo.resolveWorkerId()` and enqueue to the
+   *   worker-specific queue (`gh_apply_job/{resolvedWorkerId}`). Uses "strict"
+   *   affinity. If resolution fails, falls back to the general queue.
    *
-   *   TODO (multi-worker scaling): When the fleet grows beyond 1 worker, normal
-   *   users will need per-user sandbox isolation. Implement a `user_sandboxes`
-   *   join table that maps each user to a dedicated sandbox/worker assignment.
-   *   On task creation, look up the user's assigned sandbox, resolve its worker
-   *   ID, and route via the worker-specific queue (`gh_apply_job/{workerId}`).
-   *
-   * - **Path 2 — Explicit targetWorkerId (sandbox UUID):** The caller passes a
-   *   sandbox UUID (e.g. from the admin test page or future sandbox picker UI).
-   *   We resolve it to an actual GH worker UUID via
-   *   `sandboxRepo.resolveWorkerId()` and enqueue to the worker-specific queue
-   *   (`gh_apply_job/{resolvedWorkerId}`). If resolution fails, falls back to
-   *   the general queue with a warning log.
+   * - **Path 2 — Normal user (no targetWorkerId):** Auto-resolve via the
+   *   `user_sandboxes` table. If the user has an active+healthy assignment,
+   *   route there. Otherwise auto-assign to the best available sandbox. Uses
+   *   "preferred" affinity so jobs still get picked up if the target is
+   *   temporarily unavailable. Falls back to general queue if no sandbox is
+   *   available.
    */
   async create(
     body: {
@@ -398,9 +436,17 @@ export class TaskService {
     },
     userId: string,
   ) {
+    // Resolve sandbox routing
+    let resolvedSandboxId = body.targetWorkerId; // admin explicit override
+    const isAdminExplicit = !!body.targetWorkerId;
+
+    if (!resolvedSandboxId) {
+      resolvedSandboxId = (await this.resolveUserSandbox(userId)) ?? undefined;
+    }
+
     // Tag notes with sandbox ID for tracking
-    const notes = body.targetWorkerId
-      ? `${body.notes ?? ""} [sandbox:${body.targetWorkerId}]`.trim()
+    const notes = resolvedSandboxId
+      ? `${body.notes ?? ""} [sandbox:${resolvedSandboxId}]`.trim()
       : body.notes;
 
     const task = await this.taskRepo.create({
@@ -409,8 +455,22 @@ export class TaskService {
       mode: body.mode,
       resumeId: body.resumeId,
       notes,
-      sandboxId: body.targetWorkerId,
+      sandboxId: resolvedSandboxId,
     });
+
+    // Resolve sandbox UUID → GH worker UUID for queue routing
+    let queueTargetWorkerId: string | undefined;
+    if (resolvedSandboxId) {
+      const ghWorkerId = await this.sandboxRepo.resolveWorkerId(resolvedSandboxId);
+      if (ghWorkerId) {
+        queueTargetWorkerId = ghWorkerId;
+      } else {
+        this.logger.warn(
+          { sandboxId: resolvedSandboxId },
+          "No active worker for sandbox, using general queue",
+        );
+      }
+    }
 
     // Fetch resume data for the GhostHands profile
     const resume = await this.resumeRepo.findById(body.resumeId, userId);
@@ -482,7 +542,6 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Jobs go to general queue — every ASG worker has KasmVNC built in.
         const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
           {
             ghJobId: ghJob.id,
@@ -493,7 +552,7 @@ export class TaskService {
             jobType: "apply",
             callbackUrl,
           },
-          {},
+          { targetWorkerId: queueTargetWorkerId },
         );
 
         if (pgBossJobId) {
@@ -545,8 +604,13 @@ export class TaskService {
           ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
           ...(body.visionModel ? { image_model: body.visionModel } : {}),
           max_retries: 1,
-          ...(body.targetWorkerId
-            ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }
+          ...(resolvedSandboxId
+            ? {
+                target_worker_id: resolvedSandboxId,
+                worker_affinity: (isAdminExplicit ? "strict" : "preferred") as
+                  | "strict"
+                  | "preferred",
+              }
             : {}),
         });
 

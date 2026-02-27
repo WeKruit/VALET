@@ -752,7 +752,7 @@ VALET can start/stop individual GH worker containers on each EC2 instance for sa
 
 ```bash
 # SSH into instance
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<instance-ip>
 
 # Full deploy from GH repo's deploy.sh
 cd /opt/ghosthands
@@ -820,16 +820,16 @@ fly deploy --config fly/web.toml --app valet-web --remote-only \
 
 ```bash
 # Full deploy with build
-./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/valet-worker.pem
+./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/wekruit-atm-server.pem
 
 # Skip local build (reuse existing dist/ artifacts)
-./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/valet-worker.pem --skip-build
+./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/wekruit-atm-server.pem --skip-build
 
 # Auto-rollback on health check failure (no interactive prompt)
-./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/valet-worker.pem --rollback-on-failure
+./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/wekruit-atm-server.pem --rollback-on-failure
 
 # Positional arg shorthand
-./infra/scripts/deploy-worker.sh 54.123.45.67 ~/.ssh/valet-worker.pem
+./infra/scripts/deploy-worker.sh 54.123.45.67 ~/.ssh/wekruit-atm-server.pem
 ```
 
 The script performs: SSH test, local build, tarball creation, SCP upload, backup, extract, `pnpm install --prod`, systemd restart, health check (3 retries with exponential backoff), and interactive rollback on failure.
@@ -838,7 +838,7 @@ The script performs: SSH test, local build, tarball creation, SCP upload, backup
 
 ```bash
 # SSH into instance
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<instance-ip>
 
 # Deploy a specific Docker image tag
 cd /opt/ghosthands
@@ -948,7 +948,7 @@ git commit -m "db: add migration for ..."
 
 - `DATABASE_DIRECT_URL` (session pooler, port 5432) **must** be set as a Fly secret on the API app. `migrate.js` prefers it over `DATABASE_URL` (transaction pooler, port 6543).
 - The `_journal.json` file **must** be tracked in git -- the Docker image needs it at runtime.
-- **Staging and production share the same Supabase database.** A migration applied to one environment immediately affects the other.
+- **Staging and production use separate Supabase projects.** See [Database Environments](#database-environments) below for details. Migrations must be applied to both databases.
 
 ### Running migrations manually
 
@@ -959,6 +959,21 @@ pnpm db:migrate
 # Via Fly.io (triggers release_command on a temporary VM)
 fly deploy --config fly/api.toml --app valet-api-stg --remote-only
 ```
+
+### Database Environments
+
+As of 2026-02-24, staging and production use **separate Supabase projects**:
+
+| Environment    | Supabase Project          | Ref                    | Fly Apps Using It                   |
+| -------------- | ------------------------- | ---------------------- | ----------------------------------- |
+| **Production** | `wekruit-prod` (Pro plan) | `ugidjvgzyeiiktnqstro` | `valet-api`, `valet-worker`         |
+| **Staging**    | Original project          | `unistzvhgvgjyzotwzxr` | `valet-api-stg`, `valet-worker-stg` |
+
+**Important:** Migrations must be applied to **both** databases. The Fly.io `release_command` handles this automatically per environment (each app has its own `DATABASE_DIRECT_URL` secret pointing to the correct project).
+
+**EC2 GH workers** currently connect to the staging database only. Production GH worker connectivity is planned for a future milestone.
+
+**S3 Storage** is also per-project. Each Supabase project has its own S3 endpoint and credentials. Buckets (`resumes`, `screenshots`, `artifacts`) must exist in both projects.
 
 ---
 
@@ -1008,7 +1023,7 @@ sudo systemctl restart valet-worker
 **Manual rollback:**
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<instance-ip>
 
 # Check backup exists
 ls /opt/valet/app-backup/apps/
@@ -1031,7 +1046,7 @@ sudo journalctl -u valet-worker -n 50 --no-pager
 **Manual rollback:**
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<instance-ip>
 cd /opt/ghosthands
 ./scripts/deploy.sh rollback
 ```
@@ -1328,12 +1343,12 @@ Additional per-instance costs: 40GB gp3 EBS ($3.20/mo), Elastic IP ($3.65/mo), ~
 
 ### Architectural limitations
 
-| Limitation                                  | Detail                                                                                                                              |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Shared staging/production database**      | Same Supabase instance. A migration to staging immediately affects production. Need separate DB per environment for true isolation. |
-| **No automated DB rollback**                | Failed migrations abort the deploy, but there is no reverse-migration tooling. Must write and deploy corrective SQL manually.       |
-| **Stale Hatchet references in EC2 scripts** | `set-secrets.sh` and `deploy-worker.sh` still reference `HATCHET_CLIENT_TOKEN` in their `.env` templates. Should be updated.        |
-| **No graceful drain for Fly.io worker**     | The Fly.io worker gets `SIGTERM` with 60s timeout, but no drain endpoint or in-progress job protection.                             |
-| **Single SSH key across all sandboxes**     | All instances share `SANDBOX_SSH_KEY`. Key rotation requires updating the secret and reprovisioning SSH access.                     |
-| **EC2 fleet discovery requires API**        | If the VALET API is down, `cd-ec2.yml` falls back to `SANDBOX_IPS` secret which must be manually maintained.                        |
-| **No SPA versioning**                       | Web app rollback means redeploying a previous commit. No built-in version tracking for the static SPA bundle.                       |
+| Limitation                                  | Detail                                                                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Separate staging/production databases**   | Split completed 2026-02-24. Staging: `unistzvhgvgjyzotwzxr`, Production: `ugidjvgzyeiiktnqstro`. Migrations must be applied to both. |
+| **No automated DB rollback**                | Failed migrations abort the deploy, but there is no reverse-migration tooling. Must write and deploy corrective SQL manually.        |
+| **Stale Hatchet references in EC2 scripts** | `set-secrets.sh` and `deploy-worker.sh` still reference `HATCHET_CLIENT_TOKEN` in their `.env` templates. Should be updated.         |
+| **No graceful drain for Fly.io worker**     | The Fly.io worker gets `SIGTERM` with 60s timeout, but no drain endpoint or in-progress job protection.                              |
+| **Single SSH key across all sandboxes**     | All instances share `SANDBOX_SSH_KEY`. Key rotation requires updating the secret and reprovisioning SSH access.                      |
+| **EC2 fleet discovery requires API**        | If the VALET API is down, `cd-ec2.yml` falls back to `SANDBOX_IPS` secret which must be manually maintained.                         |
+| **No SPA versioning**                       | Web app rollback means redeploying a previous commit. No built-in version tracking for the static SPA bundle.                        |

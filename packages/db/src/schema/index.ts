@@ -18,6 +18,7 @@ export * from "./sandbox-deploy-history.js";
 export * from "./gh-automation-jobs.js";
 export * from "./gh-browser-sessions.js";
 export * from "./gh-job-events.js";
+export * from "./user-sandboxes.js";
 export * from "./relations.js";
 export * from "./early-access.js";
 export * from "./email-templates.js";

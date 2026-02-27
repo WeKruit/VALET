@@ -3,6 +3,7 @@ import { AutoScaleService } from "../auto-scale.service.js";
 import type { TaskQueueService, QueueStats } from "../../modules/tasks/task-queue.service.js";
 import type { SandboxRepository } from "../../modules/sandboxes/sandbox.repository.js";
 import type { SandboxService } from "../../modules/sandboxes/sandbox.service.js";
+import type { UserSandboxRepository } from "../../modules/sandboxes/user-sandbox.repository.js";
 import type { Database } from "@valet/db";
 import type { FastifyBaseLogger } from "fastify";
 
@@ -71,6 +72,12 @@ function makeSandboxService(): SandboxService {
   } as unknown as SandboxService;
 }
 
+function makeUserSandboxRepo(): UserSandboxRepository {
+  return {
+    unassignBySandboxId: vi.fn().mockResolvedValue(0),
+  } as unknown as UserSandboxRepository;
+}
+
 function makeDb(
   statusRows: Array<{ status: string; count: string }> = [],
   idleCount = "0",
@@ -121,6 +128,7 @@ describe("AutoScaleService", () => {
     logger?: FastifyBaseLogger;
     sandboxRepo?: SandboxRepository;
     sandboxService?: SandboxService;
+    userSandboxRepo?: UserSandboxRepository;
   }) {
     return new AutoScaleService({
       logger: overrides?.logger ?? makeLogger(),
@@ -128,6 +136,7 @@ describe("AutoScaleService", () => {
       db: overrides?.db ?? makeDb(),
       sandboxRepo: overrides?.sandboxRepo ?? makeSandboxRepo(),
       sandboxService: overrides?.sandboxService ?? makeSandboxService(),
+      userSandboxRepo: overrides?.userSandboxRepo ?? makeUserSandboxRepo(),
     });
   }
 
@@ -493,6 +502,63 @@ describe("AutoScaleService", () => {
           healthStatus: "degraded",
         }),
       );
+    });
+
+    it("clears user-sandbox assignments when instance is terminated", async () => {
+      setEnv();
+
+      const db = makeDb();
+      (db.execute as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const logger = makeLogger();
+      const sandboxRepo = makeSandboxRepo();
+      const sandboxService = makeSandboxService();
+      const userSandboxRepo = makeUserSandboxRepo();
+
+      // Two ASG-managed sandboxes but only one instance in ASG
+      (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "sb-alive",
+          name: "gh-worker-asg-1",
+          instanceId: "i-alive",
+          publicIp: "10.0.0.1",
+          status: "active",
+          tags: { asg_managed: true },
+        },
+        {
+          id: "sb-gone",
+          name: "gh-worker-asg-2",
+          instanceId: "i-gone",
+          publicIp: "10.0.0.2",
+          status: "active",
+          tags: { asg_managed: true },
+        },
+      ]);
+
+      const service = makeService({ logger, db, sandboxRepo, sandboxService, userSandboxRepo });
+
+      // Only i-alive is in ASG — i-gone is terminated
+      mockEc2Send.mockResolvedValueOnce({
+        Reservations: [
+          {
+            Instances: [{ InstanceId: "i-alive", PublicIpAddress: "10.0.0.1" }],
+          },
+        ],
+      });
+
+      await service.syncAsgIps();
+
+      // sb-gone should be marked terminated
+      expect(sandboxRepo.update).toHaveBeenCalledWith(
+        "sb-gone",
+        expect.objectContaining({
+          status: "terminated",
+          ec2Status: "terminated",
+          healthStatus: "unhealthy",
+        }),
+      );
+
+      // User-sandbox assignments should be cleared for the terminated sandbox
+      expect(userSandboxRepo.unassignBySandboxId).toHaveBeenCalledWith("sb-gone");
     });
 
     it("skips when disabled", async () => {

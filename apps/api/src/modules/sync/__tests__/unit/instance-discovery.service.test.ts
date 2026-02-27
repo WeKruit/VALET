@@ -103,7 +103,7 @@ function makeSandbox(overrides: Partial<SandboxRecord> = {}): SandboxRecord {
     lastHealthCheckAt: new Date(),
     capacity: 1,
     currentLoad: 0,
-    sshKeyName: "valet-worker.pem",
+    sshKeyName: "wekruit-atm-server.pem",
     novncUrl: null,
     adspowerVersion: null,
     browserEngine: "chromium",
@@ -127,6 +127,12 @@ function makeSandbox(overrides: Partial<SandboxRecord> = {}): SandboxRecord {
   };
 }
 
+function makeUserSandboxRepo() {
+  return {
+    unassignBySandboxId: vi.fn().mockResolvedValue(0),
+  };
+}
+
 function makeMocks() {
   return {
     logger: makeLogger(),
@@ -137,6 +143,7 @@ function makeMocks() {
     auditLogService: makeAuditLogService(),
     ghJobRepo: makeGhJobRepo(),
     taskRepo: makeTaskRepo(),
+    userSandboxRepo: makeUserSandboxRepo(),
   };
 }
 
@@ -337,7 +344,7 @@ describe("InstanceDiscoveryService", () => {
           instanceType: "t3.xlarge",
           publicIp: "10.0.0.5",
           capacity: 1,
-          sshKeyName: "valet-worker.pem",
+          sshKeyName: "wekruit-atm-server.pem",
           machineType: "ec2",
           tags: expect.objectContaining({
             asg_managed: true,
@@ -404,11 +411,17 @@ describe("InstanceDiscoveryService", () => {
         status: "terminated",
       });
 
+      // User-sandbox assignments cleared
+      expect(mocks.userSandboxRepo.unassignBySandboxId).toHaveBeenCalledWith("sb-stale");
+
       expect(mocks.auditLogService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           sandboxId: "sb-stale",
           action: "instance_deregistered",
           result: "success",
+          details: expect.objectContaining({
+            clearedAssignments: 0,
+          }),
         }),
       );
     });

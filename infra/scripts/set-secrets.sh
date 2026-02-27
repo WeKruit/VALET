@@ -36,7 +36,7 @@ if [[ $# -lt 1 ]]; then
     echo -e "${BOLD}Usage:${NC} $0 <ec2-ip> [ssh-key-path]"
     echo ""
     echo "  ec2-ip         Public IP or hostname of the EC2 instance"
-    echo "  ssh-key-path   Path to SSH private key (default: ~/.ssh/valet-worker.pem)"
+    echo "  ssh-key-path   Path to SSH private key (default: ~/.ssh/wekruit-atm-server.pem)"
     echo ""
     echo "Examples:"
     echo "  $0 54.123.45.67"
@@ -45,7 +45,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 EC2_IP="$1"
-SSH_KEY="${2:-$HOME/.ssh/valet-worker.pem}"
+SSH_KEY="${2:-$HOME/.ssh/wekruit-atm-server.pem}"
 SSH_USER="ubuntu"
 REMOTE_ENV_FILE="/opt/valet/.env"
 

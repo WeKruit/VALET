@@ -6,25 +6,21 @@ function makeMocks() {
   return {
     submitArgs,
     taskRepo: {
-      create: vi
-        .fn()
-        .mockResolvedValue({
-          id: "task-1",
-          jobUrl: "https://example.com",
-          platform: "unknown",
-          status: "created",
-        }),
+      create: vi.fn().mockResolvedValue({
+        id: "task-1",
+        jobUrl: "https://example.com",
+        platform: "unknown",
+        status: "created",
+      }),
       updateWorkflowRunId: vi.fn(),
       updateStatus: vi.fn(),
       updateGhosthandsResult: vi.fn(),
     },
     resumeRepo: {
-      findById: vi
-        .fn()
-        .mockResolvedValue({
-          fileKey: "resumes/test.pdf",
-          parsedData: { fullName: "Test User", email: "test@test.com" },
-        }),
+      findById: vi.fn().mockResolvedValue({
+        fileKey: "resumes/test.pdf",
+        parsedData: { fullName: "Test User", email: "test@test.com" },
+      }),
     },
     qaBankRepo: {
       findByUserId: vi.fn().mockResolvedValue([]),
@@ -44,6 +40,11 @@ function makeMocks() {
     ghSessionRepo: {},
     redis: { publish: vi.fn() },
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    userSandboxRepo: {
+      findByUserId: vi.fn().mockResolvedValue(null),
+      findBestAvailableSandbox: vi.fn().mockResolvedValue(null),
+      assign: vi.fn().mockResolvedValue(undefined),
+    },
   };
 }
 
