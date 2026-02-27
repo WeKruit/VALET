@@ -450,6 +450,69 @@ export const deployStatusResponse = z.object({
   updatedAt: z.coerce.date(),
 });
 
+// ─── ATM API (superset of deploy-server — gracefully 404 on legacy) ───
+
+export const atmDeployRecordResponse = z.object({
+  id: z.string(),
+  imageTag: z.string(),
+  previousImageTag: z.string().nullable(),
+  commitSha: z.string().nullable(),
+  status: z.enum(["deploying", "completed", "failed", "rolled_back"]),
+  startedAt: z.string(),
+  completedAt: z.string().nullable(),
+  durationMs: z.number().nullable(),
+  error: z.string().nullable(),
+  triggeredBy: z.enum(["ci", "manual", "kamal", "rollback"]),
+});
+
+export const atmDeployHistoryResponse = z.array(atmDeployRecordResponse);
+
+export const atmRollbackResponse = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  rollbackImageTag: z.string().optional(),
+  deployRecord: atmDeployRecordResponse.optional(),
+});
+
+export const atmKamalStatusResponse = z
+  .object({
+    available: z.boolean(),
+    locked: z.boolean().optional(),
+    holder: z.string().optional(),
+    reason: z.string().optional(),
+  })
+  .nullable();
+
+export const atmKamalAuditEntry = z.object({
+  timestamp: z.string(),
+  action: z.string(),
+  performer: z.string(),
+  details: z.string(),
+});
+
+export const atmKamalAuditResponse = z.array(atmKamalAuditEntry);
+
+export const atmKamalDeployResponse = z.object({
+  exitCode: z.number(),
+  stdout: z.string(),
+  stderr: z.string(),
+  durationMs: z.number(),
+});
+
+export const atmSecretsStatusResponse = z
+  .object({
+    connected: z.boolean(),
+    projectId: z.string().optional(),
+    environment: z.string().optional(),
+    secretCount: z.number().optional(),
+    error: z.string().optional(),
+  })
+  .nullable();
+
+export const atmEnabledResponse = z.object({
+  enabled: z.boolean(),
+});
+
 // ─── Inferred Types (NEVER hand-write these) ───
 export type Ec2Status = z.infer<typeof ec2Status>;
 export type BrowserEngine = z.infer<typeof browserEngine>;
@@ -495,3 +558,12 @@ export type AgentHealthResponseType = z.infer<typeof agentHealthResponse>;
 export type PaginationMeta = z.infer<typeof paginationMeta>;
 export type PortCheckResult = z.infer<typeof portCheckResult>;
 export type DeepHealthCheckResponse = z.infer<typeof deepHealthCheckResponse>;
+export type AtmDeployRecordResponse = z.infer<typeof atmDeployRecordResponse>;
+export type AtmDeployHistoryResponse = z.infer<typeof atmDeployHistoryResponse>;
+export type AtmRollbackResponse = z.infer<typeof atmRollbackResponse>;
+export type AtmKamalStatusResponse = z.infer<typeof atmKamalStatusResponse>;
+export type AtmKamalAuditEntryType = z.infer<typeof atmKamalAuditEntry>;
+export type AtmKamalAuditResponse = z.infer<typeof atmKamalAuditResponse>;
+export type AtmKamalDeployResponse = z.infer<typeof atmKamalDeployResponse>;
+export type AtmSecretsStatusResponse = z.infer<typeof atmSecretsStatusResponse>;
+export type AtmEnabledResponse = z.infer<typeof atmEnabledResponse>;

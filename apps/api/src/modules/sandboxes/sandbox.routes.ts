@@ -691,6 +691,196 @@ export const sandboxRouter = s.router(sandboxContract, {
       },
     };
   },
+
+  // ─── ATM Operations (backward-compatible: 404-safe on legacy deploy-server) ───
+
+  atmDeployHistory: async ({ params, query, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const deploys = await sandboxAgentClient.getAtmDeployHistory(agentUrl, query.limit);
+      return { status: 200 as const, body: deploys };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmDeployRecord: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const record = await sandboxAgentClient.getAtmDeployRecord(agentUrl, params.deployId);
+      return { status: 200 as const, body: record };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmRollback: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const result = await sandboxAgentClient.atmRollback(agentUrl);
+      return { status: 200 as const, body: result };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmKamalStatus: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const result = await sandboxAgentClient.getKamalStatus(agentUrl);
+      return { status: 200 as const, body: result };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmKamalAudit: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const entries = await sandboxAgentClient.getKamalAudit(agentUrl);
+      return { status: 200 as const, body: entries };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmDeployKamal: async ({ params, body, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const result = await sandboxAgentClient.kamalDeploy(agentUrl, body);
+      return { status: 200 as const, body: result };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmRollbackKamal: async ({ params, body, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const result = await sandboxAgentClient.kamalRollback(agentUrl, body);
+      return { status: 200 as const, body: result };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmSecretsStatus: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    try {
+      const result = await sandboxAgentClient.getSecretsStatus(agentUrl);
+      return { status: 200 as const, body: result };
+    } catch (err) {
+      return {
+        status: 502 as const,
+        body: {
+          error: "AGENT_UNREACHABLE",
+          message: err instanceof Error ? err.message : "Agent unreachable",
+        },
+      };
+    }
+  },
+
+  atmEnabled: async ({ params, request }) => {
+    await adminOnly(request);
+    const { sandboxService, sandboxProviderFactory, sandboxAgentClient } = request.diScope.cradle;
+
+    const sandbox = await sandboxService.getById(params.id);
+    const provider = sandboxProviderFactory.getProvider(sandbox);
+    const agentUrl = provider.getAgentUrl(sandbox);
+
+    const enabled = await sandboxAgentClient.isAtmEnabled(agentUrl);
+    return { status: 200 as const, body: { enabled } };
+  },
 });
 
 function toDeployResponse(d: DeployRecord) {

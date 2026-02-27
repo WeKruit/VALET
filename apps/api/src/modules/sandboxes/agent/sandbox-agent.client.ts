@@ -15,6 +15,12 @@ import type {
   AgentVersionResponse,
   TakeoverInfo,
   ExecResult,
+  AtmDeployRecord,
+  AtmRollbackResult,
+  AtmKamalStatus,
+  AtmKamalAuditEntry,
+  AtmSecretsStatus,
+  AtmKamalDeployResult,
 } from "./types.js";
 
 /** ATM agent port — configurable via GH_AGENT_PORT env var (default 8080). */
@@ -145,6 +151,87 @@ export class SandboxAgentClient {
 
   async getTakeoverInfo(_agentUrl: string): Promise<TakeoverInfo> {
     throw new Error("getTakeoverInfo is not implemented yet");
+  }
+
+  // -- ATM-specific methods (backward-compatible: return null/empty on 404/502) --
+
+  async getAtmDeployHistory(agentUrl: string, limit?: number): Promise<AtmDeployRecord[]> {
+    try {
+      const url = limit ? `${agentUrl}/deploys?limit=${limit}` : `${agentUrl}/deploys`;
+      return await this.get(url, 10_000);
+    } catch (err) {
+      if (err instanceof AgentError && (err.statusCode === 404 || err.statusCode === 502))
+        return [];
+      throw err;
+    }
+  }
+
+  async getAtmDeployRecord(agentUrl: string, deployId: string): Promise<AtmDeployRecord | null> {
+    try {
+      return await this.get(`${agentUrl}/deploys/${deployId}`, 10_000);
+    } catch (err) {
+      if (err instanceof AgentError && (err.statusCode === 404 || err.statusCode === 502))
+        return null;
+      throw err;
+    }
+  }
+
+  async atmRollback(agentUrl: string): Promise<AtmRollbackResult> {
+    return this.post(`${agentUrl}/rollback`, undefined, 120_000);
+  }
+
+  async getKamalStatus(agentUrl: string): Promise<AtmKamalStatus | null> {
+    try {
+      return await this.get(`${agentUrl}/kamal/status`, 10_000);
+    } catch (err) {
+      if (err instanceof AgentError && (err.statusCode === 404 || err.statusCode === 502))
+        return null;
+      throw err;
+    }
+  }
+
+  async getKamalAudit(agentUrl: string): Promise<AtmKamalAuditEntry[]> {
+    try {
+      return await this.get(`${agentUrl}/kamal/audit`, 10_000);
+    } catch (err) {
+      if (err instanceof AgentError && (err.statusCode === 404 || err.statusCode === 502))
+        return [];
+      throw err;
+    }
+  }
+
+  async kamalDeploy(
+    agentUrl: string,
+    opts?: { destination?: string; version?: string },
+  ): Promise<AtmKamalDeployResult> {
+    return this.post(`${agentUrl}/deploy/kamal`, opts ?? {}, 300_000);
+  }
+
+  async kamalRollback(
+    agentUrl: string,
+    opts: { destination?: string; version: string },
+  ): Promise<AtmKamalDeployResult> {
+    return this.post(`${agentUrl}/rollback/kamal`, opts, 300_000);
+  }
+
+  async getSecretsStatus(agentUrl: string): Promise<AtmSecretsStatus | null> {
+    try {
+      return await this.get(`${agentUrl}/secrets/status`, 10_000);
+    } catch (err) {
+      if (err instanceof AgentError && (err.statusCode === 404 || err.statusCode === 502))
+        return null;
+      throw err;
+    }
+  }
+
+  /** Feature detection: check if the deploy-server is ATM (has /deploys endpoint) */
+  async isAtmEnabled(agentUrl: string): Promise<boolean> {
+    try {
+      await this.get(`${agentUrl}/deploys?limit=1`, 5_000);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // -- Private helpers --------------------------------------------------------

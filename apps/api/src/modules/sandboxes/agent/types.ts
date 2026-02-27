@@ -133,3 +133,54 @@ export interface ExecResult {
   elapsedMs: number;
   truncated: boolean;
 }
+
+// ATM API types (superset of deploy-server — gracefully 404 on legacy)
+
+export interface AtmDeployRecord {
+  id: string;
+  imageTag: string;
+  previousImageTag: string | null;
+  commitSha: string | null;
+  status: "deploying" | "completed" | "failed" | "rolled_back";
+  startedAt: string;
+  completedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+  triggeredBy: "ci" | "manual" | "kamal" | "rollback";
+}
+
+export interface AtmRollbackResult {
+  success: boolean;
+  message: string;
+  rollbackImageTag?: string;
+  deployRecord?: AtmDeployRecord;
+}
+
+export interface AtmKamalStatus {
+  available: boolean;
+  locked?: boolean;
+  holder?: string;
+  reason?: string;
+}
+
+export interface AtmKamalAuditEntry {
+  timestamp: string;
+  action: string;
+  performer: string;
+  details: string;
+}
+
+export interface AtmSecretsStatus {
+  connected: boolean;
+  projectId?: string;
+  environment?: string;
+  secretCount?: number;
+  error?: string;
+}
+
+export interface AtmKamalDeployResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}
