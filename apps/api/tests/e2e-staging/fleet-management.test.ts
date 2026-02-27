@@ -7,7 +7,7 @@
  * Gated: STAGING_E2E=true + staging env vars set.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { isAvailable, getStagingClient, getConfig, ensureWorkerUp } from "./_setup.js";
+import { isAvailable, getStagingClient, getWorkerIp, ensureWorkerUp } from "./_setup.js";
 
 type Client = ReturnType<typeof getStagingClient>;
 
@@ -125,14 +125,14 @@ describe.runIf(isAvailable())("Staging E2E: Fleet Management", () => {
       return Array.isArray(d) ? d : (d?.sandboxes ?? d?.data ?? []);
     })();
 
-    const cfg = getConfig();
+    const workerIp = getWorkerIp();
     const staging = sandboxes.find(
-      (s: any) => s.publicIp === cfg.ghIp || s.environment === "staging",
+      (s: any) => s.publicIp === workerIp || s.environment === "staging",
     );
 
     if (!staging) {
       throw new Error(
-        `No staging sandbox found matching IP ${cfg.ghIp} — check sandbox DB records`,
+        `No staging sandbox found matching IP ${workerIp} — check sandbox DB records`,
       );
     }
 
