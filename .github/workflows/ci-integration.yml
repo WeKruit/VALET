@@ -1,0 +1,66 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only run when integration secrets are configured
+    if: ${{ vars.HAS_INTEGRATION_SECRETS == 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Real integration tests (DB + Redis)
+        run: pnpm test:integration
+        env:
+          INTEGRATION_TEST: "true"
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+
+  staging-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ vars.HAS_STAGING_E2E_SECRETS == 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Staging E2E tests
+        run: pnpm test:e2e:staging
+        env:
+          STAGING_E2E: "true"
+          STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
+          STAGING_GH_IP: ${{ secrets.STAGING_GH_IP }}
+          GH_SERVICE_SECRET: ${{ secrets.GH_SERVICE_SECRET }}
+          STAGING_JWT: ${{ secrets.STAGING_JWT }}
+          ATM_BASE_URL: ${{ secrets.ATM_BASE_URL }}
+          ATM_DEPLOY_SECRET: ${{ secrets.ATM_DEPLOY_SECRET }}
+          ATM_FLEET_ID: ${{ secrets.ATM_FLEET_ID }}

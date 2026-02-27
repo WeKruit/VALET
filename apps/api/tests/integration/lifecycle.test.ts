@@ -55,6 +55,8 @@ function createMockGhJobRepo() {
 function createMockRedis() {
   return {
     publish: vi.fn().mockResolvedValue(1),
+    xadd: vi.fn().mockResolvedValue("1-0"),
+    expire: vi.fn().mockResolvedValue(1),
   };
 }
 
