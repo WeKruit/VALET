@@ -16,7 +16,7 @@ export const taskRouter = s.router(taskContract, {
   stats: async ({ request }) => {
     await requireAbility("read", "Task")(request);
     const { taskService } = request.diScope.cradle;
-    const stats = await taskService.stats(request.userId);
+    const stats = await taskService.stats(request.userId, true);
     return { status: 200 as const, body: stats };
   },
 

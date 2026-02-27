@@ -29,7 +29,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
         jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
-        notes: "E2E staging test — safe to ignore",
+        notes: "[e2e-test] E2E staging test — safe to ignore",
       },
       timeoutMs: 30_000,
     });
@@ -51,7 +51,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
         jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-lifecycle",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
-        notes: "E2E staging lifecycle test",
+        notes: "[e2e-test] E2E staging lifecycle test",
       },
       timeoutMs: 30_000,
     });
@@ -81,7 +81,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
         jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-terminal",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
-        notes: "E2E staging terminal test",
+        notes: "[e2e-test] E2E staging terminal test",
       },
       timeoutMs: 30_000,
     });
@@ -111,7 +111,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
         jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-cancel",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
-        notes: "E2E staging cancel test",
+        notes: "[e2e-test] E2E staging cancel test",
       },
       timeoutMs: 30_000,
     });

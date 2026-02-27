@@ -87,6 +87,7 @@ export const taskListQuery = z.object({
     .enum(["createdAt", "updatedAt", "status", "jobTitle", "companyName"])
     .default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  excludeTest: z.coerce.boolean().optional(),
 });
 
 export const updateExternalStatusRequest = z.object({

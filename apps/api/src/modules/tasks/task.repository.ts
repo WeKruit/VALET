@@ -75,10 +75,14 @@ export class TaskRepository {
       search?: string;
       sortBy: string;
       sortOrder: string;
+      excludeTest?: boolean;
     },
   ): Promise<{ data: TaskRecord[]; total: number }> {
     const conditions: SQL[] = [eq(tasks.userId, userId)];
 
+    if (query.excludeTest) {
+      conditions.push(sql`(${tasks.notes} IS NULL OR ${tasks.notes} NOT LIKE '[e2e-test]%')`);
+    }
     if (query.status) {
       conditions.push(eq(tasks.status, query.status as TaskStatus));
     }
@@ -314,7 +318,12 @@ export class TaskRepository {
     return rows.map((r) => toTaskRecord(r as Record<string, unknown>));
   }
 
-  async getStats(userId: string) {
+  async getStats(userId: string, excludeTest?: boolean) {
+    const conditions: SQL[] = [eq(tasks.userId, userId)];
+    if (excludeTest) {
+      conditions.push(sql`(${tasks.notes} IS NULL OR ${tasks.notes} NOT LIKE '[e2e-test]%')`);
+    }
+
     const rows = await this.db
       .select({
         total: count(),
@@ -325,7 +334,7 @@ export class TaskRepository {
         needsReview: count(sql`CASE WHEN ${tasks.status} = 'waiting_human' THEN 1 END`),
       })
       .from(tasks)
-      .where(eq(tasks.userId, userId));
+      .where(and(...conditions));
 
     return rows[0] ?? { total: 0, completed: 0, inProgress: 0, needsReview: 0 };
   }

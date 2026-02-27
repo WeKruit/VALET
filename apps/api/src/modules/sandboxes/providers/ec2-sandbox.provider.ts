@@ -93,6 +93,7 @@ export class Ec2SandboxProvider implements SandboxProvider {
               pending: "starting",
               "shutting-down": "stopping",
               terminated: "terminated",
+              standby: "stopped",
             };
             return {
               state: stateMap[workerState.ec2State] ?? "unknown",
@@ -115,6 +116,7 @@ export class Ec2SandboxProvider implements SandboxProvider {
       stopping: "stopping",
       stopped: "stopped",
       terminated: "terminated",
+      standby: "stopped",
     };
     return {
       state: stateMap[ec2Status] ?? "unknown",

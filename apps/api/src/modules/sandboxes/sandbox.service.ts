@@ -455,10 +455,20 @@ export class SandboxService {
       await this.sandboxRepo.updateEc2Status(id, dbStatus);
     }
 
+    // Sync publicIp if ATM reports a different IP (e.g., after stop/start cycle)
+    const resolvedIp = status.publicIp ?? sandbox.publicIp ?? null;
+    if (resolvedIp && resolvedIp !== sandbox.publicIp) {
+      this.logger.info(
+        { sandboxId: id, oldIp: sandbox.publicIp, newIp: resolvedIp },
+        "Syncing publicIp from provider",
+      );
+      await this.sandboxRepo.update(id, { publicIp: resolvedIp });
+    }
+
     return {
       sandboxId: id,
       ec2Status: dbStatus ?? sandbox.ec2Status ?? "stopped",
-      publicIp: status.publicIp ?? sandbox.publicIp ?? null,
+      publicIp: resolvedIp,
       lastStartedAt: sandbox.lastStartedAt,
       lastStoppedAt: sandbox.lastStoppedAt,
     };

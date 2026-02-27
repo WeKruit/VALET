@@ -57,6 +57,7 @@ const mockSbRepo = { findAllActive: vi.fn().mockResolvedValue(mockSandboxes) };
 const mockGhJobRepo = {
   findByIds: vi.fn().mockResolvedValue([{ id: "job-1", valetTaskId: "valet-task-abc" }]),
 };
+const mockAtmFleetClient = { isConfigured: false };
 const mockLog = {
   error: vi.fn(),
   info: vi.fn(),
@@ -67,7 +68,12 @@ const mockLog = {
 function mkReq(o: Record<string, unknown> = {}): unknown {
   return {
     diScope: {
-      cradle: { ghosthandsClient: mockGh, sandboxRepo: mockSbRepo, ghJobRepo: mockGhJobRepo },
+      cradle: {
+        ghosthandsClient: mockGh,
+        sandboxRepo: mockSbRepo,
+        ghJobRepo: mockGhJobRepo,
+        atmFleetClient: mockAtmFleetClient,
+      },
     },
     log: mockLog,
     ...o,

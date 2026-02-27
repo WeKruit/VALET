@@ -360,6 +360,7 @@ export class TaskService {
       search?: string;
       sortBy: string;
       sortOrder: string;
+      excludeTest?: boolean;
     },
   ) {
     const { data, total } = await this.taskRepo.findMany(userId, query);
@@ -1053,8 +1054,8 @@ export class TaskService {
     return updated;
   }
 
-  async stats(userId: string) {
-    return this.taskRepo.getStats(userId);
+  async stats(userId: string, excludeTest?: boolean) {
+    return this.taskRepo.getStats(userId, excludeTest);
   }
 
   async captchaSolved(id: string, userId: string) {

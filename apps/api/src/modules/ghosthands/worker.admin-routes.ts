@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { adminOnly } from "../../common/middleware/admin.js";
 import { AgentError } from "../sandboxes/agent/sandbox-agent.client.js";
+import type { AtmFleetClient, AtmWorkerState } from "../sandboxes/atm-fleet.client.js";
+import type { SandboxRecord } from "../sandboxes/sandbox.repository.js";
 
 function enrichWorker(
   w: {
@@ -36,20 +38,69 @@ function enrichWorker(
   };
 }
 
+/** Map ATM worker state → GH-compatible worker shape for enrichWorker() */
+function atmWorkerToFleetWorker(w: AtmWorkerState) {
+  return {
+    worker_id: w.serverId,
+    target_worker_id: null,
+    ec2_ip: w.ip || null,
+    status: w.ec2State === "running" ? (w.activeJobs > 0 ? "busy" : "idle") : w.ec2State,
+    current_job_id: null as string | null,
+    registered_at: new Date().toISOString(),
+    last_heartbeat: new Date().toISOString(),
+    jobs_completed: 0,
+    jobs_failed: 0,
+    uptime_seconds: w.idleSinceMs > 0 ? Math.round(w.idleSinceMs / 1000) : null,
+  };
+}
+
 export async function workerAdminRoutes(fastify: FastifyInstance) {
   fastify.get("/api/v1/admin/workers", async (request: FastifyRequest, reply: FastifyReply) => {
     await adminOnly(request);
-    const { ghosthandsClient, sandboxRepo, ghJobRepo } = request.diScope.cradle;
+    const { ghosthandsClient, sandboxRepo, ghJobRepo, atmFleetClient } = request.diScope.cradle as {
+      ghosthandsClient: any;
+      sandboxRepo: any;
+      ghJobRepo: any;
+      atmFleetClient: AtmFleetClient;
+    };
+
+    // Primary: ATM fleet data (works even when GH is stopped)
+    if (atmFleetClient.isConfigured) {
+      try {
+        const [atmStatus, activeSandboxes] = await Promise.all([
+          atmFleetClient.getIdleStatus(),
+          sandboxRepo.findAllActive(),
+        ]);
+
+        const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
+          activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
+        );
+        // Also index by instanceId for ATM worker matching
+        for (const s of activeSandboxes) {
+          if (s.instanceId) sandboxMap.set(s.instanceId, s);
+        }
+
+        const atmWorkers = atmStatus.workers.map((w) => {
+          const fleetWorker = atmWorkerToFleetWorker(w);
+          return enrichWorker(fleetWorker, sandboxMap, new Map<string, string>());
+        });
+
+        return reply.send({ workers: atmWorkers, total: atmWorkers.length, source: "atm" });
+      } catch (err) {
+        request.log.warn({ err }, "ATM fleet unreachable, falling back to GH direct");
+      }
+    }
+
+    // Fallback: GH direct call
     try {
       const [fleetData, activeSandboxes] = await Promise.all([
         ghosthandsClient.getWorkerFleet(),
         sandboxRepo.findAllActive(),
       ]);
 
-      // Resolve current_job_id → valet_task_id for workers with active jobs
       const activeJobIds = fleetData.workers
-        .map((w) => w.current_job_id)
-        .filter((id): id is string => id != null);
+        .map((w: any) => w.current_job_id)
+        .filter((id: any): id is string => id != null);
       const jobTaskMap = new Map<string, string>();
       if (activeJobIds.length > 0) {
         const jobs = await ghJobRepo.findByIds(activeJobIds);
@@ -58,9 +109,11 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const sandboxMap = new Map(activeSandboxes.map((s) => [s.id, s]));
-      const workers = fleetData.workers.map((w) => enrichWorker(w, sandboxMap, jobTaskMap));
-      return reply.send({ workers, total: workers.length });
+      const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
+        activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
+      );
+      const workers = fleetData.workers.map((w: any) => enrichWorker(w, sandboxMap, jobTaskMap));
+      return reply.send({ workers, total: workers.length, source: "gh" });
     } catch (err) {
       request.log.error({ err }, "Failed to fetch worker fleet");
       return reply.status(502).send({ error: "GhostHands API unreachable" });
@@ -71,8 +124,65 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
     "/api/v1/admin/workers/:workerId",
     async (request: FastifyRequest<{ Params: { workerId: string } }>, reply: FastifyReply) => {
       await adminOnly(request);
-      const { ghosthandsClient, sandboxRepo, ghJobRepo } = request.diScope.cradle;
+      const { ghosthandsClient, sandboxRepo, ghJobRepo, atmFleetClient } = request.diScope
+        .cradle as {
+        ghosthandsClient: any;
+        sandboxRepo: any;
+        ghJobRepo: any;
+        atmFleetClient: AtmFleetClient;
+      };
       const { workerId } = request.params;
+
+      // Primary: ATM fleet health for this worker
+      if (atmFleetClient.isConfigured) {
+        try {
+          const [atmStatus, activeSandboxes, atmHealth] = await Promise.all([
+            atmFleetClient.getIdleStatus(),
+            sandboxRepo.findAllActive(),
+            atmFleetClient.getWorkerHealth(workerId).catch(() => null),
+          ]);
+
+          const atmWorker = atmStatus.workers.find((w) => w.serverId === workerId);
+          if (!atmWorker) {
+            // Worker not in ATM fleet — fall through to GH
+          } else {
+            const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
+              activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
+            );
+            for (const s of activeSandboxes) {
+              if (s.instanceId) sandboxMap.set(s.instanceId, s);
+            }
+
+            const fleetWorker = atmWorkerToFleetWorker(atmWorker);
+            const enriched = enrichWorker(fleetWorker, sandboxMap, new Map<string, string>());
+
+            // If worker is running, try to get live status from GH too
+            let liveStatus = null;
+            let liveHealth = null;
+            if (atmWorker.ec2State === "running") {
+              [liveStatus, liveHealth] = await Promise.all([
+                ghosthandsClient.getWorkerStatus(workerId).catch(() => null),
+                ghosthandsClient.getWorkerHealth(workerId).catch(() => null),
+              ]);
+            }
+
+            return reply.send({
+              ...enriched,
+              ec2_state: atmWorker.ec2State,
+              active_jobs: atmWorker.activeJobs,
+              transitioning: atmWorker.transitioning,
+              live_status: liveStatus,
+              live_health: liveHealth,
+              atm_health: atmHealth,
+              source: "atm",
+            });
+          }
+        } catch (err) {
+          request.log.warn({ err }, "ATM unreachable for worker detail, falling back to GH");
+        }
+      }
+
+      // Fallback: GH direct
       try {
         const [fleetData, activeSandboxes, workerStatus, workerHealth] = await Promise.all([
           ghosthandsClient.getWorkerFleet(),
@@ -80,7 +190,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           ghosthandsClient.getWorkerStatus(workerId).catch(() => null),
           ghosthandsClient.getWorkerHealth(workerId).catch(() => null),
         ]);
-        const worker = fleetData.workers.find((w) => w.worker_id === workerId);
+        const worker = fleetData.workers.find((w: any) => w.worker_id === workerId);
         if (!worker) return reply.status(404).send({ error: "Worker not found" });
 
         const jobTaskMap = new Map<string, string>();
@@ -91,12 +201,15 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           }
         }
 
-        const sandboxMap = new Map(activeSandboxes.map((s) => [s.id, s]));
+        const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
+          activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
+        );
         const enriched = enrichWorker(worker, sandboxMap, jobTaskMap);
         return reply.send({
           ...enriched,
           live_status: workerStatus ?? null,
           live_health: workerHealth ?? null,
+          source: "gh",
         });
       } catch (err) {
         request.log.error({ err }, "Failed to fetch worker detail");

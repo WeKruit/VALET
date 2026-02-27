@@ -97,10 +97,12 @@ export const sandboxRouter = s.router(sandboxContract, {
     await adminOnly(request);
     const { sandboxService, taskService } = request.diScope.cradle;
 
+    // Sync real-time EC2 state from ATM before checking
+    const machineStatus = await sandboxService.getMachineStatus(params.id);
     const sandbox = await sandboxService.getById(params.id);
-    if (sandbox.ec2Status !== "running") {
+    if (machineStatus.ec2Status !== "running") {
       throw AppError.conflict(
-        `Sandbox EC2 instance is ${sandbox.ec2Status ?? "unknown"}, must be running to trigger a task`,
+        `Sandbox EC2 instance is ${machineStatus.ec2Status ?? "unknown"}, must be running to trigger a task`,
       );
     }
 
@@ -133,10 +135,12 @@ export const sandboxRouter = s.router(sandboxContract, {
     await adminOnly(request);
     const { sandboxService, taskService } = request.diScope.cradle;
 
+    // Sync real-time EC2 state from ATM before checking
+    const machineStatus = await sandboxService.getMachineStatus(params.id);
     const sandbox = await sandboxService.getById(params.id);
-    if (sandbox.ec2Status !== "running") {
+    if (machineStatus.ec2Status !== "running") {
       throw AppError.conflict(
-        `Sandbox EC2 instance is ${sandbox.ec2Status ?? "unknown"}, must be running to trigger a test`,
+        `Sandbox EC2 instance is ${machineStatus.ec2Status ?? "unknown"}, must be running to trigger a test`,
       );
     }
 
