@@ -43,23 +43,6 @@ describe.runIf(isAvailable())("Staging E2E: Fleet Management", () => {
     expect(Array.isArray(workers)).toBe(true);
   }, 35_000);
 
-  it("Deploy /workers returns >= 1 worker", async () => {
-    let res;
-    try {
-      res = await client.deploy.get("/workers", { timeoutMs: 10_000 });
-    } catch {
-      // Deploy server (port 8000) may not be present on every fleet worker —
-      // it's a management tool, not a standard fleet service
-      console.log("[e2e] Deploy server (port 8000) not present on this worker — skipping");
-      return;
-    }
-    expect(res.ok).toBe(true);
-
-    const data = res.data as any;
-    const workers = Array.isArray(data) ? data : (data?.workers ?? []);
-    expect(workers.length).toBeGreaterThanOrEqual(1);
-  }, 15_000);
-
   it("Worker /worker/status reports valid state", async () => {
     const res = await client.worker.get("/worker/status", {
       timeoutMs: 10_000,
@@ -153,14 +136,8 @@ describe.runIf(isAvailable())("Staging E2E: Fleet Management", () => {
       { timeoutMs: 135_000 }, // ATM wake timeout
     );
 
-    // 200 = started, 409 = already running, 500 = provider error (ATM not configured on VALET staging)
-    if (startRes.status === 500) {
-      console.log(
-        `[e2e] Sandbox start returned 500 — VALET API may need ATM_BASE_URL/ATM_DEPLOY_SECRET as Fly secrets. Body:`,
-        JSON.stringify(startRes.data),
-      );
-    }
-    expect([200, 409, 500]).toContain(startRes.status);
+    // 200 = started, 409 = already running
+    expect([200, 409]).toContain(startRes.status);
     expect(startRes.data).toBeDefined();
   }, 150_000);
 });

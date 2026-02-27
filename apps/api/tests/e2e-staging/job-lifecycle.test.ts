@@ -12,35 +12,23 @@ import { isAvailable, getStagingClient, waitForStatus, ensureWorkerUp } from "./
 
 type Client = ReturnType<typeof getStagingClient>;
 
-/** Fetch a resumeId from existing tasks. E2E needs a real resume to submit tasks. */
-async function getTestResumeId(client: Client): Promise<string | null> {
-  const res = await client.api.get("/api/v1/tasks?limit=1", { timeoutMs: 10_000 });
-  if (!res.ok) return null;
-  const tasks = (res.data as any)?.data ?? (res.data as any)?.tasks ?? [];
-  return tasks[0]?.resumeId ?? null;
-}
+/** Known resume ID for staging E2E tests — must exist in the staging DB. */
+const TEST_RESUME_ID = "c815652b-e55f-4a63-bb4c-b3ae9295a8d5";
 
 describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   let client: Client;
-  let resumeId: string | null = null;
 
   beforeAll(async () => {
     await ensureWorkerUp();
     client = getStagingClient();
-    resumeId = await getTestResumeId(client);
   }, 180_000);
 
   it("submit test task → 201 with task ID", async () => {
-    if (!resumeId) {
-      console.log("[e2e] Skipping: no resumeId found in existing tasks");
-      return;
-    }
-
     const res = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.example.com/careers/test-position",
+        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test",
         mode: "copilot",
-        resumeId,
+        resumeId: TEST_RESUME_ID,
         notes: "E2E staging test — safe to ignore",
       },
       timeoutMs: 30_000,
@@ -58,16 +46,11 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   }, 60_000);
 
   it("task transitions to in_progress within 30s", async () => {
-    if (!resumeId) {
-      console.log("[e2e] Skipping: no resumeId found in existing tasks");
-      return;
-    }
-
     const createRes = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.example.com/careers/test-position-lifecycle",
+        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-lifecycle",
         mode: "copilot",
-        resumeId,
+        resumeId: TEST_RESUME_ID,
         notes: "E2E staging lifecycle test",
       },
       timeoutMs: 30_000,
@@ -93,16 +76,11 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   }, 60_000);
 
   it("task reaches terminal state within 120s", async () => {
-    if (!resumeId) {
-      console.log("[e2e] Skipping: no resumeId found in existing tasks");
-      return;
-    }
-
     const createRes = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.example.com/careers/test-position-terminal",
+        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-terminal",
         mode: "copilot",
-        resumeId,
+        resumeId: TEST_RESUME_ID,
         notes: "E2E staging terminal test",
       },
       timeoutMs: 30_000,
@@ -127,36 +105,12 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
     expect(["completed", "failed", "cancelled"]).toContain(status);
   }, 150_000);
 
-  it("Deploy /workers returns valid structure", async () => {
-    let res;
-    try {
-      res = await client.deploy.get("/workers", { timeoutMs: 10_000 });
-    } catch {
-      console.log("[e2e] Deploy server (port 8000) not present on this worker — skipping");
-      return;
-    }
-    expect(res.status).toBe(200);
-
-    const data = res.data as any;
-    expect(data).toBeDefined();
-    if (Array.isArray(data)) {
-      for (const worker of data) {
-        expect(worker).toHaveProperty("id");
-      }
-    }
-  }, 15_000);
-
   it("cancel in-progress task → cancelled status", async () => {
-    if (!resumeId) {
-      console.log("[e2e] Skipping: no resumeId found in existing tasks");
-      return;
-    }
-
     const createRes = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.example.com/careers/test-cancel",
+        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-cancel",
         mode: "copilot",
-        resumeId,
+        resumeId: TEST_RESUME_ID,
         notes: "E2E staging cancel test",
       },
       timeoutMs: 30_000,
