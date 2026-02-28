@@ -431,10 +431,13 @@ describe("Worker Admin Routes (ATM path)", () => {
   it("GET list derives source=atm from sandbox tags, not transport", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
     await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
-    const b = rp._b as { workers: Array<{ source: string }> };
+    const b = rp._b as { workers: Array<{ source: string; atm_unverified: boolean }> };
     // Source is derived from tags.atm_fleet_id on matched sandbox, not transport
     expect(b.workers[0]!.source).toBe("atm");
     expect(b.workers[1]!.source).toBe("atm");
+    // Confirmed via atm_fleet_id tag — NOT unverified
+    expect(b.workers[0]!.atm_unverified).toBe(false);
+    expect(b.workers[1]!.atm_unverified).toBe(false);
   });
 
   it("GET list passes through ec2_state, active_jobs, transitioning", async () => {
@@ -631,10 +634,13 @@ describe("Worker Admin Routes (ATM down + direct-EC2 fallback sandbox)", () => {
   it("GET list marks direct-EC2 sandbox as source=gh even when ATM is down", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
     await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
-    const b = rp._b as { workers: Array<{ source: string; sandbox_id: string }> };
+    const b = rp._b as {
+      workers: Array<{ source: string; sandbox_id: string; atm_unverified: boolean }>;
+    };
     // tags: null → not caught by fail-closed (requires asg_managed: true) → source=gh
     expect(b.workers[0]!.source).toBe("gh");
     expect(b.workers[0]!.sandbox_id).toBe("sandbox-ec2-direct");
+    expect(b.workers[0]!.atm_unverified).toBe(false);
   });
 
   it("POST deregister allows direct-EC2 sandbox when ATM is down", async () => {
@@ -761,10 +767,13 @@ describe("Worker Admin Routes (ATM down + ASG sandbox)", () => {
   it("GET list marks ASG sandbox as source=atm when ATM is down (fail closed)", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
     await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
-    const b = rp._b as { workers: Array<{ source: string; sandbox_id: string }> };
-    // asg_managed: true + ATM configured but down → fail closed → source=atm
+    const b = rp._b as {
+      workers: Array<{ source: string; sandbox_id: string; atm_unverified: boolean }>;
+    };
+    // asg_managed: true + ATM configured but down → fail closed → source=atm, unverified
     expect(b.workers[0]!.source).toBe("atm");
     expect(b.workers[0]!.sandbox_id).toBe("sandbox-asg-down");
+    expect(b.workers[0]!.atm_unverified).toBe(true);
   });
 
   it("POST deregister returns 503 for ASG sandbox when ATM is down", async () => {

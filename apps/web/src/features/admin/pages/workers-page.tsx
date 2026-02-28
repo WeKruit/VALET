@@ -195,8 +195,8 @@ export function WorkersPage() {
       });
       toast.success("Worker deregistered.");
       setDeregisterTarget(null);
-    } catch {
-      toast.error("Failed to deregister worker.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to deregister worker.");
     }
   };
 
@@ -206,8 +206,8 @@ export function WorkersPage() {
       await drainWorker.mutateAsync({ workerId: drainTarget.worker_id });
       toast.success("Worker drain initiated.");
       setDrainTarget(null);
-    } catch {
-      toast.error("Failed to drain worker.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to drain worker.");
     }
   };
 
@@ -401,12 +401,18 @@ export function WorkersPage() {
                             <span className="font-mono text-xs">{w.worker_id.slice(0, 8)}...</span>
                             <span
                               className={`inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium leading-none ${
-                                w.source === "atm"
+                                w.source === "atm" && !w.atm_unverified
                                   ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                                  : "bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                                  : w.source === "atm" && w.atm_unverified
+                                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                    : "bg-purple-500/10 text-purple-600 dark:text-purple-400"
                               }`}
                             >
-                              {w.source === "atm" ? "ATM" : "GH"}
+                              {w.source === "atm" && w.atm_unverified
+                                ? "ATM?"
+                                : w.source === "atm"
+                                  ? "ATM"
+                                  : "GH"}
                             </span>
                           </div>
                         </td>
@@ -488,7 +494,7 @@ export function WorkersPage() {
                                   size="sm"
                                   onClick={() => setDrainTarget(w)}
                                   disabled={
-                                    w.source === "atm" ||
+                                    (w.source === "atm" && !w.atm_unverified) ||
                                     w.status === "draining" ||
                                     w.status === "offline"
                                   }
@@ -499,13 +505,15 @@ export function WorkersPage() {
                               </TooltipTrigger>
                               <TooltipContent>
                                 <p>
-                                  {w.source === "atm"
+                                  {w.source === "atm" && !w.atm_unverified
                                     ? "Manage via ATM (Sandbox start/stop)"
-                                    : w.status === "draining"
-                                      ? "Already draining"
-                                      : w.status === "offline"
-                                        ? "Worker offline"
-                                        : "Drain worker (finish current job, reject new ones)"}
+                                    : w.source === "atm" && w.atm_unverified
+                                      ? "ATM unreachable \u2014 ownership unverified, action may fail"
+                                      : w.status === "draining"
+                                        ? "Already draining"
+                                        : w.status === "offline"
+                                          ? "Worker offline"
+                                          : "Drain worker (finish current job, reject new ones)"}
                                 </p>
                               </TooltipContent>
                             </Tooltip>
@@ -515,7 +523,7 @@ export function WorkersPage() {
                                   variant="destructive"
                                   size="sm"
                                   onClick={() => setDeregisterTarget(w)}
-                                  disabled={w.source === "atm"}
+                                  disabled={w.source === "atm" && !w.atm_unverified}
                                   title="Deregister worker"
                                 >
                                   <XCircle className="h-3.5 w-3.5" />
@@ -523,9 +531,11 @@ export function WorkersPage() {
                               </TooltipTrigger>
                               <TooltipContent>
                                 <p>
-                                  {w.source === "atm"
+                                  {w.source === "atm" && !w.atm_unverified
                                     ? "Manage via ATM (Sandbox start/stop)"
-                                    : "Deregister worker (cancel active jobs)"}
+                                    : w.source === "atm" && w.atm_unverified
+                                      ? "ATM unreachable \u2014 ownership unverified, action may fail"
+                                      : "Deregister worker (cancel active jobs)"}
                                 </p>
                               </TooltipContent>
                             </Tooltip>

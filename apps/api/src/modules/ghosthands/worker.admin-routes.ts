@@ -27,26 +27,29 @@ function buildAtmManagedSet(
   sandboxes: SandboxRecord[],
   atmWorkerInstanceIds?: Set<string>,
   atmConfiguredButUnreachable?: boolean,
-): Set<string> {
-  const set = new Set<string>();
+): { managed: Set<string>; unverified: Set<string> } {
+  const managed = new Set<string>();
+  const unverified = new Set<string>();
   for (const s of sandboxes) {
     const tags = s.tags as Record<string, unknown> | null;
     const isTagged = typeof tags === "object" && tags !== null;
     if (isTagged && tags.atm_fleet_id) {
-      set.add(s.id);
+      managed.add(s.id);
       continue;
     }
     if (atmWorkerInstanceIds && s.instanceId && atmWorkerInstanceIds.has(s.instanceId)) {
-      set.add(s.id);
+      managed.add(s.id);
       continue;
     }
     // Fail closed: ATM configured but down + sandbox is in an ASG → likely ATM-managed.
     // Direct-EC2 fallback sandboxes (no asg_managed) are NOT caught here.
+    // Unverified IDs are exposed to the UI so it can distinguish from confirmed ownership.
     if (atmConfiguredButUnreachable && isTagged && tags.asg_managed === true) {
-      set.add(s.id);
+      managed.add(s.id);
+      unverified.add(s.id);
     }
   }
-  return set;
+  return { managed, unverified };
 }
 
 function enrichWorker(
@@ -70,6 +73,7 @@ function enrichWorker(
   sandboxMap: Map<string, { id: string; name: string; environment: string }>,
   jobTaskMap: Map<string, string>,
   atmManagedIds: Set<string>,
+  atmUnverifiedIds?: Set<string>,
 ) {
   // instance_id is set by atmWorkerToFleetWorker; ec2_instance_id is the GH field name
   const instanceId = w.instance_id ?? w.ec2_instance_id;
@@ -97,6 +101,7 @@ function enrichWorker(
     active_jobs: w.active_jobs ?? null,
     transitioning: w.transitioning ?? false,
     source,
+    atm_unverified: sandbox ? (atmUnverifiedIds?.has(sandbox.id) ?? false) : false,
   };
 }
 
@@ -161,7 +166,10 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         const atmWorkerInstanceIds = new Set(
           atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
         );
-        const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
+        const { managed: atmManagedIds } = buildAtmManagedSet(
+          activeSandboxes,
+          atmWorkerInstanceIds,
+        );
 
         const atmWorkers = atmStatus.workers.map((w) => {
           const fleetWorker = atmWorkerToFleetWorker(w);
@@ -199,10 +207,14 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       for (const s of activeSandboxes) {
         if (s.instanceId) sandboxMap.set(s.instanceId, s);
       }
-      // Fail closed: if ATM was configured but unreachable, treat EC2 sandboxes as ATM-managed
-      const atmManagedIds = buildAtmManagedSet(activeSandboxes, undefined, atmUnreachable);
+      // Fail closed: if ATM was configured but unreachable, treat ASG sandboxes as ATM-managed
+      const { managed: atmManagedIds, unverified: atmUnverifiedIds } = buildAtmManagedSet(
+        activeSandboxes,
+        undefined,
+        atmUnreachable,
+      );
       const workers = fleetData.workers.map((w: any) =>
-        enrichWorker(w, sandboxMap, jobTaskMap, atmManagedIds),
+        enrichWorker(w, sandboxMap, jobTaskMap, atmManagedIds, atmUnverifiedIds),
       );
       return reply.send({ workers, total: workers.length, source: "gh" });
     } catch (err) {
@@ -247,7 +259,10 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
             const atmWorkerInstanceIds = new Set(
               atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
             );
-            const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
+            const { managed: atmManagedIds } = buildAtmManagedSet(
+              activeSandboxes,
+              atmWorkerInstanceIds,
+            );
             const fleetWorker = atmWorkerToFleetWorker(atmWorker);
             const enriched = enrichWorker(
               fleetWorker,
@@ -306,7 +321,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         for (const s of activeSandboxes) {
           if (s.instanceId) sandboxMap.set(s.instanceId, s);
         }
-        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+        const { managed: atmManagedIds } = buildAtmManagedSet(activeSandboxes);
         const enriched = enrichWorker(worker, sandboxMap, jobTaskMap, atmManagedIds);
         return reply.send({
           ...enriched,
@@ -364,7 +379,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
             atmUnreachable = true;
           }
         }
-        const atmManagedIds = buildAtmManagedSet(
+        const { managed: atmManagedIds } = buildAtmManagedSet(
           activeSandboxes,
           atmWorkerInstanceIds,
           atmUnreachable,
@@ -470,7 +485,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
             atmUnreachable = true;
           }
         }
-        const atmManagedIds = buildAtmManagedSet(
+        const { managed: atmManagedIds } = buildAtmManagedSet(
           activeSandboxes,
           atmWorkerInstanceIds,
           atmUnreachable,
