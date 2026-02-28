@@ -4,12 +4,25 @@ import { AgentError } from "../sandboxes/agent/sandbox-agent.client.js";
 import type { AtmFleetClient, AtmWorkerState } from "../sandboxes/atm-fleet.client.js";
 import type { SandboxRecord } from "../sandboxes/sandbox.repository.js";
 
-/** Build a set of sandbox IDs that are managed by ATM (have tags.atm_fleet_id). */
-function buildAtmManagedSet(sandboxes: SandboxRecord[]): Set<string> {
+/**
+ * Build a set of sandbox IDs that are managed by ATM.
+ * A sandbox is ATM-managed if:
+ * 1. It has tags.atm_fleet_id (explicit tagging), OR
+ * 2. Its instanceId matches an ATM fleet worker's instanceId (implicit — covers
+ *    sandboxes created via seed/discovery that haven't been tagged yet)
+ */
+function buildAtmManagedSet(
+  sandboxes: SandboxRecord[],
+  atmWorkerInstanceIds?: Set<string>,
+): Set<string> {
   const set = new Set<string>();
   for (const s of sandboxes) {
     const tags = s.tags as Record<string, unknown> | null;
-    if (tags?.atm_fleet_id) set.add(s.id);
+    if (tags?.atm_fleet_id) {
+      set.add(s.id);
+    } else if (atmWorkerInstanceIds && s.instanceId && atmWorkerInstanceIds.has(s.instanceId)) {
+      set.add(s.id);
+    }
   }
   return set;
 }
@@ -119,7 +132,10 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         for (const s of activeSandboxes) {
           if (s.instanceId) sandboxMap.set(s.instanceId, s);
         }
-        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+        const atmWorkerInstanceIds = new Set(
+          atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
+        );
+        const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
 
         const atmWorkers = atmStatus.workers.map((w) => {
           const fleetWorker = atmWorkerToFleetWorker(w);
@@ -197,7 +213,10 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
               if (s.instanceId) sandboxMap.set(s.instanceId, s);
             }
 
-            const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+            const atmWorkerInstanceIds = new Set(
+              atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
+            );
+            const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
             const fleetWorker = atmWorkerToFleetWorker(atmWorker);
             const enriched = enrichWorker(
               fleetWorker,
@@ -277,7 +296,11 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       await adminOnly(request);
-      const { ghosthandsClient, sandboxRepo } = request.diScope.cradle;
+      const { ghosthandsClient, sandboxRepo, atmFleetClient } = request.diScope.cradle as {
+        ghosthandsClient: any;
+        sandboxRepo: any;
+        atmFleetClient: AtmFleetClient;
+      };
       const { workerId } = request.params;
       const body = request.body ?? {};
       try {
@@ -294,11 +317,29 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Worker not found in GH fleet" });
         }
 
-        // Reject if this worker's sandbox is ATM-managed
-        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
-        const sandbox = activeSandboxes.find(
-          (s: SandboxRecord) => s.id === workerId || s.id === worker.target_worker_id,
+        // Build ATM managed set — use ATM fleet data for instanceId cross-reference if available
+        let atmWorkerInstanceIds: Set<string> | undefined;
+        if (atmFleetClient.isConfigured) {
+          try {
+            const atmStatus = await atmFleetClient.getIdleStatus();
+            atmWorkerInstanceIds = new Set(
+              atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
+            );
+          } catch {
+            // ATM unreachable — fall back to tag-only check
+          }
+        }
+        const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
+
+        // Resolve sandbox by ID, instanceId, or IP (same lookup chain as enrichWorker)
+        const sandboxMap = new Map<string, SandboxRecord>(
+          activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
         );
+        for (const s of activeSandboxes) {
+          if (s.instanceId) sandboxMap.set(s.instanceId, s);
+        }
+        const sandbox =
+          sandboxMap.get(workerId) ?? sandboxMap.get(worker.target_worker_id ?? "") ?? null;
         if (sandbox && atmManagedIds.has(sandbox.id)) {
           return reply.status(400).send({
             error: "Worker is managed by ATM — use sandbox start/stop instead",
@@ -328,8 +369,19 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       await adminOnly(request);
-      const { ghosthandsClient, sandboxRepo, sandboxProviderFactory, sandboxAgentClient } =
-        request.diScope.cradle;
+      const {
+        ghosthandsClient,
+        sandboxRepo,
+        sandboxProviderFactory,
+        sandboxAgentClient,
+        atmFleetClient,
+      } = request.diScope.cradle as {
+        ghosthandsClient: any;
+        sandboxRepo: any;
+        sandboxProviderFactory: any;
+        sandboxAgentClient: any;
+        atmFleetClient: AtmFleetClient;
+      };
       const { workerId } = request.params;
 
       try {
@@ -338,22 +390,38 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           ghosthandsClient.getWorkerFleet(),
           sandboxRepo.findAllActive(),
         ]);
-        const worker = fleetData.workers.find((w) => w.worker_id === workerId);
+        const worker = fleetData.workers.find((w: any) => w.worker_id === workerId);
         if (!worker) {
           return reply.status(404).send({ error: "Worker not found in fleet" });
         }
 
-        // 1b. Reject if this worker's sandbox is ATM-managed
-        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+        // 1b. Build ATM managed set with instanceId cross-reference if ATM is available
+        let atmWorkerInstanceIds: Set<string> | undefined;
+        if (atmFleetClient.isConfigured) {
+          try {
+            const atmStatus = await atmFleetClient.getIdleStatus();
+            atmWorkerInstanceIds = new Set(
+              atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
+            );
+          } catch {
+            // ATM unreachable — fall back to tag-only check
+          }
+        }
+        const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
 
-        // 2. Find the sandbox — try ec2_ip match first, fall back to worker_id/target_worker_id
-        const sandboxByIp = worker.ec2_ip
-          ? activeSandboxes.find((s) => s.publicIp === worker.ec2_ip)
-          : null;
+        // 2. Find the sandbox — ID/instanceId first, then IP fallback
+        const sandboxMap = new Map<string, SandboxRecord>(
+          activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
+        );
+        for (const s of activeSandboxes) {
+          if (s.instanceId) sandboxMap.set(s.instanceId, s);
+        }
         const sandboxById =
-          activeSandboxes.find((s) => s.id === worker.worker_id) ??
-          activeSandboxes.find((s) => s.id === worker.target_worker_id);
-        const sandbox = sandboxByIp ?? sandboxById ?? null;
+          sandboxMap.get(worker.worker_id) ?? sandboxMap.get(worker.target_worker_id ?? "");
+        const sandboxByIp = worker.ec2_ip
+          ? activeSandboxes.find((s: SandboxRecord) => s.publicIp === worker.ec2_ip)
+          : null;
+        const sandbox = sandboxById ?? sandboxByIp ?? null;
         if (!sandbox) {
           return reply.status(404).send({ error: `No sandbox found for worker ${workerId}` });
         }

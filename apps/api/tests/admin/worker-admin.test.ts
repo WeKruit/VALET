@@ -388,7 +388,8 @@ describe("Worker Admin Routes (ATM path)", () => {
 describe("Worker Admin Routes (GH fallback with ATM-managed sandboxes)", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    // ATM is configured but unreachable — triggers GH fallback
+    // ATM is configured — getIdleStatus reachable for deregister/drain guards, but
+    // GET list path fails (simulates partial ATM availability)
     mockAtmFleetClient.isConfigured = true;
     mockAtmFleetClient.getIdleStatus.mockRejectedValue(new Error("ATM down"));
     // GH fleet returns workers by sandbox UUID
@@ -428,7 +429,8 @@ describe("Worker Admin Routes (GH fallback with ATM-managed sandboxes)", () => {
     expect(b.workers[0]!.source).toBe("atm");
   });
 
-  it("POST deregister rejects ATM-managed worker", async () => {
+  it("POST deregister rejects ATM-managed worker (tag-based)", async () => {
+    // ATM unreachable for deregister guard too — falls back to tag-only
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
     await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
       mkReq({
@@ -453,5 +455,249 @@ describe("Worker Admin Routes (GH fallback with ATM-managed sandboxes)", () => {
       rp,
     );
     expect(rp._sc).toBe(502);
+  });
+});
+
+// ─── Untagged ATM sandbox detection via instanceId cross-reference ───
+
+describe("Worker Admin Routes (untagged ATM sandbox)", () => {
+  const untaggedSandboxes = [
+    {
+      id: "sandbox-untagged-1",
+      name: "untagged-worker",
+      environment: "staging",
+      instanceId: "i-atm-abc123",
+      tags: null, // No atm_fleet_id tag — created via seed/discovery
+    },
+  ];
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockAtmFleetClient.isConfigured = true;
+    mockSbRepo.findAllActive.mockResolvedValue(untaggedSandboxes);
+    // ATM fleet reports this instanceId as managed
+    mockAtmFleetClient.getIdleStatus.mockResolvedValue(mockAtmIdleStatus);
+    await setup();
+  });
+
+  afterEach(() => {
+    mockAtmFleetClient.isConfigured = false;
+    mockAtmFleetClient.getIdleStatus.mockResolvedValue(mockAtmIdleStatus);
+    mockSbRepo.findAllActive.mockResolvedValue(mockSandboxes);
+  });
+
+  it("GET list detects untagged sandbox as ATM-managed via instanceId cross-reference", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { workers: Array<{ sandbox_id: string | null; source: string }> };
+    // Sandbox matched by instanceId, and ATM worker has that instanceId → source=atm
+    expect(b.workers[0]!.sandbox_id).toBe("sandbox-untagged-1");
+    expect(b.workers[0]!.source).toBe("atm");
+  });
+
+  it("POST deregister rejects untagged ATM-managed worker via instanceId", async () => {
+    // GH fleet also reports this worker
+    mockGh.getWorkerFleet.mockResolvedValue({
+      workers: [
+        {
+          worker_id: "sandbox-untagged-1",
+          status: "active",
+          target_worker_id: null,
+          ec2_ip: "10.0.0.1",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
+      mkReq({
+        params: { workerId: "sandbox-untagged-1" },
+        body: { reason: "test" },
+      }) as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(400);
+    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
+    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Drain route tests ──────────────────────────────────────────────
+
+const mockSandboxProvider = {
+  getAgentUrl: vi.fn().mockReturnValue("http://10.0.0.1:3101"),
+};
+const mockProviderFactory = {
+  getProvider: vi.fn().mockReturnValue(mockSandboxProvider),
+};
+const mockAgentClient = {
+  drain: vi.fn().mockResolvedValue({
+    success: true,
+    drainedWorkers: ["sandbox-uuid-1"],
+    message: "Worker drained",
+  }),
+};
+
+describe("Worker Admin Routes (drain)", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockAtmFleetClient.isConfigured = false;
+    // Re-set mocks after clearAllMocks
+    mockGh.getWorkerFleet.mockResolvedValue(mockFleet);
+    mockSbRepo.findAllActive.mockResolvedValue([
+      ...mockSandboxes.map((s) => ({
+        ...s,
+        instanceId: s.id === "sandbox-uuid-1" ? "i-abc" : "i-def",
+        publicIp: s.id === "sandbox-uuid-1" ? "1.2.3.4" : "5.6.7.8",
+      })),
+    ]);
+    mockAgentClient.drain.mockResolvedValue({
+      success: true,
+      drainedWorkers: ["sandbox-uuid-1"],
+      message: "Worker drained",
+    });
+    mockSandboxProvider.getAgentUrl.mockReturnValue("http://10.0.0.1:3101");
+    mockProviderFactory.getProvider.mockReturnValue(mockSandboxProvider);
+    await setup();
+  });
+
+  afterEach(() => {
+    mockSbRepo.findAllActive.mockResolvedValue(mockSandboxes);
+  });
+
+  function mkDrainReq(workerId: string) {
+    return {
+      diScope: {
+        cradle: {
+          ghosthandsClient: mockGh,
+          sandboxRepo: mockSbRepo,
+          ghJobRepo: mockGhJobRepo,
+          atmFleetClient: mockAtmFleetClient,
+          sandboxProviderFactory: mockProviderFactory,
+          sandboxAgentClient: mockAgentClient,
+        },
+      },
+      log: mockLog,
+      params: { workerId },
+    };
+  }
+
+  it("POST drain succeeds for GH-managed worker", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      mkDrainReq("sandbox-uuid-1") as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(200);
+    const b = rp._b as { success: boolean; sandboxId: string };
+    expect(b.success).toBe(true);
+    expect(b.sandboxId).toBe("sandbox-uuid-1");
+    expect(mockAgentClient.drain).toHaveBeenCalledWith("http://10.0.0.1:3101", "sandbox-uuid-1");
+  });
+
+  it("POST drain returns 404 for unknown worker", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      mkDrainReq("unknown-worker") as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(404);
+    expect(mockAgentClient.drain).not.toHaveBeenCalled();
+  });
+
+  it("POST drain rejects ATM-managed worker (tag-based)", async () => {
+    // Swap sandboxes to ATM-tagged ones
+    mockSbRepo.findAllActive.mockResolvedValue(
+      mockAtmSandboxes.map((s) => ({
+        ...s,
+        publicIp: s.id === "sandbox-atm-1" ? "10.0.0.1" : null,
+      })),
+    );
+    // GH fleet reports worker with matching sandbox ID
+    mockGh.getWorkerFleet.mockResolvedValue({
+      workers: [
+        {
+          worker_id: "sandbox-atm-1",
+          status: "active",
+          target_worker_id: null,
+          ec2_ip: "10.0.0.1",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      mkDrainReq("sandbox-atm-1") as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(400);
+    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
+    expect(mockAgentClient.drain).not.toHaveBeenCalled();
+  });
+
+  it("POST drain prioritizes ID match over stale IP match", async () => {
+    // Sandbox A has stale IP that matches worker B's ec2_ip
+    mockSbRepo.findAllActive.mockResolvedValue([
+      {
+        id: "sandbox-stale-ip",
+        name: "stale-ip",
+        environment: "staging",
+        instanceId: "i-stale",
+        publicIp: "1.2.3.4", // Stale IP from worker sandbox-uuid-1
+        tags: { atm_fleet_id: "gh-stale" }, // ATM-managed
+      },
+      {
+        id: "sandbox-uuid-1",
+        name: "correct-sandbox",
+        environment: "production",
+        instanceId: "i-correct",
+        publicIp: "9.9.9.9",
+        tags: null, // GH-managed
+      },
+    ]);
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      mkDrainReq("sandbox-uuid-1") as unknown as FastifyRequest,
+      rp,
+    );
+    // Should match by ID (sandbox-uuid-1, GH-managed) not by IP (sandbox-stale-ip, ATM-managed)
+    expect(rp._sc).toBe(200);
+    const b = rp._b as { sandboxId: string };
+    expect(b.sandboxId).toBe("sandbox-uuid-1");
+  });
+
+  it("POST drain rejects untagged ATM-managed worker via instanceId cross-reference", async () => {
+    mockAtmFleetClient.isConfigured = true;
+    mockAtmFleetClient.getIdleStatus.mockResolvedValue(mockAtmIdleStatus);
+    // Untagged sandbox whose instanceId matches ATM worker
+    mockSbRepo.findAllActive.mockResolvedValue([
+      {
+        id: "sandbox-uuid-1",
+        name: "untagged-but-atm",
+        environment: "production",
+        instanceId: "i-atm-abc123", // Matches ATM worker instanceId
+        publicIp: "1.2.3.4",
+        tags: null, // No tag
+      },
+    ]);
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      mkDrainReq("sandbox-uuid-1") as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(400);
+    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
+    expect(mockAgentClient.drain).not.toHaveBeenCalled();
+    mockAtmFleetClient.isConfigured = false;
   });
 });
