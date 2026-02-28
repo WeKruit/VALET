@@ -1,7 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
 import { Button } from "@valet/ui/components/button";
-import { CheckCircle, XCircle, AlertTriangle, Activity, RefreshCw } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@valet/ui/components/tooltip";
+import { CheckCircle, XCircle, AlertTriangle, Activity, RefreshCw, Radio } from "lucide-react";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useDeepHealthCheck } from "../hooks/use-sandboxes";
 import { formatRelativeTime } from "@/lib/utils";
@@ -115,34 +121,56 @@ export function DeepHealthCard({ sandboxId, ec2Running }: DeepHealthCardProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {result.checks.map((check) => (
-                      <tr
-                        key={check.name}
-                        className="border-b border-[var(--wk-border-subtle)] last:border-0"
-                      >
-                        <td className="px-4 py-2.5 font-medium text-[var(--wk-text-primary)]">
-                          {check.name}
-                        </td>
-                        <td className="px-4 py-2.5 font-mono text-[var(--wk-text-secondary)]">
-                          {check.port}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-1.5">
-                            {portStatusIcon[check.status]}
-                            <span className={`capitalize ${portStatusColor[check.status]}`}>
-                              {check.status}
+                    {result.checks.map((check) => {
+                      const isAtmProxy =
+                        check.details &&
+                        (check.details as Record<string, unknown>).source === "atm-fleet-proxy";
+                      return (
+                        <tr
+                          key={check.name}
+                          className="border-b border-[var(--wk-border-subtle)] last:border-0"
+                        >
+                          <td className="px-4 py-2.5 font-medium text-[var(--wk-text-primary)]">
+                            <span className="flex items-center gap-1.5">
+                              {check.name}
+                              {isAtmProxy && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex items-center gap-1 rounded-[var(--wk-radius-full)] bg-[color-mix(in_srgb,var(--wk-copilot)_10%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--wk-copilot)]">
+                                        <Radio className="h-2.5 w-2.5" />
+                                        ATM
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Routed via ATM fleet proxy</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-[var(--wk-text-secondary)]">
-                          {check.status === "timeout"
-                            ? "timeout"
-                            : check.status === "down" && check.responseTimeMs === 0
-                              ? "-"
-                              : `${check.responseTimeMs}ms`}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-[var(--wk-text-secondary)]">
+                            {check.port}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-1.5">
+                              {portStatusIcon[check.status]}
+                              <span className={`capitalize ${portStatusColor[check.status]}`}>
+                                {check.status}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-[var(--wk-text-secondary)]">
+                            {check.status === "timeout"
+                              ? "timeout"
+                              : check.status === "down" && check.responseTimeMs === 0
+                                ? "-"
+                                : `${check.responseTimeMs}ms`}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

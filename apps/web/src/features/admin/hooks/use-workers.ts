@@ -34,7 +34,7 @@ export interface WorkerEntry {
   sandbox_name: string | null;
   environment: string | null;
   ec2_ip: string | null;
-  status: "active" | "draining" | "offline";
+  status: string;
   current_job_id: string | null;
   valet_task_id: string | null;
   registered_at: string;
@@ -42,11 +42,16 @@ export interface WorkerEntry {
   jobs_completed: number;
   jobs_failed: number;
   uptime_seconds: number | null;
+  ec2_state: string | null;
+  active_jobs: number | null;
+  transitioning: boolean;
+  source: "atm" | "gh";
 }
 
 export interface WorkerFleetResponse {
   workers: WorkerEntry[];
   total: number;
+  source: "atm" | "gh";
 }
 
 export function useWorkerFleet() {

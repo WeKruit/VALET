@@ -16,6 +16,10 @@ function enrichWorker(
     jobs_completed: number;
     jobs_failed: number;
     uptime_seconds?: number | null;
+    ec2_state?: string | null;
+    active_jobs?: number | null;
+    transitioning?: boolean;
+    source?: "atm" | "gh";
   },
   sandboxMap: Map<string, { id: string; name: string; environment: string }>,
   jobTaskMap: Map<string, string>,
@@ -35,6 +39,10 @@ function enrichWorker(
     jobs_completed: w.jobs_completed,
     jobs_failed: w.jobs_failed,
     uptime_seconds: w.uptime_seconds ?? null,
+    ec2_state: w.ec2_state ?? null,
+    active_jobs: w.active_jobs ?? null,
+    transitioning: w.transitioning ?? false,
+    source: w.source ?? ("gh" as const),
   };
 }
 
@@ -51,6 +59,10 @@ function atmWorkerToFleetWorker(w: AtmWorkerState) {
     jobs_completed: 0,
     jobs_failed: 0,
     uptime_seconds: w.idleSinceMs > 0 ? Math.round(w.idleSinceMs / 1000) : null,
+    ec2_state: w.ec2State,
+    active_jobs: w.activeJobs,
+    transitioning: w.transitioning,
+    source: "atm" as const,
   };
 }
 

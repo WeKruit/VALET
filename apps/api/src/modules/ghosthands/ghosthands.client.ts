@@ -26,6 +26,9 @@ import type {
 /** TTL for cached resolved URLs (30 seconds) */
 const URL_CACHE_TTL_MS = 30_000;
 
+/** ATM base URL — when set, GH API/worker calls route through ATM fleet proxy */
+const ATM_BASE_URL = (process.env.ATM_BASE_URL || "").replace(/\/$/, "");
+
 export class GhostHandsClient {
   private baseUrl: string;
   private workerBaseUrl: string;
@@ -37,6 +40,9 @@ export class GhostHandsClient {
   /** Cached resolved IP — shared between resolveApiUrl and resolveWorkerUrl */
   private _cachedIp: string | null = null;
   private _cachedIpTimestamp = 0;
+
+  /** Cached IP→fleetId map with TTL */
+  private _ipToFleetIdCache: Map<string, { fleetId: string; expiresAt: number }> = new Map();
 
   constructor({
     ghosthandsApiUrl,
@@ -101,33 +107,87 @@ export class GhostHandsClient {
   }
 
   /**
+   * Resolve ATM fleet proxy URL for a given EC2 IP.
+   * Looks up the sandbox by publicIp → reads tags.atm_fleet_id → returns ATM proxy URL.
+   * Returns null if ATM is not configured, sandbox not found, or no fleet ID.
+   */
+  private async resolveAtmProxyUrl(ip: string): Promise<string | null> {
+    if (!ATM_BASE_URL || !this.sandboxRepo) return null;
+
+    // Check cache
+    const cached = this._ipToFleetIdCache.get(ip);
+    if (cached && cached.expiresAt > Date.now()) {
+      return `${ATM_BASE_URL}/fleet/${cached.fleetId}`;
+    }
+
+    try {
+      const sandboxes = await this.sandboxRepo.findActive("ec2");
+      const match = sandboxes.find((s) => s.publicIp === ip);
+      if (!match) return null;
+
+      const tags = match.tags as Record<string, unknown> | null;
+      const fleetId = tags?.atm_fleet_id as string | undefined;
+      if (!fleetId) return null;
+
+      // Cache for 5 minutes
+      this._ipToFleetIdCache.set(ip, { fleetId, expiresAt: Date.now() + 300_000 });
+      return `${ATM_BASE_URL}/fleet/${fleetId}`;
+    } catch (err) {
+      this.logger.debug({ err, ip }, "Failed to resolve ATM proxy URL for IP");
+      return null;
+    }
+  }
+
+  /**
+   * Convert an IP to either ATM proxy URL or direct URL.
+   * When ATM_BASE_URL is configured, prefers ATM proxy (Fly.io can't reach EC2 directly).
+   */
+  private async ipToApiUrl(ip: string): Promise<string> {
+    const atmUrl = await this.resolveAtmProxyUrl(ip);
+    if (atmUrl) return atmUrl;
+    return `http://${ip}:3100`;
+  }
+
+  /**
+   * Convert an IP to either ATM proxy URL or direct worker URL.
+   * ATM proxy handles /worker/* routing to port 3101 automatically.
+   */
+  private async ipToWorkerUrl(ip: string): Promise<string> {
+    const atmUrl = await this.resolveAtmProxyUrl(ip);
+    if (atmUrl) return atmUrl;
+    return `http://${ip}:3101`;
+  }
+
+  /**
    * Resolve the GH API URL dynamically from the database.
+   * When ATM is configured, routes through ATM fleet proxy.
    * Prefers healthy EC2 sandbox IPs over the static env var.
    * Falls back to the static baseUrl if no healthy sandbox is found or on error.
    */
   async resolveApiUrl(): Promise<string> {
     const ip = await this.resolveHealthyIp();
     if (ip) {
-      const dynamicUrl = `http://${ip}:3100`;
-      if (dynamicUrl !== this.baseUrl) {
+      const url = await this.ipToApiUrl(ip);
+      if (url !== this.baseUrl) {
         this.logger.info(
-          { dynamicUrl, staticUrl: this.baseUrl },
-          "GhostHands using dynamic API URL from sandbox DB",
+          { resolvedUrl: url, staticUrl: this.baseUrl },
+          "GhostHands using dynamic API URL",
         );
       }
-      return dynamicUrl;
+      return url;
     }
     return this.baseUrl;
   }
 
   /**
-   * Resolve the GH worker URL (port 3101) dynamically from the database.
+   * Resolve the GH worker URL dynamically from the database.
+   * When ATM is configured, routes through ATM fleet proxy.
    * Falls back to the static workerBaseUrl.
    */
   private async resolveWorkerUrl(): Promise<string> {
     const ip = await this.resolveHealthyIp();
     if (ip) {
-      return `http://${ip}:3101`;
+      return this.ipToWorkerUrl(ip);
     }
     return this.workerBaseUrl;
   }
@@ -182,49 +242,55 @@ export class GhostHandsClient {
   }
 
   /**
-   * Resolve the GH API URL (port 3100) for a specific job.
+   * Resolve the GH API URL for a specific job.
+   * When ATM is configured, routes through ATM fleet proxy.
    * Falls back to the generic resolveApiUrl() if job-targeted lookup fails.
    */
   private async resolveApiUrlForJob(jobId: string): Promise<string> {
     const ip = await this.resolveWorkerIpForJob(jobId);
     if (ip) {
+      const url = await this.ipToApiUrl(ip);
       this.logger.info(
-        { jobId, resolvedIp: ip },
+        { jobId, resolvedIp: ip, resolvedUrl: url },
         "GhostHands targeted API routing: job → worker → EC2",
       );
-      return `http://${ip}:3100`;
+      return url;
     }
     return this.resolveApiUrl();
   }
 
   /**
-   * Resolve the GH worker URL (port 3101) for a specific job.
+   * Resolve the GH worker URL for a specific job.
+   * When ATM is configured, routes through ATM fleet proxy.
    * Falls back to the generic resolveWorkerUrl() if job-targeted lookup fails.
    */
   private async resolveWorkerUrlForJob(jobId: string): Promise<string> {
     const ip = await this.resolveWorkerIpForJob(jobId);
     if (ip) {
+      const url = await this.ipToWorkerUrl(ip);
       this.logger.info(
-        { jobId, resolvedIp: ip },
+        { jobId, resolvedIp: ip, resolvedUrl: url },
         "GhostHands targeted worker routing: job → worker → EC2",
       );
-      return `http://${ip}:3101`;
+      return url;
     }
     return this.resolveWorkerUrl();
   }
 
   /**
-   * Resolve the GH worker URL (port 3101) for a specific worker ID.
+   * Resolve the GH worker URL for a specific worker ID.
+   * When ATM is configured, routes through ATM fleet proxy.
    * Falls back to the generic resolveWorkerUrl() if lookup fails.
    */
   private async resolveWorkerUrlById(workerId: string): Promise<string> {
     const ip = await this.resolveWorkerIpById(workerId);
     if (ip) {
+      const url = await this.ipToWorkerUrl(ip);
       this.logger.info(
-        { workerId, resolvedIp: ip },
+        { workerId, resolvedIp: ip, resolvedUrl: url },
         "GhostHands targeted worker routing: workerId → EC2",
       );
-      return `http://${ip}:3101`;
+      return url;
     }
     return this.resolveWorkerUrl();
   }

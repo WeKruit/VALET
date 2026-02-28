@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { useWorkerFleet, useDeregisterWorker } from "../hooks/use-workers";
 import type { WorkerEntry } from "../hooks/use-workers";
 import { useFleetSandboxMetrics, useDrainWorker } from "../hooks/use-fleet-metrics";
+import { Ec2StatusBadge } from "../components/ec2-status-badge";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "default"> = {
   active: "success",
@@ -370,6 +371,9 @@ export function WorkersPage() {
                         Status
                       </th>
                       <th className="px-4 py-3 text-left font-medium text-[var(--wk-text-secondary)]">
+                        EC2
+                      </th>
+                      <th className="px-4 py-3 text-left font-medium text-[var(--wk-text-secondary)]">
                         Current Job
                       </th>
                       <th className="px-4 py-3 text-left font-medium text-[var(--wk-text-secondary)]">
@@ -390,10 +394,21 @@ export function WorkersPage() {
                     {filtered.map((w) => (
                       <tr
                         key={w.worker_id}
-                        className="hover:bg-[var(--wk-surface-raised)] transition-colors"
+                        className={`hover:bg-[var(--wk-surface-raised)] transition-colors ${w.transitioning ? "animate-pulse" : ""}`}
                       >
-                        <td className="px-4 py-3 font-mono text-xs">
-                          {w.worker_id.slice(0, 8)}...
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs">{w.worker_id.slice(0, 8)}...</span>
+                            <span
+                              className={`inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium leading-none ${
+                                w.source === "atm"
+                                  ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                  : "bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                              }`}
+                            >
+                              {w.source === "atm" ? "ATM" : "GH"}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-[var(--wk-text-secondary)]">
                           {w.sandbox_name ?? "\u2014"}
@@ -409,8 +424,29 @@ export function WorkersPage() {
                             {w.status}
                           </Badge>
                         </td>
+                        <td className="px-4 py-3">
+                          <Ec2StatusBadge status={w.ec2_state} />
+                        </td>
                         <td className="px-4 py-3 font-mono text-xs text-[var(--wk-text-secondary)]">
-                          {w.current_job_id ? `${w.current_job_id.slice(0, 8)}...` : "\u2014"}
+                          {w.current_job_id ? (
+                            <div className="flex flex-col">
+                              <span>{w.current_job_id.slice(0, 8)}...</span>
+                              {w.active_jobs != null && w.active_jobs > 0 && (
+                                <span className="text-[10px] text-[var(--wk-text-tertiary)]">
+                                  {w.active_jobs} active (ATM)
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col">
+                              <span>{"\u2014"}</span>
+                              {w.active_jobs != null && w.active_jobs > 0 && (
+                                <span className="text-[10px] text-[var(--wk-text-tertiary)]">
+                                  {w.active_jobs} active (ATM)
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 tabular-nums text-xs">
                           <span className="text-[var(--wk-status-success)]">

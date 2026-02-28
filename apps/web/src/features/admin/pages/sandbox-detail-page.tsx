@@ -74,6 +74,7 @@ import {
   useStopSandbox,
   useUpdateSandbox,
 } from "../hooks/use-sandboxes";
+import { useWorkerFleet } from "../hooks/use-workers";
 import type { SandboxEnvironment } from "../types";
 
 const envLabels: Record<SandboxEnvironment, string> = {
@@ -126,6 +127,12 @@ export function SandboxDetailPage() {
     ec2StatusQuery.data?.status === 200
       ? ec2StatusQuery.data.body.ec2Status
       : (sandbox?.ec2Status ?? null);
+
+  // Fleet worker data for this sandbox (provides ec2_state, transitioning)
+  const fleetQuery = useWorkerFleet();
+  const fleetWorker = fleetQuery.data?.workers?.find((w) => w.sandbox_id === id) ?? null;
+  const fleetEc2State = fleetWorker?.ec2_state ?? null;
+  const fleetTransitioning = fleetWorker?.transitioning ?? false;
 
   if (!id) {
     return (
@@ -425,10 +432,13 @@ export function SandboxDetailPage() {
                 size="sm"
                 onClick={handleStart}
                 disabled={
-                  ec2Status === "running" || ec2Status === "pending" || startMutation.isPending
+                  ec2Status === "running" ||
+                  ec2Status === "pending" ||
+                  startMutation.isPending ||
+                  fleetTransitioning
                 }
               >
-                {startMutation.isPending ? (
+                {startMutation.isPending || (fleetTransitioning && ec2Status !== "running") ? (
                   <LoadingSpinner size="sm" />
                 ) : (
                   <Play className="h-4 w-4" />
@@ -443,10 +453,11 @@ export function SandboxDetailPage() {
                   ec2Status === "stopped" ||
                   ec2Status === "stopping" ||
                   ec2Status === "terminated" ||
-                  stopMutation.isPending
+                  stopMutation.isPending ||
+                  fleetTransitioning
                 }
               >
-                {stopMutation.isPending ? (
+                {stopMutation.isPending || (fleetTransitioning && ec2Status === "running") ? (
                   <LoadingSpinner size="sm" />
                 ) : (
                   <Square className="h-4 w-4" />
@@ -508,7 +519,12 @@ export function SandboxDetailPage() {
       </Card>
 
       {/* Worker Status */}
-      <WorkerStatusCard sandboxId={id!} ec2Running={ec2Status === "running"} />
+      <WorkerStatusCard
+        sandboxId={id!}
+        ec2Running={ec2Status === "running"}
+        ec2State={fleetEc2State}
+        transitioning={fleetTransitioning}
+      />
 
       {/* Deep Health Check */}
       <DeepHealthCard sandboxId={id!} ec2Running={ec2Status === "running"} />
