@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
 type RouteHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -57,7 +57,48 @@ const mockSbRepo = { findAllActive: vi.fn().mockResolvedValue(mockSandboxes) };
 const mockGhJobRepo = {
   findByIds: vi.fn().mockResolvedValue([{ id: "job-1", valetTaskId: "valet-task-abc" }]),
 };
-const mockAtmFleetClient = { isConfigured: false };
+const mockAtmIdleStatus = {
+  enabled: true,
+  workers: [
+    {
+      serverId: "gh-worker-1",
+      ip: "10.0.0.1",
+      instanceId: "i-atm-abc123",
+      ec2State: "running",
+      activeJobs: 1,
+      idleSinceMs: 0,
+      transitioning: false,
+    },
+    {
+      serverId: "gh-worker-2",
+      ip: "",
+      instanceId: "i-atm-def456",
+      ec2State: "stopped",
+      activeJobs: 0,
+      idleSinceMs: 300000,
+      transitioning: false,
+    },
+  ],
+};
+const mockAtmSandboxes = [
+  {
+    id: "sandbox-atm-1",
+    name: "atm-prod-worker",
+    environment: "production",
+    instanceId: "i-atm-abc123",
+  },
+  {
+    id: "sandbox-atm-2",
+    name: "atm-stg-worker",
+    environment: "staging",
+    instanceId: "i-atm-def456",
+  },
+];
+const mockAtmFleetClient = {
+  isConfigured: false,
+  getIdleStatus: vi.fn().mockResolvedValue(mockAtmIdleStatus),
+  getWorkerHealth: vi.fn().mockResolvedValue({ status: "healthy" }),
+};
 const mockLog = {
   error: vi.fn(),
   info: vi.fn(),
@@ -199,5 +240,148 @@ describe("Worker Admin Routes", () => {
     expect(mockGh.deregisterWorker).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "admin_deregister" }),
     );
+  });
+
+  it("POST deregister returns 404 for unknown worker", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
+      mkReq({
+        params: { workerId: "gh-worker-1" },
+        body: { reason: "test" },
+      }) as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(404);
+    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
+  });
+});
+
+// ─── ATM Code Path Tests ───────────────────────────────────────────
+
+describe("Worker Admin Routes (ATM path)", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockAtmFleetClient.isConfigured = true;
+    mockSbRepo.findAllActive.mockResolvedValue(mockAtmSandboxes);
+    await setup();
+  });
+
+  afterEach(() => {
+    mockAtmFleetClient.isConfigured = false;
+    mockSbRepo.findAllActive.mockResolvedValue(mockSandboxes);
+  });
+
+  it("GET list uses ATM fleet data when configured", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { workers: unknown[]; total: number; source: string };
+    expect(b.source).toBe("atm");
+    expect(b.total).toBe(2);
+    expect(mockAtmFleetClient.getIdleStatus).toHaveBeenCalled();
+    expect(mockGh.getWorkerFleet).not.toHaveBeenCalled();
+  });
+
+  it("GET list resolves sandbox by instanceId for ATM workers", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as {
+      workers: Array<{ worker_id: string; sandbox_id: string | null; sandbox_name: string | null }>;
+    };
+    // gh-worker-1 has instanceId i-atm-abc123 → matches sandbox-atm-1
+    expect(b.workers[0]!.sandbox_id).toBe("sandbox-atm-1");
+    expect(b.workers[0]!.sandbox_name).toBe("atm-prod-worker");
+    // gh-worker-2 has instanceId i-atm-def456 → matches sandbox-atm-2
+    expect(b.workers[1]!.sandbox_id).toBe("sandbox-atm-2");
+    expect(b.workers[1]!.sandbox_name).toBe("atm-stg-worker");
+  });
+
+  it("GET list normalizes ATM status to active/draining/offline", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as {
+      workers: Array<{ worker_id: string; status: string; ec2_state: string }>;
+    };
+    // running → active
+    expect(b.workers[0]!.status).toBe("active");
+    expect(b.workers[0]!.ec2_state).toBe("running");
+    // stopped → offline
+    expect(b.workers[1]!.status).toBe("offline");
+    expect(b.workers[1]!.ec2_state).toBe("stopped");
+  });
+
+  it("GET list marks ATM workers with source=atm", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { workers: Array<{ source: string }> };
+    expect(b.workers[0]!.source).toBe("atm");
+    expect(b.workers[1]!.source).toBe("atm");
+  });
+
+  it("GET list passes through ec2_state, active_jobs, transitioning", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as {
+      workers: Array<{
+        ec2_state: string;
+        active_jobs: number;
+        transitioning: boolean;
+      }>;
+    };
+    expect(b.workers[0]!.ec2_state).toBe("running");
+    expect(b.workers[0]!.active_jobs).toBe(1);
+    expect(b.workers[0]!.transitioning).toBe(false);
+  });
+
+  it("GET list falls back to GH when ATM fails", async () => {
+    mockAtmFleetClient.getIdleStatus.mockRejectedValueOnce(new Error("timeout"));
+    mockSbRepo.findAllActive.mockResolvedValue(mockSandboxes);
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { source: string };
+    expect(b.source).toBe("gh");
+    expect(mockGh.getWorkerFleet).toHaveBeenCalled();
+  });
+
+  it("GET list normalizes stopping → draining", async () => {
+    mockAtmFleetClient.getIdleStatus.mockResolvedValueOnce({
+      enabled: true,
+      workers: [
+        {
+          serverId: "gh-worker-3",
+          ip: "10.0.0.3",
+          instanceId: null,
+          ec2State: "stopping",
+          activeJobs: 0,
+          idleSinceMs: 0,
+          transitioning: true,
+        },
+      ],
+    });
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { workers: Array<{ status: string; ec2_state: string }> };
+    expect(b.workers[0]!.status).toBe("draining");
+    expect(b.workers[0]!.ec2_state).toBe("stopping");
+  });
+
+  it("GET list handles null instanceId gracefully (no bogus sandbox match)", async () => {
+    mockAtmFleetClient.getIdleStatus.mockResolvedValueOnce({
+      enabled: true,
+      workers: [
+        {
+          serverId: "gh-worker-orphan",
+          ip: "",
+          instanceId: null,
+          ec2State: "stopped",
+          activeJobs: 0,
+          idleSinceMs: 0,
+          transitioning: false,
+        },
+      ],
+    });
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { workers: Array<{ sandbox_id: string | null }> };
+    expect(b.workers[0]!.sandbox_id).toBeNull();
   });
 });

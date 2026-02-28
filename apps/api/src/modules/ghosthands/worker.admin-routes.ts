@@ -261,6 +261,16 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       const { workerId } = request.params;
       const body = request.body ?? {};
       try {
+        // Validate worker exists in GH fleet before proxying
+        const fleetData = await ghosthandsClient.getWorkerFleet();
+        const worker = fleetData.workers.find(
+          (w: { worker_id: string; target_worker_id?: string | null }) =>
+            w.worker_id === workerId || w.target_worker_id === workerId,
+        );
+        if (!worker) {
+          return reply.status(404).send({ error: "Worker not found in GH fleet" });
+        }
+
         const result = await ghosthandsClient.deregisterWorker({
           target_worker_id: workerId,
           reason: body.reason ?? "admin_deregister",
