@@ -219,7 +219,7 @@ describe("Worker Admin Routes", () => {
     expect(rp._sc).toBe(404);
   });
 
-  it("POST deregister with params", async () => {
+  it("POST deregister forwards fleet entry target_worker_id (null → falls back to worker_id)", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
     await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
       mkReq({
@@ -228,9 +228,87 @@ describe("Worker Admin Routes", () => {
       }) as unknown as FastifyRequest,
       rp,
     );
+    // mockFleet worker has target_worker_id: null → deregister uses worker_id
     expect(mockGh.deregisterWorker).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "maint", target_worker_id: "sandbox-uuid-1" }),
     );
+  });
+
+  it("POST deregister forwards fleet entry target_worker_id when it differs from worker_id", async () => {
+    // GH fleet entry where worker_id ≠ target_worker_id (worker registered with sandbox UUID)
+    mockGh.getWorkerFleet.mockResolvedValueOnce({
+      workers: [
+        {
+          worker_id: "gh-internal-uuid",
+          status: "active",
+          target_worker_id: "sandbox-uuid-1",
+          ec2_instance_id: "i-abc",
+          ec2_ip: "1.2.3.4",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 10,
+          jobs_failed: 0,
+          uptime_seconds: 86400,
+        },
+      ],
+    });
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    // Admin clicks on "gh-internal-uuid" from the workers list
+    await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
+      mkReq({
+        params: { workerId: "gh-internal-uuid" },
+        body: { reason: "maint" },
+      }) as unknown as FastifyRequest,
+      rp,
+    );
+    // Should forward target_worker_id from fleet entry, not the URL param
+    expect(mockGh.deregisterWorker).toHaveBeenCalledWith(
+      expect.objectContaining({ target_worker_id: "sandbox-uuid-1" }),
+    );
+  });
+
+  it("POST deregister resolves sandbox via target_worker_id when worker_id differs", async () => {
+    // Worker registered with different worker_id, target_worker_id = sandbox UUID
+    mockGh.getWorkerFleet.mockResolvedValueOnce({
+      workers: [
+        {
+          worker_id: "gh-internal-uuid",
+          status: "active",
+          target_worker_id: "sandbox-uuid-1",
+          ec2_instance_id: "i-abc",
+          ec2_ip: "1.2.3.4",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    // Sandbox has asg_managed tag → ATM-managed
+    mockSbRepo.findAllActive.mockResolvedValueOnce([
+      {
+        id: "sandbox-uuid-1",
+        name: "asg-worker",
+        environment: "staging",
+        instanceId: "i-abc",
+        tags: { asg_managed: true, asg_name: "ghosthands-worker-asg" },
+      },
+    ]);
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    // URL param "gh-internal-uuid" doesn't match sandbox.id, but target_worker_id does
+    await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
+      mkReq({
+        params: { workerId: "gh-internal-uuid" },
+        body: { reason: "test" },
+      }) as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(400);
+    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
+    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
   });
 
   it("POST deregister default reason", async () => {
@@ -455,6 +533,105 @@ describe("Worker Admin Routes (GH fallback with ATM-managed sandboxes)", () => {
       rp,
     );
     expect(rp._sc).toBe(502);
+  });
+});
+
+// ─── asg_managed tag detection (seed/discovery path) ─────────────────
+
+describe("Worker Admin Routes (asg_managed tag detection)", () => {
+  const asgManagedSandboxes = [
+    {
+      id: "sandbox-asg-1",
+      name: "gh-worker-asg-1",
+      environment: "staging",
+      instanceId: "i-asg-xyz",
+      tags: { asg_managed: true, asg_name: "ghosthands-worker-asg", purpose: "staging" },
+    },
+  ];
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    // ATM not configured — tests that asg_managed alone is sufficient
+    mockAtmFleetClient.isConfigured = false;
+    mockSbRepo.findAllActive.mockResolvedValue(asgManagedSandboxes);
+    mockGh.getWorkerFleet.mockResolvedValue({
+      workers: [
+        {
+          worker_id: "sandbox-asg-1",
+          status: "active",
+          target_worker_id: null,
+          ec2_instance_id: "i-asg-xyz",
+          ec2_ip: "10.0.0.5",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    await setup();
+  });
+
+  afterEach(() => {
+    mockSbRepo.findAllActive.mockResolvedValue(mockSandboxes);
+    mockGh.getWorkerFleet.mockResolvedValue(mockFleet);
+  });
+
+  it("GET list marks asg_managed sandbox as source=atm without atm_fleet_id", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { workers: Array<{ source: string; sandbox_id: string }> };
+    expect(b.workers[0]!.source).toBe("atm");
+    expect(b.workers[0]!.sandbox_id).toBe("sandbox-asg-1");
+  });
+
+  it("POST deregister rejects asg_managed sandbox (no atm_fleet_id, no ATM reachable)", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
+      mkReq({
+        params: { workerId: "sandbox-asg-1" },
+        body: { reason: "test" },
+      }) as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(400);
+    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
+    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
+  });
+
+  it("POST drain rejects asg_managed sandbox", async () => {
+    mockAgentClient.drain.mockResolvedValue({
+      success: true,
+      drainedWorkers: [],
+      message: "",
+    });
+    mockSandboxProvider.getAgentUrl.mockReturnValue("http://10.0.0.5:3101");
+    mockProviderFactory.getProvider.mockReturnValue(mockSandboxProvider);
+    mockSbRepo.findAllActive.mockResolvedValue(
+      asgManagedSandboxes.map((s) => ({ ...s, publicIp: "10.0.0.5" })),
+    );
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      {
+        diScope: {
+          cradle: {
+            ghosthandsClient: mockGh,
+            sandboxRepo: mockSbRepo,
+            ghJobRepo: mockGhJobRepo,
+            atmFleetClient: mockAtmFleetClient,
+            sandboxProviderFactory: mockProviderFactory,
+            sandboxAgentClient: mockAgentClient,
+          },
+        },
+        log: mockLog,
+        params: { workerId: "sandbox-asg-1" },
+      } as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(400);
+    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
   });
 });
 
