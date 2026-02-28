@@ -10,12 +10,18 @@ import type { SandboxRecord } from "../sandboxes/sandbox.repository.js";
  * 1. tags.atm_fleet_id is set (explicit ATM assignment via startMachine)
  * 2. Its instanceId matches an ATM fleet worker's instanceId (runtime cross-ref)
  *
+ * When ATM is configured but unreachable, any EC2 sandbox (has instanceId) without
+ * an explicit atm_fleet_id is treated as POTENTIALLY ATM-managed (fail closed).
+ * This prevents destructive actions during ATM outages for the window between
+ * instance-discovery creating a record and startMachine tagging it.
+ *
  * NOTE: tags.asg_managed is NOT an ownership signal — it indicates the sandbox
  * is in an ASG, which can operate independently of ATM (e.g. GH-only deploys).
  */
 function buildAtmManagedSet(
   sandboxes: SandboxRecord[],
   atmWorkerInstanceIds?: Set<string>,
+  atmConfiguredButUnreachable?: boolean,
 ): Set<string> {
   const set = new Set<string>();
   for (const s of sandboxes) {
@@ -25,6 +31,11 @@ function buildAtmManagedSet(
       continue;
     }
     if (atmWorkerInstanceIds && s.instanceId && atmWorkerInstanceIds.has(s.instanceId)) {
+      set.add(s.id);
+      continue;
+    }
+    // Fail closed: ATM configured but down → any EC2 sandbox is potentially ATM-managed
+    if (atmConfiguredButUnreachable && s.instanceId) {
       set.add(s.id);
     }
   }
@@ -125,6 +136,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
     };
 
     // Primary: ATM fleet data (works even when GH is stopped)
+    let atmUnreachable = false;
     if (atmFleetClient.isConfigured) {
       try {
         const [atmStatus, activeSandboxes] = await Promise.all([
@@ -152,6 +164,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         return reply.send({ workers: atmWorkers, total: atmWorkers.length, source: "atm" });
       } catch (err) {
         request.log.warn({ err }, "ATM fleet unreachable, falling back to GH direct");
+        atmUnreachable = true;
       }
     }
 
@@ -179,7 +192,8 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       for (const s of activeSandboxes) {
         if (s.instanceId) sandboxMap.set(s.instanceId, s);
       }
-      const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+      // Fail closed: if ATM was configured but unreachable, treat EC2 sandboxes as ATM-managed
+      const atmManagedIds = buildAtmManagedSet(activeSandboxes, undefined, atmUnreachable);
       const workers = fleetData.workers.map((w: any) =>
         enrichWorker(w, sandboxMap, jobTaskMap, atmManagedIds),
       );
@@ -332,6 +346,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
 
         // Build ATM managed set — use ATM fleet data for instanceId cross-reference if available
         let atmWorkerInstanceIds: Set<string> | undefined;
+        let atmUnreachable = false;
         if (atmFleetClient.isConfigured) {
           try {
             const atmStatus = await atmFleetClient.getIdleStatus();
@@ -339,10 +354,14 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
               atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
             );
           } catch {
-            // ATM unreachable — fall back to tag-only check
+            atmUnreachable = true;
           }
         }
-        const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
+        const atmManagedIds = buildAtmManagedSet(
+          activeSandboxes,
+          atmWorkerInstanceIds,
+          atmUnreachable,
+        );
 
         // Resolve sandbox by all available identifiers — ID/instanceId first, IP fallback
         const sandboxMap = new Map<string, SandboxRecord>(
@@ -361,6 +380,17 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           : null;
         const sandbox = sandboxById ?? sandboxByIp ?? null;
         if (sandbox && atmManagedIds.has(sandbox.id)) {
+          // Distinguish confirmed ATM ownership from fail-closed uncertainty
+          const hasAtmTag =
+            typeof sandbox.tags === "object" &&
+            sandbox.tags !== null &&
+            (sandbox.tags as Record<string, unknown>).atm_fleet_id;
+          if (atmUnreachable && !hasAtmTag) {
+            return reply.status(503).send({
+              error:
+                "ATM is unreachable — cannot verify worker ownership for this EC2 instance. Retry when ATM is available.",
+            });
+          }
           return reply.status(400).send({
             error: "Worker is managed by ATM — use sandbox start/stop instead",
           });
@@ -422,6 +452,7 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
 
         // 1b. Build ATM managed set with instanceId cross-reference if ATM is available
         let atmWorkerInstanceIds: Set<string> | undefined;
+        let atmUnreachable = false;
         if (atmFleetClient.isConfigured) {
           try {
             const atmStatus = await atmFleetClient.getIdleStatus();
@@ -429,10 +460,14 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
               atmStatus.workers.map((w) => w.instanceId).filter((id): id is string => id != null),
             );
           } catch {
-            // ATM unreachable — fall back to tag-only check
+            atmUnreachable = true;
           }
         }
-        const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
+        const atmManagedIds = buildAtmManagedSet(
+          activeSandboxes,
+          atmWorkerInstanceIds,
+          atmUnreachable,
+        );
 
         // 2. Find the sandbox — ID/instanceId first, then IP fallback
         const sandboxMap = new Map<string, SandboxRecord>(
@@ -453,6 +488,16 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: `No sandbox found for worker ${workerId}` });
         }
         if (atmManagedIds.has(sandbox.id)) {
+          const hasAtmTag =
+            typeof sandbox.tags === "object" &&
+            sandbox.tags !== null &&
+            (sandbox.tags as Record<string, unknown>).atm_fleet_id;
+          if (atmUnreachable && !hasAtmTag) {
+            return reply.status(503).send({
+              error:
+                "ATM is unreachable — cannot verify worker ownership for this EC2 instance. Retry when ATM is available.",
+            });
+          }
           return reply.status(400).send({
             error: "Worker is managed by ATM — use sandbox start/stop instead",
           });
