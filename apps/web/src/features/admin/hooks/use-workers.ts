@@ -8,7 +8,11 @@ async function fetchWithAuth(url: string) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
   const res = await fetch(url, { headers, credentials: "include" });
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const msg = (body as Record<string, unknown> | null)?.error;
+    throw new Error(typeof msg === "string" ? msg : `Request failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -24,7 +28,11 @@ async function postWithAuth(url: string, body?: unknown) {
     credentials: "include",
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    const msg = (data as Record<string, unknown> | null)?.error;
+    throw new Error(typeof msg === "string" ? msg : `Request failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -46,6 +54,7 @@ export interface WorkerEntry {
   active_jobs: number | null;
   transitioning: boolean;
   source: "atm" | "gh";
+  atm_unverified?: boolean;
 }
 
 export interface WorkerFleetResponse {
