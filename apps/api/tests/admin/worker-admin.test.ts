@@ -635,6 +635,60 @@ describe("Worker Admin Routes (asg_managed tag detection)", () => {
   });
 });
 
+// ─── ec2_instance_id-based sandbox resolution in GH fallback ─────────
+
+describe("Worker Admin Routes (GH fallback ec2_instance_id resolution)", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockAtmFleetClient.isConfigured = false;
+    // Worker whose only link to sandbox is ec2_instance_id (not worker_id or target_worker_id)
+    mockGh.getWorkerFleet.mockResolvedValue({
+      workers: [
+        {
+          worker_id: "gh-internal-uuid",
+          status: "active",
+          target_worker_id: null,
+          ec2_instance_id: "i-ec2-match",
+          ec2_ip: "10.0.0.99",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    // Sandbox only discoverable via instanceId — id ≠ worker_id, no target_worker_id match
+    mockSbRepo.findAllActive.mockResolvedValue([
+      {
+        id: "sandbox-ec2-only",
+        name: "ec2-linked-sandbox",
+        environment: "staging",
+        instanceId: "i-ec2-match",
+        tags: null,
+      },
+    ]);
+    await setup();
+  });
+
+  afterEach(() => {
+    mockGh.getWorkerFleet.mockResolvedValue(mockFleet);
+    mockSbRepo.findAllActive.mockResolvedValue(mockSandboxes);
+  });
+
+  it("GET list resolves sandbox via ec2_instance_id when worker_id and target_worker_id don't match", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as {
+      workers: Array<{ worker_id: string; sandbox_id: string | null; sandbox_name: string | null }>;
+    };
+    // Should resolve via ec2_instance_id → instanceId match
+    expect(b.workers[0]!.sandbox_id).toBe("sandbox-ec2-only");
+    expect(b.workers[0]!.sandbox_name).toBe("ec2-linked-sandbox");
+  });
+});
+
 // ─── Untagged ATM sandbox detection via instanceId cross-reference ───
 
 describe("Worker Admin Routes (untagged ATM sandbox)", () => {
@@ -850,6 +904,39 @@ describe("Worker Admin Routes (drain)", () => {
     // Should match by ID (sandbox-uuid-1, GH-managed) not by IP (sandbox-stale-ip, ATM-managed)
     expect(rp._sc).toBe(200);
     const b = rp._b as { sandboxId: string };
+    expect(b.sandboxId).toBe("sandbox-uuid-1");
+  });
+
+  it("POST drain finds worker via target_worker_id and sends canonical worker_id to agent", async () => {
+    // GH fleet entry where worker_id ≠ target_worker_id
+    mockGh.getWorkerFleet.mockResolvedValue({
+      workers: [
+        {
+          worker_id: "gh-drain-uuid",
+          status: "active",
+          target_worker_id: "sandbox-uuid-1",
+          ec2_instance_id: "i-abc",
+          ec2_ip: "1.2.3.4",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    // Admin passes target_worker_id as URL param
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      mkDrainReq("sandbox-uuid-1") as unknown as FastifyRequest,
+      rp,
+    );
+    expect(rp._sc).toBe(200);
+    // Should pass canonical worker_id to agent, not URL param
+    expect(mockAgentClient.drain).toHaveBeenCalledWith("http://10.0.0.1:3101", "gh-drain-uuid");
+    const b = rp._b as { workerId: string; sandboxId: string };
+    expect(b.workerId).toBe("gh-drain-uuid");
     expect(b.sandboxId).toBe("sandbox-uuid-1");
   });
 

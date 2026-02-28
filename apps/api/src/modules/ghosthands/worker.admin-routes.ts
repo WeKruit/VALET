@@ -37,6 +37,7 @@ function enrichWorker(
     worker_id: string;
     target_worker_id?: string | null;
     instance_id?: string | null;
+    ec2_instance_id?: string | null;
     ec2_ip?: string | null;
     status: string;
     current_job_id: string | null;
@@ -53,9 +54,11 @@ function enrichWorker(
   jobTaskMap: Map<string, string>,
   atmManagedIds: Set<string>,
 ) {
+  // instance_id is set by atmWorkerToFleetWorker; ec2_instance_id is the GH field name
+  const instanceId = w.instance_id ?? w.ec2_instance_id;
   const sandbox =
     sandboxMap.get(w.worker_id) ??
-    sandboxMap.get(w.instance_id ?? "") ??
+    sandboxMap.get(instanceId ?? "") ??
     sandboxMap.get(w.target_worker_id ?? "");
   // Ownership is determined by sandbox tags, not transport
   const source = sandbox && atmManagedIds.has(sandbox.id) ? ("atm" as const) : ("gh" as const);
@@ -174,6 +177,9 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
         activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
       );
+      for (const s of activeSandboxes) {
+        if (s.instanceId) sandboxMap.set(s.instanceId, s);
+      }
       const atmManagedIds = buildAtmManagedSet(activeSandboxes);
       const workers = fleetData.workers.map((w: any) =>
         enrichWorker(w, sandboxMap, jobTaskMap, atmManagedIds),
@@ -277,6 +283,9 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
           activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
         );
+        for (const s of activeSandboxes) {
+          if (s.instanceId) sandboxMap.set(s.instanceId, s);
+        }
         const atmManagedIds = buildAtmManagedSet(activeSandboxes);
         const enriched = enrichWorker(worker, sandboxMap, jobTaskMap, atmManagedIds);
         return reply.send({
@@ -401,7 +410,10 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           ghosthandsClient.getWorkerFleet(),
           sandboxRepo.findAllActive(),
         ]);
-        const worker = fleetData.workers.find((w: any) => w.worker_id === workerId);
+        const worker = fleetData.workers.find(
+          (w: { worker_id: string; target_worker_id?: string | null }) =>
+            w.worker_id === workerId || w.target_worker_id === workerId,
+        );
         if (!worker) {
           return reply.status(404).send({ error: "Worker not found in fleet" });
         }
@@ -444,16 +456,17 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // 3. Get agent URL via provider and call drain
+        // 3. Get agent URL via provider and call drain — use canonical worker_id,
+        //    not the raw URL param (which may be a target_worker_id)
         const provider = sandboxProviderFactory.getProvider(sandbox);
         const agentUrl = provider.getAgentUrl(sandbox);
-        const result = await sandboxAgentClient.drain(agentUrl, workerId);
+        const result = await sandboxAgentClient.drain(agentUrl, worker.worker_id);
 
         return reply.send({
           success: result.success,
           drainedWorkers: result.drainedWorkers,
           message: result.message,
-          workerId,
+          workerId: worker.worker_id,
           sandboxId: sandbox.id,
           sandboxName: sandbox.name,
         });
