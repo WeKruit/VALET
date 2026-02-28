@@ -4,6 +4,16 @@ import { AgentError } from "../sandboxes/agent/sandbox-agent.client.js";
 import type { AtmFleetClient, AtmWorkerState } from "../sandboxes/atm-fleet.client.js";
 import type { SandboxRecord } from "../sandboxes/sandbox.repository.js";
 
+/** Build a set of sandbox IDs that are managed by ATM (have tags.atm_fleet_id). */
+function buildAtmManagedSet(sandboxes: SandboxRecord[]): Set<string> {
+  const set = new Set<string>();
+  for (const s of sandboxes) {
+    const tags = s.tags as Record<string, unknown> | null;
+    if (tags?.atm_fleet_id) set.add(s.id);
+  }
+  return set;
+}
+
 function enrichWorker(
   w: {
     worker_id: string;
@@ -20,15 +30,17 @@ function enrichWorker(
     ec2_state?: string | null;
     active_jobs?: number | null;
     transitioning?: boolean;
-    source?: "atm" | "gh";
   },
   sandboxMap: Map<string, { id: string; name: string; environment: string }>,
   jobTaskMap: Map<string, string>,
+  atmManagedIds: Set<string>,
 ) {
   const sandbox =
     sandboxMap.get(w.worker_id) ??
     sandboxMap.get(w.instance_id ?? "") ??
     sandboxMap.get(w.target_worker_id ?? "");
+  // Ownership is determined by sandbox tags, not transport
+  const source = sandbox && atmManagedIds.has(sandbox.id) ? ("atm" as const) : ("gh" as const);
   return {
     worker_id: w.worker_id,
     sandbox_id: sandbox?.id ?? null,
@@ -46,7 +58,7 @@ function enrichWorker(
     ec2_state: w.ec2_state ?? null,
     active_jobs: w.active_jobs ?? null,
     transitioning: w.transitioning ?? false,
-    source: w.source ?? ("gh" as const),
+    source,
   };
 }
 
@@ -79,7 +91,6 @@ function atmWorkerToFleetWorker(w: AtmWorkerState) {
     ec2_state: w.ec2State,
     active_jobs: w.activeJobs,
     transitioning: w.transitioning,
-    source: "atm" as const,
   };
 }
 
@@ -108,10 +119,11 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         for (const s of activeSandboxes) {
           if (s.instanceId) sandboxMap.set(s.instanceId, s);
         }
+        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
 
         const atmWorkers = atmStatus.workers.map((w) => {
           const fleetWorker = atmWorkerToFleetWorker(w);
-          return enrichWorker(fleetWorker, sandboxMap, new Map<string, string>());
+          return enrichWorker(fleetWorker, sandboxMap, new Map<string, string>(), atmManagedIds);
         });
 
         return reply.send({ workers: atmWorkers, total: atmWorkers.length, source: "atm" });
@@ -141,7 +153,10 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
         activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
       );
-      const workers = fleetData.workers.map((w: any) => enrichWorker(w, sandboxMap, jobTaskMap));
+      const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+      const workers = fleetData.workers.map((w: any) =>
+        enrichWorker(w, sandboxMap, jobTaskMap, atmManagedIds),
+      );
       return reply.send({ workers, total: workers.length, source: "gh" });
     } catch (err) {
       request.log.error({ err }, "Failed to fetch worker fleet");
@@ -182,8 +197,14 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
               if (s.instanceId) sandboxMap.set(s.instanceId, s);
             }
 
+            const atmManagedIds = buildAtmManagedSet(activeSandboxes);
             const fleetWorker = atmWorkerToFleetWorker(atmWorker);
-            const enriched = enrichWorker(fleetWorker, sandboxMap, new Map<string, string>());
+            const enriched = enrichWorker(
+              fleetWorker,
+              sandboxMap,
+              new Map<string, string>(),
+              atmManagedIds,
+            );
 
             // If worker is running, try to get live status from GH too
             let liveStatus = null;
@@ -203,7 +224,6 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
               live_status: liveStatus,
               live_health: liveHealth,
               atm_health: atmHealth,
-              source: "atm",
             });
           }
         } catch (err) {
@@ -233,12 +253,12 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         const sandboxMap = new Map<string, { id: string; name: string; environment: string }>(
           activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
         );
-        const enriched = enrichWorker(worker, sandboxMap, jobTaskMap);
+        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+        const enriched = enrichWorker(worker, sandboxMap, jobTaskMap, atmManagedIds);
         return reply.send({
           ...enriched,
           live_status: workerStatus ?? null,
           live_health: workerHealth ?? null,
-          source: "gh",
         });
       } catch (err) {
         request.log.error({ err }, "Failed to fetch worker detail");
@@ -257,18 +277,32 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       await adminOnly(request);
-      const { ghosthandsClient } = request.diScope.cradle;
+      const { ghosthandsClient, sandboxRepo } = request.diScope.cradle;
       const { workerId } = request.params;
       const body = request.body ?? {};
       try {
         // Validate worker exists in GH fleet before proxying
-        const fleetData = await ghosthandsClient.getWorkerFleet();
+        const [fleetData, activeSandboxes] = await Promise.all([
+          ghosthandsClient.getWorkerFleet(),
+          sandboxRepo.findAllActive(),
+        ]);
         const worker = fleetData.workers.find(
           (w: { worker_id: string; target_worker_id?: string | null }) =>
             w.worker_id === workerId || w.target_worker_id === workerId,
         );
         if (!worker) {
           return reply.status(404).send({ error: "Worker not found in GH fleet" });
+        }
+
+        // Reject if this worker's sandbox is ATM-managed
+        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+        const sandbox = activeSandboxes.find(
+          (s: SandboxRecord) => s.id === workerId || s.id === worker.target_worker_id,
+        );
+        if (sandbox && atmManagedIds.has(sandbox.id)) {
+          return reply.status(400).send({
+            error: "Worker is managed by ATM — use sandbox start/stop instead",
+          });
         }
 
         const result = await ghosthandsClient.deregisterWorker({
@@ -309,6 +343,9 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Worker not found in fleet" });
         }
 
+        // 1b. Reject if this worker's sandbox is ATM-managed
+        const atmManagedIds = buildAtmManagedSet(activeSandboxes);
+
         // 2. Find the sandbox — try ec2_ip match first, fall back to worker_id/target_worker_id
         const sandboxByIp = worker.ec2_ip
           ? activeSandboxes.find((s) => s.publicIp === worker.ec2_ip)
@@ -319,6 +356,11 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         const sandbox = sandboxByIp ?? sandboxById ?? null;
         if (!sandbox) {
           return reply.status(404).send({ error: `No sandbox found for worker ${workerId}` });
+        }
+        if (atmManagedIds.has(sandbox.id)) {
+          return reply.status(400).send({
+            error: "Worker is managed by ATM — use sandbox start/stop instead",
+          });
         }
 
         // 3. Get agent URL via provider and call drain

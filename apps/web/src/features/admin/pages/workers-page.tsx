@@ -39,14 +39,8 @@ import { Ec2StatusBadge } from "../components/ec2-status-badge";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "default"> = {
   active: "success",
-  idle: "success",
-  busy: "success",
   draining: "warning",
-  stopping: "warning",
   offline: "error",
-  stopped: "error",
-  standby: "error",
-  pending: "default",
 };
 
 function formatUptime(seconds: number | null): string {
