@@ -615,51 +615,56 @@ export const sandboxRouter = s.router(sandboxContract, {
 
   workerStatus: async ({ params, request }) => {
     await adminOnly(request);
-    const { sandboxService, sandboxProviderFactory, taskRepo, ghosthandsClient, logger } =
-      request.diScope.cradle;
+    const { sandboxService, sandboxProviderFactory, taskRepo, logger } = request.diScope.cradle;
 
     const sandbox = await sandboxService.getById(params.id);
     const provider = sandboxProviderFactory.getProvider(sandbox);
 
-    // Get Docker container count from ATM agent health (EC2/macOS only — port 8080)
-    // Kasm sandboxes run a single container without a deploy-server, so we skip this check
-    let dockerContainers: number | null = null;
-    if (provider.type !== "kasm") {
-      try {
-        const agentUrl = provider.getAgentUrl(sandbox);
-        const deployResp = await fetch(`${agentUrl}/health`, {
-          signal: AbortSignal.timeout(5_000),
-        });
-        if (deployResp.ok) {
-          const deployBody = (await deployResp.json()) as Record<string, unknown>;
-          let count = 1; // deploy-server is running (we got a response)
-          if (deployBody.apiHealthy) count++;
-          if (deployBody.workerStatus && deployBody.workerStatus !== "unknown") count++;
-          dockerContainers = count;
-        }
-      } catch {
-        logger.debug({ sandboxId: params.id }, "Deploy-server unreachable for container count");
-      }
-    } else {
-      // Kasm: single container — if the agent responds, count it as 1
-      try {
-        const agentUrl = provider.getAgentUrl(sandbox);
-        const resp = await fetch(`${agentUrl}/health`, {
-          signal: AbortSignal.timeout(5_000),
-        });
-        if (resp.ok) dockerContainers = 1;
-      } catch {
-        logger.debug({ sandboxId: params.id }, "Kasm agent unreachable for container count");
-      }
+    // Resolve the agent URL for THIS specific sandbox (routes through ATM fleet proxy when configured)
+    let agentUrl: string | null = null;
+    try {
+      agentUrl = provider.getAgentUrl(sandbox);
+    } catch {
+      logger.debug({ sandboxId: params.id }, "No agent URL for sandbox (no publicIp)");
     }
 
-    // Check GhostHands API health (graceful failure)
+    /** Safe fetch that returns null on failure instead of throwing */
+    const safeFetch = async <T>(url: string, timeoutMs = 5_000): Promise<T | null> => {
+      try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+        if (!resp.ok) return null;
+        return (await resp.json()) as T;
+      } catch {
+        return null;
+      }
+    };
+
+    // Get Docker container count + GH API health from ATM /fleet/:id/health
+    // This single call aggregates both GH API and worker health for this specific sandbox
+    let dockerContainers: number | null = null;
     let ghApiStatus: "healthy" | "unhealthy" | "unreachable" = "unreachable";
-    try {
-      const health = await ghosthandsClient.healthCheck();
-      ghApiStatus = health.status === "ok" || health.status === "healthy" ? "healthy" : "unhealthy";
-    } catch {
-      logger.debug({ sandboxId: params.id }, "GhostHands API unreachable for worker status");
+
+    if (agentUrl) {
+      if (provider.type !== "kasm") {
+        const healthBody = await safeFetch<Record<string, unknown>>(`${agentUrl}/health`);
+        if (healthBody) {
+          let count = 1; // ATM/deploy-server is running (we got a response)
+          if (healthBody.apiHealthy) count++;
+          if (healthBody.workerStatus && healthBody.workerStatus !== "unknown") count++;
+          dockerContainers = count;
+          // Derive GH API status from the aggregated health response
+          ghApiStatus = healthBody.apiHealthy ? "healthy" : "unhealthy";
+          // If ATM reports the worker as offline/stopped, still mark as unreachable
+          if (healthBody.status === "offline") ghApiStatus = "unreachable";
+        }
+      } else {
+        // Kasm: single container — if the agent responds, count it as 1
+        const resp = await safeFetch<Record<string, unknown>>(`${agentUrl}/health`);
+        if (resp) {
+          dockerContainers = 1;
+          ghApiStatus = "healthy";
+        }
+      }
     }
 
     // Defaults for monitoring data
@@ -674,46 +679,65 @@ export const sandboxRouter = s.router(sandboxContract, {
     let jobStats = { created: 0, completed: 0, failed: 0 };
     let uptime: number | null = null;
 
-    if (ghApiStatus !== "unreachable") {
-      // Try detailed health endpoint (/monitoring/health)
+    if (ghApiStatus !== "unreachable" && agentUrl) {
+      // Try detailed health endpoint via ATM proxy (/fleet/:id/monitoring/health → GH :3100)
       try {
-        const detailedHealth = await ghosthandsClient.getDetailedHealth();
-        ghVersion = detailedHealth.version ?? null;
-        ghChecks = (detailedHealth.checks ?? []).map((c) => ({
-          name: c.name,
-          status: c.status,
-          ...(c.message ? { message: c.message } : {}),
-          ...(c.latencyMs != null ? { latencyMs: c.latencyMs } : {}),
-        }));
-        workerOverallStatus =
-          detailedHealth.status === "ok" || detailedHealth.status === "healthy"
-            ? "healthy"
-            : detailedHealth.status === "degraded"
-              ? "degraded"
-              : "unhealthy";
+        const detailedHealth = await safeFetch<{
+          status: string;
+          version?: string;
+          checks?: Array<{ name: string; status: string; message?: string; latencyMs?: number }>;
+        }>(`${agentUrl}/monitoring/health`);
+        if (detailedHealth) {
+          ghVersion = detailedHealth.version ?? null;
+          ghChecks = (detailedHealth.checks ?? []).map((c) => ({
+            name: c.name,
+            status: c.status,
+            ...(c.message ? { message: c.message } : {}),
+            ...(c.latencyMs != null ? { latencyMs: c.latencyMs } : {}),
+          }));
+          workerOverallStatus =
+            detailedHealth.status === "ok" || detailedHealth.status === "healthy"
+              ? "healthy"
+              : detailedHealth.status === "degraded"
+                ? "degraded"
+                : "unhealthy";
+        } else {
+          workerOverallStatus = ghApiStatus === "healthy" ? "healthy" : "unhealthy";
+        }
       } catch {
         logger.debug(
           { sandboxId: params.id },
-          "GH monitoring/health not available, using basic health",
+          "GH monitoring/health not available via ATM proxy, using basic health",
         );
         workerOverallStatus = ghApiStatus === "healthy" ? "healthy" : "unhealthy";
       }
 
-      // Try metrics endpoint (/monitoring/metrics/json)
+      // Try metrics endpoint via ATM proxy (/fleet/:id/monitoring/metrics/json → GH :3100)
       try {
-        const metrics = await ghosthandsClient.getMetrics();
-        activeJobs = metrics.worker.activeJobs;
-        maxConcurrent = metrics.worker.maxConcurrent;
-        totalProcessed = metrics.worker.totalProcessed;
-        queueDepth = metrics.worker.queueDepth;
-        jobStats = {
-          created: metrics.jobs.created,
-          completed: metrics.jobs.completed,
-          failed: metrics.jobs.failed,
-        };
-        uptime = metrics.uptime;
+        const metrics = await safeFetch<{
+          worker: {
+            activeJobs: number;
+            maxConcurrent: number;
+            totalProcessed: number;
+            queueDepth: number;
+          };
+          jobs: { created: number; completed: number; failed: number };
+          uptime: number;
+        }>(`${agentUrl}/monitoring/metrics/json`);
+        if (metrics) {
+          activeJobs = metrics.worker.activeJobs;
+          maxConcurrent = metrics.worker.maxConcurrent;
+          totalProcessed = metrics.worker.totalProcessed;
+          queueDepth = metrics.worker.queueDepth;
+          jobStats = {
+            created: metrics.jobs.created,
+            completed: metrics.jobs.completed,
+            failed: metrics.jobs.failed,
+          };
+          uptime = metrics.uptime;
+        }
       } catch {
-        logger.debug({ sandboxId: params.id }, "GH monitoring/metrics not available");
+        logger.debug({ sandboxId: params.id }, "GH monitoring/metrics not available via ATM proxy");
       }
     }
 
