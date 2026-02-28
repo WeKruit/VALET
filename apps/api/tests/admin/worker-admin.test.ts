@@ -287,14 +287,14 @@ describe("Worker Admin Routes", () => {
         },
       ],
     });
-    // Sandbox has asg_managed tag → ATM-managed
+    // Sandbox has atm_fleet_id tag → ATM-managed
     mockSbRepo.findAllActive.mockResolvedValueOnce([
       {
         id: "sandbox-uuid-1",
-        name: "asg-worker",
+        name: "atm-worker",
         environment: "staging",
         instanceId: "i-abc",
-        tags: { asg_managed: true, asg_name: "ghosthands-worker-asg" },
+        tags: { atm_fleet_id: "gh-worker-1" },
       },
     ]);
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
@@ -332,6 +332,49 @@ describe("Worker Admin Routes", () => {
       rp,
     );
     expect(rp._sc).toBe(404);
+    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
+  });
+
+  it("POST deregister resolves ATM-managed sandbox via IP when ec2_instance_id is null", async () => {
+    // Worker with null ec2_instance_id — only linkable by IP
+    mockGh.getWorkerFleet.mockResolvedValueOnce({
+      workers: [
+        {
+          worker_id: "ip-only-worker",
+          status: "active",
+          target_worker_id: null,
+          ec2_instance_id: null,
+          ec2_ip: "10.0.0.99",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-27T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    mockSbRepo.findAllActive.mockResolvedValueOnce([
+      {
+        id: "sandbox-ip-match",
+        name: "ip-matched",
+        environment: "staging",
+        instanceId: null,
+        publicIp: "10.0.0.99",
+        tags: { atm_fleet_id: "gh-worker-1" },
+      },
+    ]);
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
+      mkReq({
+        params: { workerId: "ip-only-worker" },
+        body: { reason: "test" },
+      }) as unknown as FastifyRequest,
+      rp,
+    );
+    // Should find sandbox via IP fallback and reject as ATM-managed
+    expect(rp._sc).toBe(400);
+    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
     expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
   });
 });
@@ -536,22 +579,23 @@ describe("Worker Admin Routes (GH fallback with ATM-managed sandboxes)", () => {
   });
 });
 
-// ─── asg_managed tag detection (seed/discovery path) ─────────────────
+// ─── asg_managed tag does NOT imply ATM ownership ────────────────────
 
-describe("Worker Admin Routes (asg_managed tag detection)", () => {
+describe("Worker Admin Routes (asg_managed without ATM)", () => {
   const asgManagedSandboxes = [
     {
       id: "sandbox-asg-1",
       name: "gh-worker-asg-1",
       environment: "staging",
       instanceId: "i-asg-xyz",
+      publicIp: "10.0.0.5",
       tags: { asg_managed: true, asg_name: "ghosthands-worker-asg", purpose: "staging" },
     },
   ];
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    // ATM not configured — tests that asg_managed alone is sufficient
+    // ATM not configured — asg_managed alone must NOT block admin actions
     mockAtmFleetClient.isConfigured = false;
     mockSbRepo.findAllActive.mockResolvedValue(asgManagedSandboxes);
     mockGh.getWorkerFleet.mockResolvedValue({
@@ -579,15 +623,16 @@ describe("Worker Admin Routes (asg_managed tag detection)", () => {
     mockGh.getWorkerFleet.mockResolvedValue(mockFleet);
   });
 
-  it("GET list marks asg_managed sandbox as source=atm without atm_fleet_id", async () => {
+  it("GET list marks asg_managed sandbox as source=gh when ATM is not configured", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
     await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
     const b = rp._b as { workers: Array<{ source: string; sandbox_id: string }> };
-    expect(b.workers[0]!.source).toBe("atm");
+    // asg_managed is an ASG tag, not an ATM ownership signal
+    expect(b.workers[0]!.source).toBe("gh");
     expect(b.workers[0]!.sandbox_id).toBe("sandbox-asg-1");
   });
 
-  it("POST deregister rejects asg_managed sandbox (no atm_fleet_id, no ATM reachable)", async () => {
+  it("POST deregister allows asg_managed sandbox when ATM is not configured", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
     await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
       mkReq({
@@ -596,22 +641,19 @@ describe("Worker Admin Routes (asg_managed tag detection)", () => {
       }) as unknown as FastifyRequest,
       rp,
     );
-    expect(rp._sc).toBe(400);
-    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
-    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
+    // Should succeed — asg_managed alone doesn't make it ATM-managed
+    expect(rp._sc).toBe(200);
+    expect(mockGh.deregisterWorker).toHaveBeenCalled();
   });
 
-  it("POST drain rejects asg_managed sandbox", async () => {
+  it("POST drain allows asg_managed sandbox when ATM is not configured", async () => {
     mockAgentClient.drain.mockResolvedValue({
       success: true,
-      drainedWorkers: [],
-      message: "",
+      drainedWorkers: ["sandbox-asg-1"],
+      message: "Worker drained",
     });
     mockSandboxProvider.getAgentUrl.mockReturnValue("http://10.0.0.5:3101");
     mockProviderFactory.getProvider.mockReturnValue(mockSandboxProvider);
-    mockSbRepo.findAllActive.mockResolvedValue(
-      asgManagedSandboxes.map((s) => ({ ...s, publicIp: "10.0.0.5" })),
-    );
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
     await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
       {
@@ -630,8 +672,9 @@ describe("Worker Admin Routes (asg_managed tag detection)", () => {
       } as unknown as FastifyRequest,
       rp,
     );
-    expect(rp._sc).toBe(400);
-    expect(rp._b).toEqual(expect.objectContaining({ error: expect.stringContaining("ATM") }));
+    // Should succeed — asg_managed is not ATM ownership
+    expect(rp._sc).toBe(200);
+    expect(mockAgentClient.drain).toHaveBeenCalled();
   });
 });
 

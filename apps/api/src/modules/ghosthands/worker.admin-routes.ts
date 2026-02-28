@@ -6,11 +6,12 @@ import type { SandboxRecord } from "../sandboxes/sandbox.repository.js";
 
 /**
  * Build a set of sandbox IDs that are managed by ATM.
- * A sandbox is ATM-managed if ANY of:
+ * A sandbox is ATM-managed if EITHER of:
  * 1. tags.atm_fleet_id is set (explicit ATM assignment via startMachine)
- * 2. tags.asg_managed === true (seed script + instance discovery both set this;
- *    all ASG sandboxes are ATM-managed by definition)
- * 3. Its instanceId matches an ATM fleet worker's instanceId (runtime cross-ref)
+ * 2. Its instanceId matches an ATM fleet worker's instanceId (runtime cross-ref)
+ *
+ * NOTE: tags.asg_managed is NOT an ownership signal — it indicates the sandbox
+ * is in an ASG, which can operate independently of ATM (e.g. GH-only deploys).
  */
 function buildAtmManagedSet(
   sandboxes: SandboxRecord[],
@@ -19,11 +20,9 @@ function buildAtmManagedSet(
   const set = new Set<string>();
   for (const s of sandboxes) {
     const tags = s.tags as Record<string, unknown> | null;
-    if (typeof tags === "object" && tags !== null) {
-      if (tags.atm_fleet_id || tags.asg_managed === true) {
-        set.add(s.id);
-        continue;
-      }
+    if (typeof tags === "object" && tags !== null && tags.atm_fleet_id) {
+      set.add(s.id);
+      continue;
     }
     if (atmWorkerInstanceIds && s.instanceId && atmWorkerInstanceIds.has(s.instanceId)) {
       set.add(s.id);
@@ -345,19 +344,22 @@ export async function workerAdminRoutes(fastify: FastifyInstance) {
         }
         const atmManagedIds = buildAtmManagedSet(activeSandboxes, atmWorkerInstanceIds);
 
-        // Resolve sandbox by all available identifiers (ID, instanceId, ec2_ip)
+        // Resolve sandbox by all available identifiers — ID/instanceId first, IP fallback
         const sandboxMap = new Map<string, SandboxRecord>(
           activeSandboxes.map((s: SandboxRecord) => [s.id, s]),
         );
         for (const s of activeSandboxes) {
           if (s.instanceId) sandboxMap.set(s.instanceId, s);
         }
-        const sandbox =
+        const sandboxById =
           sandboxMap.get(workerId) ??
           sandboxMap.get(worker.worker_id) ??
           sandboxMap.get(worker.target_worker_id ?? "") ??
-          sandboxMap.get(worker.ec2_instance_id ?? "") ??
-          null;
+          sandboxMap.get(worker.ec2_instance_id ?? "");
+        const sandboxByIp = worker.ec2_ip
+          ? activeSandboxes.find((s: SandboxRecord) => s.publicIp === worker.ec2_ip)
+          : null;
+        const sandbox = sandboxById ?? sandboxByIp ?? null;
         if (sandbox && atmManagedIds.has(sandbox.id)) {
           return reply.status(400).send({
             error: "Worker is managed by ATM — use sandbox start/stop instead",
