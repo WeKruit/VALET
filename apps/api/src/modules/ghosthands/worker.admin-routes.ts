@@ -8,6 +8,7 @@ function enrichWorker(
   w: {
     worker_id: string;
     target_worker_id?: string | null;
+    instance_id?: string | null;
     ec2_ip?: string | null;
     status: string;
     current_job_id: string | null;
@@ -24,7 +25,10 @@ function enrichWorker(
   sandboxMap: Map<string, { id: string; name: string; environment: string }>,
   jobTaskMap: Map<string, string>,
 ) {
-  const sandbox = sandboxMap.get(w.worker_id) ?? sandboxMap.get(w.target_worker_id ?? "");
+  const sandbox =
+    sandboxMap.get(w.worker_id) ??
+    sandboxMap.get(w.instance_id ?? "") ??
+    sandboxMap.get(w.target_worker_id ?? "");
   return {
     worker_id: w.worker_id,
     sandbox_id: sandbox?.id ?? null,
@@ -48,11 +52,24 @@ function enrichWorker(
 
 /** Map ATM worker state → GH-compatible worker shape for enrichWorker() */
 function atmWorkerToFleetWorker(w: AtmWorkerState) {
+  // Normalize ATM ec2State → operational status matching GH conventions
+  // (active/draining/offline). Raw ec2State is passed separately via ec2_state.
+  let status: string;
+  if (w.ec2State === "running") {
+    status = "active";
+  } else if (w.ec2State === "stopping") {
+    status = "draining";
+  } else {
+    // stopped, standby, pending → offline (can't accept jobs)
+    status = "offline";
+  }
+
   return {
     worker_id: w.serverId,
     target_worker_id: null,
+    instance_id: w.instanceId,
     ec2_ip: w.ip || null,
-    status: w.ec2State === "running" ? (w.activeJobs > 0 ? "busy" : "idle") : w.ec2State,
+    status,
     current_job_id: null as string | null,
     registered_at: new Date().toISOString(),
     last_heartbeat: new Date().toISOString(),

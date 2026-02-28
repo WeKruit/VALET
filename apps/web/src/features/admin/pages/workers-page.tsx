@@ -39,8 +39,14 @@ import { Ec2StatusBadge } from "../components/ec2-status-badge";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "default"> = {
   active: "success",
+  idle: "success",
+  busy: "success",
   draining: "warning",
+  stopping: "warning",
   offline: "error",
+  stopped: "error",
+  standby: "error",
+  pending: "default",
 };
 
 function formatUptime(seconds: number | null): string {
@@ -487,7 +493,11 @@ export function WorkersPage() {
                                   variant="secondary"
                                   size="sm"
                                   onClick={() => setDrainTarget(w)}
-                                  disabled={w.status === "draining" || w.status === "offline"}
+                                  disabled={
+                                    w.source === "atm" ||
+                                    w.status === "draining" ||
+                                    w.status === "offline"
+                                  }
                                   title="Drain worker"
                                 >
                                   <Droplets className="h-3.5 w-3.5" />
@@ -495,11 +505,13 @@ export function WorkersPage() {
                               </TooltipTrigger>
                               <TooltipContent>
                                 <p>
-                                  {w.status === "draining"
-                                    ? "Already draining"
-                                    : w.status === "offline"
-                                      ? "Worker offline"
-                                      : "Drain worker (finish current job, reject new ones)"}
+                                  {w.source === "atm"
+                                    ? "Manage via ATM (Sandbox start/stop)"
+                                    : w.status === "draining"
+                                      ? "Already draining"
+                                      : w.status === "offline"
+                                        ? "Worker offline"
+                                        : "Drain worker (finish current job, reject new ones)"}
                                 </p>
                               </TooltipContent>
                             </Tooltip>
@@ -509,13 +521,18 @@ export function WorkersPage() {
                                   variant="destructive"
                                   size="sm"
                                   onClick={() => setDeregisterTarget(w)}
+                                  disabled={w.source === "atm"}
                                   title="Deregister worker"
                                 >
                                   <XCircle className="h-3.5 w-3.5" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Deregister worker (cancel active jobs)</p>
+                                <p>
+                                  {w.source === "atm"
+                                    ? "Manage via ATM (Sandbox start/stop)"
+                                    : "Deregister worker (cancel active jobs)"}
+                                </p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
