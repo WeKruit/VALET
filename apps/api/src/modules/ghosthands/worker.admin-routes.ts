@@ -10,13 +10,18 @@ import type { SandboxRecord } from "../sandboxes/sandbox.repository.js";
  * 1. tags.atm_fleet_id is set (explicit ATM assignment via startMachine)
  * 2. Its instanceId matches an ATM fleet worker's instanceId (runtime cross-ref)
  *
- * When ATM is configured but unreachable, any EC2 sandbox (has instanceId) without
- * an explicit atm_fleet_id is treated as POTENTIALLY ATM-managed (fail closed).
- * This prevents destructive actions during ATM outages for the window between
- * instance-discovery creating a record and startMachine tagging it.
+ * When ATM is configured but unreachable (can't do cross-ref), sandboxes with
+ * tags.asg_managed === true are treated as POTENTIALLY ATM-managed (fail closed).
+ * This covers the window between instance-discovery/seed creating the record and
+ * the first startMachine call tagging it with atm_fleet_id. Direct-EC2 fallback
+ * sandboxes (no asg_managed, no atm_fleet_id) are NOT blocked — the codebase
+ * explicitly supports EC2 sandboxes outside ATM even when ATM is configured
+ * (Ec2SandboxProvider.startMachine falls back to direct EC2 SDK when
+ * resolveFleetId returns null).
  *
- * NOTE: tags.asg_managed is NOT an ownership signal — it indicates the sandbox
- * is in an ASG, which can operate independently of ATM (e.g. GH-only deploys).
+ * NOTE: asg_managed is NOT a permanent ownership signal (ASGs can run without
+ * ATM in GH-only deploys). It is only used as a fail-closed narrowing heuristic
+ * when ATM is configured but temporarily unreachable.
  */
 function buildAtmManagedSet(
   sandboxes: SandboxRecord[],
@@ -26,7 +31,8 @@ function buildAtmManagedSet(
   const set = new Set<string>();
   for (const s of sandboxes) {
     const tags = s.tags as Record<string, unknown> | null;
-    if (typeof tags === "object" && tags !== null && tags.atm_fleet_id) {
+    const isTagged = typeof tags === "object" && tags !== null;
+    if (isTagged && tags.atm_fleet_id) {
       set.add(s.id);
       continue;
     }
@@ -34,8 +40,9 @@ function buildAtmManagedSet(
       set.add(s.id);
       continue;
     }
-    // Fail closed: ATM configured but down → any EC2 sandbox is potentially ATM-managed
-    if (atmConfiguredButUnreachable && s.instanceId) {
+    // Fail closed: ATM configured but down + sandbox is in an ASG → likely ATM-managed.
+    // Direct-EC2 fallback sandboxes (no asg_managed) are NOT caught here.
+    if (atmConfiguredButUnreachable && isTagged && tags.asg_managed === true) {
       set.add(s.id);
     }
   }

@@ -579,17 +579,20 @@ describe("Worker Admin Routes (GH fallback with ATM-managed sandboxes)", () => {
   });
 });
 
-// ─── ATM down + untagged EC2 sandbox → fail closed ──────────────────
+// ─── ATM down + direct-EC2 fallback sandbox (tags: null) → fail OPEN ──
 
-describe("Worker Admin Routes (ATM down + untagged EC2 sandbox)", () => {
-  const untaggedEc2Sandboxes = [
+describe("Worker Admin Routes (ATM down + direct-EC2 fallback sandbox)", () => {
+  // tags: null → no asg_managed, no atm_fleet_id. Direct-EC2 fallback sandboxes
+  // are explicitly supported even when ATM is configured (Ec2SandboxProvider
+  // falls back to direct EC2 SDK when resolveFleetId returns null).
+  const directEc2Sandboxes = [
     {
-      id: "sandbox-ec2-untagged",
-      name: "ec2-no-tag",
+      id: "sandbox-ec2-direct",
+      name: "ec2-direct-fallback",
       environment: "staging",
-      instanceId: "i-ec2-untagged",
+      instanceId: "i-ec2-direct",
       publicIp: "10.0.0.42",
-      tags: null, // No atm_fleet_id — instance-discovery created, startMachine never called
+      tags: null,
     },
   ];
 
@@ -597,14 +600,14 @@ describe("Worker Admin Routes (ATM down + untagged EC2 sandbox)", () => {
     vi.clearAllMocks();
     mockAtmFleetClient.isConfigured = true;
     mockAtmFleetClient.getIdleStatus.mockRejectedValue(new Error("ATM down"));
-    mockSbRepo.findAllActive.mockResolvedValue(untaggedEc2Sandboxes);
+    mockSbRepo.findAllActive.mockResolvedValue(directEc2Sandboxes);
     mockGh.getWorkerFleet.mockResolvedValue({
       workers: [
         {
-          worker_id: "sandbox-ec2-untagged",
+          worker_id: "sandbox-ec2-direct",
           status: "active",
           target_worker_id: null,
-          ec2_instance_id: "i-ec2-untagged",
+          ec2_instance_id: "i-ec2-direct",
           ec2_ip: "10.0.0.42",
           current_job_id: null,
           registered_at: "2026-02-01T00:00:00Z",
@@ -625,37 +628,34 @@ describe("Worker Admin Routes (ATM down + untagged EC2 sandbox)", () => {
     mockGh.getWorkerFleet.mockResolvedValue(mockFleet);
   });
 
-  it("GET list marks untagged EC2 sandbox as source=atm when ATM is down (fail closed)", async () => {
+  it("GET list marks direct-EC2 sandbox as source=gh even when ATM is down", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
     await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
     const b = rp._b as { workers: Array<{ source: string; sandbox_id: string }> };
-    // ATM configured but unreachable + EC2 sandbox without tag → fail closed → source=atm
-    expect(b.workers[0]!.source).toBe("atm");
-    expect(b.workers[0]!.sandbox_id).toBe("sandbox-ec2-untagged");
+    // tags: null → not caught by fail-closed (requires asg_managed: true) → source=gh
+    expect(b.workers[0]!.source).toBe("gh");
+    expect(b.workers[0]!.sandbox_id).toBe("sandbox-ec2-direct");
   });
 
-  it("POST deregister returns 503 for untagged EC2 sandbox when ATM is down", async () => {
+  it("POST deregister allows direct-EC2 sandbox when ATM is down", async () => {
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
     await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
       mkReq({
-        params: { workerId: "sandbox-ec2-untagged" },
+        params: { workerId: "sandbox-ec2-direct" },
         body: { reason: "test" },
       }) as unknown as FastifyRequest,
       rp,
     );
-    // 503 (not 400) — ATM is down, ownership is uncertain, fail closed
-    expect(rp._sc).toBe(503);
-    expect(rp._b).toEqual(
-      expect.objectContaining({ error: expect.stringContaining("ATM is unreachable") }),
-    );
-    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
+    // Direct-EC2 fallback sandbox → not in ATM managed set → allowed
+    expect(rp._sc).toBe(200);
+    expect(mockGh.deregisterWorker).toHaveBeenCalled();
   });
 
-  it("POST drain returns 503 for untagged EC2 sandbox when ATM is down", async () => {
+  it("POST drain allows direct-EC2 sandbox when ATM is down", async () => {
     mockAgentClient.drain.mockResolvedValue({
       success: true,
-      drainedWorkers: [],
-      message: "",
+      drainedWorkers: ["sandbox-ec2-direct"],
+      message: "Worker drained",
     });
     mockSandboxProvider.getAgentUrl.mockReturnValue("http://10.0.0.42:3101");
     mockProviderFactory.getProvider.mockReturnValue(mockSandboxProvider);
@@ -673,33 +673,30 @@ describe("Worker Admin Routes (ATM down + untagged EC2 sandbox)", () => {
           },
         },
         log: mockLog,
-        params: { workerId: "sandbox-ec2-untagged" },
+        params: { workerId: "sandbox-ec2-direct" },
       } as unknown as FastifyRequest,
       rp,
     );
-    // 503 — fail closed, cannot verify ownership
-    expect(rp._sc).toBe(503);
-    expect(rp._b).toEqual(
-      expect.objectContaining({ error: expect.stringContaining("ATM is unreachable") }),
-    );
-    expect(mockAgentClient.drain).not.toHaveBeenCalled();
+    // Direct-EC2 fallback → not in ATM managed set → allowed
+    expect(rp._sc).toBe(200);
+    expect(mockAgentClient.drain).toHaveBeenCalled();
   });
 
-  it("POST deregister still returns 400 for tagged sandbox even when ATM is down", async () => {
+  it("POST deregister still returns 400 for atm_fleet_id-tagged sandbox even when ATM is down", async () => {
     // Sandbox WITH atm_fleet_id — confirmed ATM-managed regardless of ATM reachability
     mockSbRepo.findAllActive.mockResolvedValueOnce([
       {
-        id: "sandbox-ec2-untagged",
+        id: "sandbox-ec2-direct",
         name: "tagged-worker",
         environment: "staging",
-        instanceId: "i-ec2-untagged",
+        instanceId: "i-ec2-direct",
         tags: { atm_fleet_id: "gh-worker-1" },
       },
     ]);
     const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
     await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
       mkReq({
-        params: { workerId: "sandbox-ec2-untagged" },
+        params: { workerId: "sandbox-ec2-direct" },
         body: { reason: "test" },
       }) as unknown as FastifyRequest,
       rp,
@@ -709,6 +706,116 @@ describe("Worker Admin Routes (ATM down + untagged EC2 sandbox)", () => {
     expect(rp._b).toEqual(
       expect.objectContaining({ error: expect.stringContaining("managed by ATM") }),
     );
+  });
+});
+
+// ─── ATM down + ASG sandbox (asg_managed: true) → fail CLOSED ──────
+
+describe("Worker Admin Routes (ATM down + ASG sandbox)", () => {
+  // ASG sandboxes have asg_managed: true (set by seed/instance-discovery) but no
+  // atm_fleet_id yet. When ATM is configured but down, these are treated as
+  // POTENTIALLY ATM-managed (fail closed → 503 for guards, source=atm for list).
+  const asgSandboxes = [
+    {
+      id: "sandbox-asg-down",
+      name: "asg-worker-down",
+      environment: "staging",
+      instanceId: "i-asg-down",
+      publicIp: "10.0.0.50",
+      tags: { asg_managed: true, asg_name: "ghosthands-worker-asg" },
+    },
+  ];
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockAtmFleetClient.isConfigured = true;
+    mockAtmFleetClient.getIdleStatus.mockRejectedValue(new Error("ATM down"));
+    mockSbRepo.findAllActive.mockResolvedValue(asgSandboxes);
+    mockGh.getWorkerFleet.mockResolvedValue({
+      workers: [
+        {
+          worker_id: "sandbox-asg-down",
+          status: "active",
+          target_worker_id: null,
+          ec2_instance_id: "i-asg-down",
+          ec2_ip: "10.0.0.50",
+          current_job_id: null,
+          registered_at: "2026-02-01T00:00:00Z",
+          last_heartbeat: "2026-02-28T12:00:00Z",
+          jobs_completed: 0,
+          jobs_failed: 0,
+          uptime_seconds: 3600,
+        },
+      ],
+    });
+    await setup();
+  });
+
+  afterEach(() => {
+    mockAtmFleetClient.isConfigured = false;
+    mockAtmFleetClient.getIdleStatus.mockResolvedValue(mockAtmIdleStatus);
+    mockSbRepo.findAllActive.mockResolvedValue(mockSandboxes);
+    mockGh.getWorkerFleet.mockResolvedValue(mockFleet);
+  });
+
+  it("GET list marks ASG sandbox as source=atm when ATM is down (fail closed)", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown };
+    await routes.get("GET:/api/v1/admin/workers")!(mkReq() as unknown as FastifyRequest, rp);
+    const b = rp._b as { workers: Array<{ source: string; sandbox_id: string }> };
+    // asg_managed: true + ATM configured but down → fail closed → source=atm
+    expect(b.workers[0]!.source).toBe("atm");
+    expect(b.workers[0]!.sandbox_id).toBe("sandbox-asg-down");
+  });
+
+  it("POST deregister returns 503 for ASG sandbox when ATM is down", async () => {
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/deregister")!(
+      mkReq({
+        params: { workerId: "sandbox-asg-down" },
+        body: { reason: "test" },
+      }) as unknown as FastifyRequest,
+      rp,
+    );
+    // 503 — ATM is down, ownership uncertain (asg_managed but no atm_fleet_id)
+    expect(rp._sc).toBe(503);
+    expect(rp._b).toEqual(
+      expect.objectContaining({ error: expect.stringContaining("ATM is unreachable") }),
+    );
+    expect(mockGh.deregisterWorker).not.toHaveBeenCalled();
+  });
+
+  it("POST drain returns 503 for ASG sandbox when ATM is down", async () => {
+    mockAgentClient.drain.mockResolvedValue({
+      success: true,
+      drainedWorkers: [],
+      message: "",
+    });
+    mockSandboxProvider.getAgentUrl.mockReturnValue("http://10.0.0.50:3101");
+    mockProviderFactory.getProvider.mockReturnValue(mockSandboxProvider);
+    const rp = mkReply() as unknown as FastifyReply & { _b: unknown; _sc: number };
+    await routes.get("POST:/api/v1/admin/workers/:workerId/drain")!(
+      {
+        diScope: {
+          cradle: {
+            ghosthandsClient: mockGh,
+            sandboxRepo: mockSbRepo,
+            ghJobRepo: mockGhJobRepo,
+            atmFleetClient: mockAtmFleetClient,
+            sandboxProviderFactory: mockProviderFactory,
+            sandboxAgentClient: mockAgentClient,
+          },
+        },
+        log: mockLog,
+        params: { workerId: "sandbox-asg-down" },
+      } as unknown as FastifyRequest,
+      rp,
+    );
+    // 503 — fail closed, cannot verify ownership
+    expect(rp._sc).toBe(503);
+    expect(rp._b).toEqual(
+      expect.objectContaining({ error: expect.stringContaining("ATM is unreachable") }),
+    );
+    expect(mockAgentClient.drain).not.toHaveBeenCalled();
   });
 });
 
