@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { CheckCircle, Upload, FileSearch, Rocket } from "lucide-react";
 import { ResumeUpload } from "../components/resume-upload";
 import { QuickReview } from "../components/quick-review";
@@ -7,6 +8,8 @@ import { api } from "@/lib/api-client";
 import { useConsent } from "@/features/consent/hooks/use-consent";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { toast } from "sonner";
+
+const ALLOWED_REDIRECT_PREFIXES = ["http://127.0.0.1:", "http://localhost:"];
 
 type OnboardingStep = "upload" | "review" | "disclaimer";
 
@@ -18,7 +21,21 @@ const STEPS = [
 
 export function OnboardingPage() {
   const [step, setStep] = useState<OnboardingStep>("upload");
+  const [redirectUri, setRedirectUri] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
   const { markCopilotAccepted } = useConsent();
+
+  // Read redirect_uri from URL params or localStorage (persisted across auth round-trip)
+  useEffect(() => {
+    const paramUri = searchParams.get("redirect_uri");
+    const storedUri = localStorage.getItem("gh_redirect_uri");
+    const uri = paramUri || storedUri;
+    if (uri && ALLOWED_REDIRECT_PREFIXES.some((p) => uri.startsWith(p))) {
+      setRedirectUri(uri);
+      // Persist in case we got it from URL params (direct access while authenticated)
+      if (paramUri) localStorage.setItem("gh_redirect_uri", paramUri);
+    }
+  }, [searchParams]);
 
   const updateProfile = api.users.updateProfile.useMutation({
     onError: () => {
@@ -26,10 +43,7 @@ export function OnboardingPage() {
     },
   });
 
-  const {
-    data: profileData,
-    isLoading: profileLoading,
-  } = api.users.getProfile.useQuery({
+  const { data: profileData, isLoading: profileLoading } = api.users.getProfile.useQuery({
     queryKey: ["user-profile"],
     queryData: {},
     enabled: step === "review",
@@ -57,13 +71,9 @@ export function OnboardingPage() {
       {/* Header */}
       <div className="flex items-center justify-center py-6 border-b border-[var(--wk-border-subtle)]">
         <div className="flex h-8 w-8 items-center justify-center rounded-[var(--wk-radius-lg)] bg-[var(--wk-text-primary)]">
-          <span className="text-sm font-bold text-[var(--wk-surface-page)]">
-            V
-          </span>
+          <span className="text-sm font-bold text-[var(--wk-surface-page)]">V</span>
         </div>
-        <span className="ml-2 font-display text-lg font-semibold">
-          WeKruit
-        </span>
+        <span className="ml-2 font-display text-lg font-semibold">WeKruit</span>
       </div>
 
       {/* Progress indicator */}
@@ -101,11 +111,7 @@ export function OnboardingPage() {
         {STEPS.map((s, i) => (
           <span
             key={s.key}
-            className={
-              i === currentStepIndex
-                ? "font-medium text-[var(--wk-text-primary)]"
-                : ""
-            }
+            className={i === currentStepIndex ? "font-medium text-[var(--wk-text-primary)]" : ""}
           >
             {s.label}
           </span>
@@ -125,9 +131,7 @@ export function OnboardingPage() {
         {step === "review" && profileLoading && (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <LoadingSpinner size="lg" />
-            <p className="text-sm text-[var(--wk-text-secondary)]">
-              Loading your profile...
-            </p>
+            <p className="text-sm text-[var(--wk-text-secondary)]">Loading your profile...</p>
           </div>
         )}
 
@@ -163,7 +167,7 @@ export function OnboardingPage() {
               if (Object.keys(body).length > 0) {
                 updateProfile.mutate(
                   { body: body as any },
-                  { onSuccess: () => setStep("disclaimer") }
+                  { onSuccess: () => setStep("disclaimer") },
                 );
               } else {
                 setStep("disclaimer");
@@ -176,6 +180,12 @@ export function OnboardingPage() {
           <DisclaimerStep
             onAccepted={() => {
               markCopilotAccepted();
+              // Redirect to GhostHands Desktop callback if coming from desktop onboarding
+              if (redirectUri) {
+                localStorage.removeItem("gh_redirect_uri");
+                window.location.replace(redirectUri);
+                return;
+              }
               // Hard redirect to ensure AuthGuard reinitializes with
               // the updated consent cache from localStorage
               window.location.replace("/dashboard");
