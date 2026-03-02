@@ -779,6 +779,8 @@ export class TaskService {
           },
           callbackUrl,
           valetTaskId: task.id,
+          targetWorkerId: queueTargetWorkerId,
+          workerAffinity: queueTargetWorkerId ? "strict" : undefined,
         });
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
