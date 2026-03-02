@@ -434,7 +434,8 @@ export class SandboxRepository {
     ec2Ip: string,
   ): Promise<Array<{ worker_id: string; status: string; uptime_seconds: number | null }>> {
     const rows = (await this.db.execute(
-      sql`SELECT worker_id, status, uptime_seconds
+      sql`SELECT worker_id, status,
+              EXTRACT(EPOCH FROM (NOW() - registered_at))::int AS uptime_seconds
           FROM gh_worker_registry
           WHERE ec2_ip = ${ec2Ip}
             AND status IN ('active', 'draining')
