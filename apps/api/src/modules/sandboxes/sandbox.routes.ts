@@ -344,13 +344,11 @@ export const sandboxRouter = s.router(sandboxContract, {
       }
     }
 
-    // Direct IP fallback: hit GH API monitoring routes on port 3100.
-    // GH mounts monitoring at /monitoring, so getWorkers() appending /workers
-    // produces the correct path: http://<ip>:3100/monitoring/workers
-    if (!agentUrl && sandbox.publicIp) {
-      const ghApiPort = parseInt(process.env.GH_API_PORT || "3100", 10);
-      agentUrl = `http://${sandbox.publicIp}:${ghApiPort}/monitoring`;
-    }
+    // No direct-IP fallback: the old deploy-server (port 8080) that provided
+    // a /workers endpoint matching the WorkerInfo contract has been migrated
+    // to ATM on a different host. GH's own /monitoring/workers returns a
+    // different shape (Supabase registry rows, not WorkerInfo). If ATM
+    // resolution fails, we fall through to the DB fallback below.
 
     if (agentUrl) {
       try {
