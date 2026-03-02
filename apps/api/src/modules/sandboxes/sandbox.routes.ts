@@ -3,6 +3,7 @@ import { sandboxContract } from "@valet/contracts";
 import { adminOnly } from "../../common/middleware/admin.js";
 import { AppError } from "../../common/errors.js";
 import type { DeployRecord } from "./deploy.service.js";
+import { SANDBOX_AGENT_PORT } from "./agent/sandbox-agent.client.js";
 
 const s = initServer();
 
@@ -323,22 +324,28 @@ export const sandboxRouter = s.router(sandboxContract, {
     await adminOnly(request);
     const {
       sandboxService,
-      sandboxProviderFactory,
       sandboxAgentClient,
       auditLogService,
       sandboxRepo,
       logger,
+      atmFleetClient,
     } = request.diScope.cradle;
 
     const sandbox = await sandboxService.getById(params.id);
-    const provider = sandboxProviderFactory.getProvider(sandbox);
 
-    // Try live agent first; fall back to DB-based worker info from gh_worker_registry
+    // Async fleet resolution first (tags → cache → ATM lookup by instanceId → by IP)
     let agentUrl: string | null = null;
-    try {
-      agentUrl = provider.getAgentUrl(sandbox);
-    } catch {
-      logger.debug({ sandboxId: params.id }, "No agent URL for sandbox (no publicIp)");
+    const atmBaseUrl = process.env.ATM_BASE_URL;
+    if (atmFleetClient.isConfigured && atmBaseUrl) {
+      const fleetId = await atmFleetClient.resolveFleetId(sandbox);
+      if (fleetId) {
+        agentUrl = `${atmBaseUrl}/fleet/${fleetId}`;
+      }
+    }
+
+    // Direct IP fallback only if async resolution failed
+    if (!agentUrl && sandbox.publicIp) {
+      agentUrl = `http://${sandbox.publicIp}:${SANDBOX_AGENT_PORT}`;
     }
 
     if (agentUrl) {
