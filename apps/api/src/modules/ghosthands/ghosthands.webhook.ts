@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import type { GHCallbackPayload, GHDeployWebhookPayload } from "./ghosthands.types.js";
+import type {
+  GHCallbackPayload,
+  GHDeployWebhookPayload,
+  GHDesktopReleasePayload,
+} from "./ghosthands.types.js";
 import type { TaskStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
 
@@ -466,6 +470,67 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         image_tag: payload.image_tag,
         message: "Deploy notification created and admins notified",
       });
+    },
+  );
+
+  // ── Desktop release webhook ─────────────────────────────────
+  fastify.post(
+    "/api/v1/webhooks/ghosthands/desktop-release",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const webhookSecret = process.env.VALET_DEPLOY_WEBHOOK_SECRET;
+      if (!webhookSecret) {
+        request.log.warn("VALET_DEPLOY_WEBHOOK_SECRET not configured");
+        return reply.status(503).send({ error: "Webhook not configured" });
+      }
+
+      // Verify HMAC signature
+      const signatureHeader = request.headers["x-gh-webhook-signature"] as string | undefined;
+      if (!signatureHeader) {
+        return reply.status(401).send({ error: "Missing signature header" });
+      }
+
+      if (!verifyWebhookSignature(request.body, signatureHeader, webhookSecret)) {
+        request.log.warn("GhostHands desktop-release webhook: signature mismatch");
+        return reply.status(401).send({ error: "Invalid signature" });
+      }
+
+      const payload = request.body as GHDesktopReleasePayload;
+
+      // Accept dual-URL payload (dmg_arm64/dmg_x64) or legacy single-URL (dmg_url)
+      const dmgArm64 = payload.dmg_arm64 ?? payload.dmg_url;
+      if (!payload?.version || !dmgArm64) {
+        return reply.status(400).send({
+          error: "Bad Request",
+          message: "Missing required fields: version, dmg_arm64 (or dmg_url)",
+        });
+      }
+
+      request.log.info(
+        {
+          event: payload.event,
+          version: payload.version,
+          dmgArm64,
+          dmgX64: payload.dmg_x64 ?? null,
+          commitSha: payload.commit_sha,
+        },
+        "GhostHands desktop-release webhook received",
+      );
+
+      // Store latest release in Redis (snake_case → camelCase)
+      const { redis } = request.diScope.cradle;
+      const releaseData = {
+        version: payload.version,
+        dmgArm64Url: dmgArm64,
+        dmgX64Url: payload.dmg_x64 ?? null,
+        releaseUrl: payload.release_url,
+        releasedAt: payload.timestamp,
+        commitSha: payload.commit_sha,
+        repository: payload.repository,
+      };
+
+      await redis.set("desktop:latest-release", JSON.stringify(releaseData));
+
+      return reply.status(200).send({ received: true, version: payload.version });
     },
   );
 }

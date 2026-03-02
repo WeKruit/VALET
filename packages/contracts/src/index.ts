@@ -14,6 +14,7 @@ import { notificationContract } from "./notifications.js";
 import { sandboxContract } from "./sandbox.js";
 import { modelContract } from "./models.js";
 import { earlyAccessContract } from "./early-access.js";
+import { desktopReleaseContract } from "./desktop-release.js";
 import { earlyAccessAdminContract } from "./admin/early-access-admin.js";
 import { emailTemplatesAdminContract } from "./admin/email-templates-admin.js";
 
@@ -34,6 +35,7 @@ export const apiContract = c.router({
   notifications: notificationContract,
   sandboxes: sandboxContract,
   models: modelContract,
+  desktopRelease: desktopReleaseContract,
   earlyAccess: earlyAccessContract,
   earlyAccessAdmin: earlyAccessAdminContract,
   emailTemplatesAdmin: emailTemplatesAdminContract,
@@ -56,6 +58,7 @@ export {
   notificationContract,
   sandboxContract,
   modelContract,
+  desktopReleaseContract,
   earlyAccessContract,
   earlyAccessAdminContract,
   emailTemplatesAdminContract,

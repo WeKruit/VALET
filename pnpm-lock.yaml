@@ -478,13 +478,13 @@ importers:
 
   packages/shared:
     dependencies:
-      '@casl/ability':
-        specifier: ^6.8.0
-        version: 6.8.0
       zod:
         specifier: 3.24.1
         version: 3.24.1
     devDependencies:
+      '@casl/ability':
+        specifier: ^6.8.0
+        version: 6.8.0
       '@types/node':
         specifier: ^22.19.11
         version: 22.19.11

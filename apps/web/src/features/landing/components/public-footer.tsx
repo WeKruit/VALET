@@ -9,13 +9,9 @@ export function PublicFooter() {
           <div className="sm:col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-[var(--wk-radius-lg)] bg-[var(--wk-text-primary)]">
-                <span className="text-sm font-bold text-[var(--wk-surface-page)]">
-                  V
-                </span>
+                <span className="text-sm font-bold text-[var(--wk-surface-page)]">V</span>
               </div>
-              <span className="font-display text-lg font-semibold">
-                WeKruit Valet
-              </span>
+              <span className="font-display text-lg font-semibold">WeKruit Valet</span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-[var(--wk-text-secondary)]">
               AI-powered job application automation. Apply smarter, land faster.
@@ -34,6 +30,14 @@ export function PublicFooter() {
                   className="text-sm text-[var(--wk-text-secondary)] transition-colors hover:text-[var(--wk-text-primary)]"
                 >
                   Pricing
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/download"
+                  className="text-sm text-[var(--wk-text-secondary)] transition-colors hover:text-[var(--wk-text-primary)]"
+                >
+                  Download Desktop App
                 </Link>
               </li>
               <li>

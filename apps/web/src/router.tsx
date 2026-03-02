@@ -64,6 +64,11 @@ const SettingsPage = lazy(() =>
     default: m.SettingsPage,
   })),
 );
+const DownloadPage = lazy(() =>
+  import("./features/download/pages/download-page").then((m) => ({
+    default: m.DownloadPage,
+  })),
+);
 const PricingPage = lazy(() =>
   import("./features/billing/pages/pricing-page").then((m) => ({
     default: m.PricingPage,
@@ -161,6 +166,7 @@ export function AppRouter() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/download" element={<DownloadPage />} />
         <Route path="/legal/terms" element={<TermsOfServicePage />} />
         <Route path="/legal/privacy" element={<PrivacyPolicyPage />} />
 
