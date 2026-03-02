@@ -3,7 +3,8 @@ import { sandboxContract } from "@valet/contracts";
 import { adminOnly } from "../../common/middleware/admin.js";
 import { AppError } from "../../common/errors.js";
 import type { DeployRecord } from "./deploy.service.js";
-import { SANDBOX_AGENT_PORT } from "./agent/sandbox-agent.client.js";
+// SANDBOX_AGENT_PORT (8080) is only used by deploy/drain/etc methods in SandboxAgentClient.
+// listWorkers fallback now uses GH_API_PORT (3100) directly.
 
 const s = initServer();
 
@@ -343,9 +344,11 @@ export const sandboxRouter = s.router(sandboxContract, {
       }
     }
 
-    // Direct IP fallback only if async resolution failed
+    // Direct IP fallback: hit GH API on port 3100 (not SANDBOX_AGENT_PORT/8080
+    // which was the deploy-server port, now migrated to ATM on a different host)
     if (!agentUrl && sandbox.publicIp) {
-      agentUrl = `http://${sandbox.publicIp}:${SANDBOX_AGENT_PORT}`;
+      const ghApiPort = parseInt(process.env.GH_API_PORT || "3100", 10);
+      agentUrl = `http://${sandbox.publicIp}:${ghApiPort}`;
     }
 
     if (agentUrl) {
