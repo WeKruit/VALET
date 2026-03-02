@@ -720,6 +720,27 @@ export class TaskService {
       sandboxId: body.targetWorkerId,
     });
 
+    // Resolve sandbox UUID → GH worker ID for queue routing
+    let queueTargetWorkerId: string | undefined;
+    if (body.targetWorkerId) {
+      try {
+        const ghWorkerId = await this.sandboxRepo.resolveWorkerId(body.targetWorkerId);
+        if (ghWorkerId) {
+          queueTargetWorkerId = ghWorkerId;
+        } else {
+          this.logger.warn(
+            { sandboxId: body.targetWorkerId },
+            "No active worker for sandbox, using general queue",
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          { sandboxId: body.targetWorkerId, err },
+          "Failed to resolve worker ID, using general queue",
+        );
+      }
+    }
+
     const callbackUrl = buildCallbackUrl();
     const taskDescription = `Google search integration test: ${body.searchQuery}`;
 
@@ -762,7 +783,7 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Jobs go to general queue — every ASG worker has KasmVNC built in.
+        // Dispatch to targeted queue if sandbox has active worker, general queue otherwise
         const pgBossJobId = await this.taskQueueService.enqueueGenericTask(
           {
             ghJobId: ghJob.id,
@@ -773,7 +794,7 @@ export class TaskService {
             taskDescription,
             callbackUrl,
           },
-          {},
+          { targetWorkerId: queueTargetWorkerId },
         );
 
         if (pgBossJobId) {
@@ -818,8 +839,8 @@ export class TaskService {
           task_description: taskDescription,
           callback_url: callbackUrl,
           max_retries: 1,
-          target_worker_id: body.targetWorkerId,
-          worker_affinity: "strict",
+          target_worker_id: queueTargetWorkerId,
+          worker_affinity: queueTargetWorkerId ? "strict" : undefined,
           ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
           ...(body.visionModel ? { image_model: body.visionModel } : {}),
         });
@@ -889,15 +910,13 @@ export class TaskService {
         tags: ["retry", "valet"],
         valetTaskId: id,
         callbackUrl,
-        targetWorkerId: originalGhJob.targetWorkerId ?? undefined,
-        workerAffinity: originalGhJob.targetWorkerId ? "strict" : undefined,
         metadata: {
           retryOf: task.workflowRunId,
           quality_preset: originalGhJob.metadata?.quality_preset ?? "quality",
         },
       });
 
-      // WEK-147: Jobs go to general queue — every ASG worker has KasmVNC built in.
+      // Retry to general queue — any available worker picks it up (no affinity guarantee on retry)
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
           ghJobId: ghJob.id,

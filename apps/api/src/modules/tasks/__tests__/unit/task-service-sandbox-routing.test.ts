@@ -25,6 +25,7 @@ function makeMockDeps() {
         completedAt: null,
         createdAt: new Date(),
       }),
+      findById: vi.fn().mockResolvedValue(null),
       updateWorkflowRunId: vi.fn().mockResolvedValue(undefined),
       updateStatus: vi.fn().mockResolvedValue(undefined),
       updateGhosthandsResult: vi.fn().mockResolvedValue(undefined),
@@ -43,6 +44,7 @@ function makeMockDeps() {
         id: "gh-job-uuid-1",
         metadata: {},
       }),
+      findById: vi.fn().mockResolvedValue(null),
       updateStatus: vi.fn().mockResolvedValue(undefined),
     },
     ghJobEventRepo: {},
@@ -50,6 +52,7 @@ function makeMockDeps() {
     taskQueueService: {
       isAvailable: true,
       enqueueApplyJob: vi.fn().mockResolvedValue("pgboss-job-uuid-1"),
+      enqueueGenericTask: vi.fn().mockResolvedValue("pgboss-generic-job-uuid-1"),
     },
     redis: {
       publish: vi.fn().mockResolvedValue(1),
@@ -224,5 +227,94 @@ describe("TaskService — sandbox routing", () => {
         expect.stringContaining("No active worker"),
       );
     });
+  });
+});
+
+describe("TaskService — createTestTask routing", () => {
+  let deps: ReturnType<typeof makeMockDeps>;
+  let service: TaskService;
+
+  beforeEach(() => {
+    deps = makeMockDeps();
+    service = new TaskService(deps as never);
+  });
+
+  it("routes to targeted queue when sandbox has active worker", async () => {
+    deps.sandboxRepo.resolveWorkerId.mockResolvedValue("gh-worker-uuid-1");
+
+    await service.createTestTask(
+      { searchQuery: "test query", targetWorkerId: "sandbox-uuid" },
+      "user-uuid-1",
+    );
+
+    expect(deps.taskQueueService.enqueueGenericTask).toHaveBeenCalledWith(expect.anything(), {
+      targetWorkerId: "gh-worker-uuid-1",
+    });
+  });
+
+  it("falls back to general queue when worker resolution fails", async () => {
+    deps.sandboxRepo.resolveWorkerId.mockResolvedValue(null);
+
+    await service.createTestTask(
+      { searchQuery: "test query", targetWorkerId: "sandbox-uuid" },
+      "user-uuid-1",
+    );
+
+    expect(deps.taskQueueService.enqueueGenericTask).toHaveBeenCalledWith(expect.anything(), {
+      targetWorkerId: undefined,
+    });
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sandboxId: "sandbox-uuid" }),
+      expect.stringContaining("No active worker"),
+    );
+  });
+
+  it("handles resolveWorkerId exception gracefully", async () => {
+    deps.sandboxRepo.resolveWorkerId.mockRejectedValue(new Error("DB connection failed"));
+
+    const result = await service.createTestTask(
+      { searchQuery: "test query", targetWorkerId: "sandbox-uuid" },
+      "user-uuid-1",
+    );
+
+    // Task creation should still succeed
+    expect(result).toBeDefined();
+    expect(result.id).toBe("task-uuid-1");
+    // Should fall back to general queue
+    expect(deps.taskQueueService.enqueueGenericTask).toHaveBeenCalledWith(expect.anything(), {
+      targetWorkerId: undefined,
+    });
+    // Error should be logged
+    expect(deps.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ sandboxId: "sandbox-uuid" }),
+      expect.stringContaining("Failed to resolve worker ID"),
+    );
+  });
+
+  it("retry path uses general queue (no affinity)", async () => {
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-uuid-1",
+      userId: "user-uuid-1",
+      jobUrl: "https://example.com/job",
+      platform: "workday",
+      status: "failed",
+      mode: "autopilot",
+      workflowRunId: "gh-job-1",
+      progress: 0,
+      currentStep: null,
+      completedAt: null,
+      createdAt: new Date(),
+    });
+    deps.ghJobRepo.findById.mockResolvedValue({
+      id: "gh-job-1",
+      jobType: "apply",
+      inputData: { platform: "workday", tier: "free" },
+      metadata: { quality_preset: "quality" },
+      targetWorkerId: null,
+    });
+
+    await service.retry("task-uuid-1", "user-uuid-1");
+
+    expect(deps.taskQueueService.enqueueApplyJob).toHaveBeenCalledWith(expect.anything(), {});
   });
 });
