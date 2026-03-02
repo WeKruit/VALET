@@ -377,7 +377,7 @@ describe("AutoScaleService", () => {
       (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
           id: "sb-1",
-          name: "gh-worker-asg-1",
+          name: "gh-worker-1",
           instanceId: "i-abc123",
           publicIp: "10.0.0.1", // old IP — EC2 now reports 1.2.3.4
           status: "active",
@@ -472,7 +472,7 @@ describe("AutoScaleService", () => {
       (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
           id: "sb-old",
-          name: "gh-worker-asg-1",
+          name: "gh-worker-1",
           instanceId: "i-old-gone",
           publicIp: "10.0.0.1",
           status: "active",
@@ -518,7 +518,7 @@ describe("AutoScaleService", () => {
       (sandboxRepo.findAsgManaged as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
           id: "sb-alive",
-          name: "gh-worker-asg-1",
+          name: "gh-worker-1",
           instanceId: "i-alive",
           publicIp: "10.0.0.1",
           status: "active",

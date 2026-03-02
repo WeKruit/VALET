@@ -834,7 +834,7 @@ describe("Worker Admin Routes (asg_managed without ATM)", () => {
   const asgManagedSandboxes = [
     {
       id: "sandbox-asg-1",
-      name: "gh-worker-asg-1",
+      name: "gh-worker-1",
       environment: "staging",
       instanceId: "i-asg-xyz",
       publicIp: "10.0.0.5",
