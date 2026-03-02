@@ -104,8 +104,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         resumed: "in_progress",
       };
 
-      const taskStatus = statusMap[payload.status];
-      if (!taskStatus) {
+      const mappedStatus = statusMap[payload.status];
+      if (!mappedStatus) {
         request.log.warn(
           { ghStatus: payload.status },
           "Unknown GhostHands status, ignoring callback",
@@ -132,6 +132,14 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           return reply.status(200).send({ received: true, warning: "task not found" });
         }
       }
+
+      // Keep test-task semantics: GH running/resumed should preserve "testing"
+      // until a terminal status arrives.
+      const existingTask = await taskRepo.findByIdAdmin(valetTaskId);
+      const taskStatus: TaskStatus =
+        existingTask?.status === "testing" && mappedStatus === "in_progress"
+          ? "testing"
+          : mappedStatus;
 
       // EC7: Atomic status update — single UPDATE ... WHERE status NOT IN (terminal).
       // No read-then-write race; the DB enforces the guard in one round-trip.

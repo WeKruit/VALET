@@ -4,6 +4,7 @@ import { z } from "zod";
 export const taskStatus = z.enum([
   "created",
   "queued",
+  "testing",
   "in_progress",
   "waiting_human",
   "completed",

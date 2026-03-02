@@ -46,6 +46,7 @@ const statusBadgeVariant: Record<
 > = {
   created: "default",
   queued: "default",
+  testing: "info",
   in_progress: "info",
   waiting_human: "warning",
   completed: "success",

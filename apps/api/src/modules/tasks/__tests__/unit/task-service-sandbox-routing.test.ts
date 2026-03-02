@@ -250,6 +250,7 @@ describe("TaskService — createTestTask routing", () => {
     expect(deps.taskQueueService.enqueueGenericTask).toHaveBeenCalledWith(expect.anything(), {
       targetWorkerId: "gh-worker-uuid-1",
     });
+    expect(deps.taskRepo.updateStatus).toHaveBeenCalledWith("task-uuid-1", "testing");
   });
 
   it("falls back to general queue when worker resolution fails", async () => {
@@ -267,6 +268,7 @@ describe("TaskService — createTestTask routing", () => {
       expect.objectContaining({ sandboxId: "sandbox-uuid" }),
       expect.stringContaining("No active worker"),
     );
+    expect(deps.taskRepo.updateStatus).toHaveBeenCalledWith("task-uuid-1", "testing");
   });
 
   it("handles resolveWorkerId exception gracefully", async () => {

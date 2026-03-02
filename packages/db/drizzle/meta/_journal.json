@@ -148,6 +148,13 @@
       "when": 1745884000000,
       "tag": "0020_add_user_sandboxes",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1761991200000,
+      "tag": "0021_add_testing_task_status",
+      "breakpoints": true
     }
   ]
 }

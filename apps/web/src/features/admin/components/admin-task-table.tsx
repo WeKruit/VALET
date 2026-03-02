@@ -19,6 +19,7 @@ import type { AdminTask } from "../hooks/use-admin-tasks";
 const taskStatusVariant: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
   created: "default",
   queued: "default",
+  testing: "info",
   in_progress: "info",
   waiting_human: "warning",
   completed: "success",
@@ -44,6 +45,7 @@ const expectedGhStatus: Record<string, string[]> = {
   completed: ["completed"],
   cancelled: ["cancelled"],
   in_progress: ["running"],
+  testing: ["pending", "queued", "running"],
   waiting_human: ["needs_human"],
   queued: ["queued", "pending"],
   created: ["pending", "queued"],

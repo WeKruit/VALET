@@ -80,6 +80,7 @@ export function AdminTasksPage() {
                 <SelectItem value={ALL}>All Statuses</SelectItem>
                 <SelectItem value="created">Created</SelectItem>
                 <SelectItem value="queued">Queued</SelectItem>
+                <SelectItem value="testing">Testing</SelectItem>
                 <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="waiting_human">Waiting Human</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>

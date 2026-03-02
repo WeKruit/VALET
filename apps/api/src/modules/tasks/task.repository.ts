@@ -182,7 +182,7 @@ export class TaskRepository {
     if (status === "completed" || status === "failed" || status === "cancelled") {
       extra.completedAt = now;
     }
-    if (status === "in_progress") {
+    if (status === "in_progress" || status === "testing") {
       extra.startedAt = now;
     }
 
@@ -210,7 +210,7 @@ export class TaskRepository {
     if (status === "completed" || status === "failed" || status === "cancelled") {
       extra.completedAt = now;
     }
-    if (status === "in_progress") {
+    if (status === "in_progress" || status === "testing") {
       extra.startedAt = now;
     }
 
@@ -293,7 +293,7 @@ export class TaskRepository {
       .where(
         and(
           eq(tasks.userId, userId),
-          inArray(tasks.status, ["created", "queued", "in_progress", "waiting_human"]),
+          inArray(tasks.status, ["created", "queued", "testing", "in_progress", "waiting_human"]),
           eq(tasks.sandboxId, sandboxId),
         ),
       )
@@ -329,7 +329,7 @@ export class TaskRepository {
         total: count(),
         completed: count(sql`CASE WHEN ${tasks.status} = 'completed' THEN 1 END`),
         inProgress: count(
-          sql`CASE WHEN ${tasks.status} IN ('created', 'queued', 'in_progress') THEN 1 END`,
+          sql`CASE WHEN ${tasks.status} IN ('created', 'queued', 'testing', 'in_progress') THEN 1 END`,
         ),
         needsReview: count(sql`CASE WHEN ${tasks.status} = 'waiting_human' THEN 1 END`),
       })
@@ -360,7 +360,10 @@ export class TaskRepository {
       .select()
       .from(tasks)
       .where(
-        and(inArray(tasks.status, ["queued", "in_progress"]), sql`${tasks.updatedAt} < ${cutoff}`),
+        and(
+          inArray(tasks.status, ["queued", "testing", "in_progress"]),
+          sql`${tasks.updatedAt} < ${cutoff}`,
+        ),
       )
       .orderBy(asc(tasks.updatedAt))
       .limit(100);

@@ -28,7 +28,13 @@ function useQueueDispatch(): boolean {
   return process.env.TASK_DISPATCH_MODE === "queue";
 }
 
-const CANCELLABLE_STATUSES = new Set(["created", "queued", "in_progress", "waiting_human"]);
+const CANCELLABLE_STATUSES = new Set([
+  "created",
+  "queued",
+  "testing",
+  "in_progress",
+  "waiting_human",
+]);
 
 function csvEscape(value: string): string {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -810,12 +816,12 @@ export class TaskService {
           });
         }
 
-        await this.taskRepo.updateStatus(task.id, "queued");
+        await this.taskRepo.updateStatus(task.id, "testing");
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
           taskId: task.id,
-          status: "queued",
+          status: "testing",
         });
       } catch (err) {
         this.logger.error({ err, taskId: task.id }, "Failed to enqueue test task via pg-boss");
@@ -848,12 +854,12 @@ export class TaskService {
         });
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
-        await this.taskRepo.updateStatus(task.id, "queued");
+        await this.taskRepo.updateStatus(task.id, "testing");
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
           taskId: task.id,
-          status: "queued",
+          status: "testing",
         });
       } catch (err) {
         this.logger.error({ err, taskId: task.id }, "Failed to submit test task to GhostHands");
@@ -1229,7 +1235,10 @@ export class TaskService {
 
     try {
       const ghApiStatus = await this.ghosthandsClient.getJobStatus(task.workflowRunId);
-      const mappedTaskStatus = ghToTaskStatus[ghApiStatus.status];
+      let mappedTaskStatus = ghToTaskStatus[ghApiStatus.status];
+      if (task.status === "testing" && mappedTaskStatus === "in_progress") {
+        mappedTaskStatus = "testing";
+      }
 
       let taskUpdated = false;
       const previousTaskStatus = task.status;
@@ -1422,7 +1431,7 @@ export class TaskService {
 
   /**
    * EC10: Monitor and fail stale tasks.
-   * Finds tasks stuck in "queued" or "in_progress" for more than 2 hours,
+   * Finds tasks stuck in "queued", "testing", or "in_progress" for more than 2 hours,
    * checks if the corresponding GH job has a recent heartbeat (last 5 min),
    * and marks tasks as "failed" with errorCode "STALE_TASK" if no heartbeat.
    */

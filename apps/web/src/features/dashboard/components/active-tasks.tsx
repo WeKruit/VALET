@@ -17,10 +17,12 @@ const platformColors: Record<string, string> = {
 
 export function ActiveTasks() {
   const { data, isLoading, isError, refetch } = useTasks({ status: "in_progress" });
+  const { data: testingData } = useTasks({ status: "testing" });
   const { data: waitingData } = useTasks({ status: "waiting_human" });
   const inProgressTasks = data?.status === 200 ? data.body.data : [];
+  const testingTasks = testingData?.status === 200 ? testingData.body.data : [];
   const waitingTasks = waitingData?.status === 200 ? waitingData.body.data : [];
-  const activeTasks = [...waitingTasks, ...inProgressTasks];
+  const activeTasks = [...waitingTasks, ...testingTasks, ...inProgressTasks];
 
   return (
     <Card>

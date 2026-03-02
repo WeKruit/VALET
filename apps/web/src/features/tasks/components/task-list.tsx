@@ -26,6 +26,7 @@ interface TaskListProps {
 const statusBadgeVariant: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
   created: "default",
   queued: "default",
+  testing: "info",
   in_progress: "info",
   waiting_human: "warning",
   completed: "success",
@@ -97,13 +98,15 @@ export function TaskList({ tasks }: TaskListProps) {
               </div>
 
               <div className="flex items-center gap-3 shrink-0">
-                {(task.status === "in_progress" || task.status === "queued") &&
+                {(task.status === "in_progress" ||
+                  task.status === "queued" ||
+                  task.status === "testing") &&
                   task.currentStep && (
                     <span className="hidden sm:inline text-xs text-[var(--wk-text-tertiary)] max-w-[160px] truncate">
                       {task.currentStep}
                     </span>
                   )}
-                {task.status === "in_progress" && (
+                {(task.status === "in_progress" || task.status === "testing") && (
                   <div className="flex items-center gap-2">
                     <div className="h-2 w-24 rounded-full bg-[var(--wk-surface-sunken)]">
                       <div
