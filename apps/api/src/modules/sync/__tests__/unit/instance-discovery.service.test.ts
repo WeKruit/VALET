@@ -93,7 +93,7 @@ function makeRedis() {
 function makeSandbox(overrides: Partial<SandboxRecord> = {}): SandboxRecord {
   return {
     id: `sandbox-${Math.random().toString(36).slice(2, 8)}`,
-    name: "gh-worker-asg-1",
+    name: "gh-worker-1",
     environment: "staging",
     instanceId: "i-abc123",
     instanceType: "t3.large",
@@ -374,7 +374,7 @@ describe("InstanceDiscoveryService", () => {
     it("auto-increments sandbox name based on existing", async () => {
       const mocks = makeMocks();
       mocks.sandboxRepo.findAsgManaged.mockResolvedValue([
-        makeSandbox({ name: "gh-worker-asg-1" }),
+        makeSandbox({ name: "gh-worker-1" }),
         makeSandbox({ name: "gh-worker-asg-3" }),
       ]);
 
