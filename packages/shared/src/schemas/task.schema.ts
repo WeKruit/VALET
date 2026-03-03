@@ -218,6 +218,7 @@ export const ghJobSchema = z.object({
     completedAt: z.string().nullable().optional(),
   }),
   targetWorkerId: z.string().nullable().optional(),
+  browserSessionAvailable: z.boolean().optional(),
 });
 
 // ─── Response DTOs ───

@@ -288,6 +288,8 @@ export class TaskService {
             completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : null,
           },
           targetWorkerId: job.targetWorkerId ?? null,
+          browserSessionAvailable:
+            (job.metadata as Record<string, unknown>)?.browser_session_available === true,
         };
       }
     } catch (err) {
@@ -322,6 +324,7 @@ export class TaskService {
           completedAt: ghStatus.timestamps.completed_at ?? null,
         },
         targetWorkerId: ghStatus.target_worker_id ?? null,
+        browserSessionAvailable: (raw.browser_session_available as boolean) === true,
       };
     } catch (err) {
       this.logger.debug({ err, workflowRunId }, "Failed to fetch GH job status (non-critical)");
@@ -1135,6 +1138,9 @@ export class TaskService {
       throw new TaskNotResolvableError(taskId, "no workflowRunId");
     }
 
+    // Invalidate browser-session tokens immediately — the task is about to resume
+    browserSessionTokenStore.invalidateByTaskId(taskId);
+
     await this.ghosthandsClient.resumeJob(task.workflowRunId, {
       resolved_by: resolvedBy,
       notes,
@@ -1369,71 +1375,34 @@ export class TaskService {
   }
 
   /**
-   * WEK-147: Get the VNC live-view URL for the worker running this task.
-   * Priority:
-   *   1. kasm_url from GH callback metadata — detects URL shape:
-   *      - Contains :6901 → direct KasmVNC (type "kasmvnc", HTTPS via snakeoil cert)
-   *      - Starts with / or /#/ → legacy Kasm Workspaces relative path (resolved via KASM_API_URL)
-   *      - Contains /api/public → legacy Kasm Workspaces absolute URL (type "kasm")
-   *      - Other absolute → treated as direct KasmVNC (type "kasmvnc")
-   *   2. Construct from sandbox publicIp (https://{IP}:6901) if no callback URL yet
-   *   3. Fallback to sandbox.novncUrl for backward compat (type "novnc")
+   * WEK-147: Compatibility alias for /api/v1/tasks/:id/vnc-url.
+   *
+   * Now returns a browser-session page URL (type "browser_session") for
+   * paused tasks with an available browser session. Falls through to null
+   * if unavailable — no raw worker IPs are ever returned.
    */
   async getVncUrl(
     taskId: string,
     userId: string,
-  ): Promise<{ url: string; readOnly: boolean; type: "novnc" | "kasm" | "kasmvnc" } | null> {
+  ): Promise<{
+    url: string;
+    readOnly: boolean;
+    type: "browser_session" | "novnc" | "kasm" | "kasmvnc";
+  } | null> {
     const task = await this.taskRepo.findById(taskId, userId);
     if (!task) throw new TaskNotFoundError(taskId);
 
-    const readOnly = task.status !== "waiting_human";
-
-    // 1. Check kasm_url from GH callback (direct KasmVNC URL from worker)
-    if (task.workflowRunId) {
+    // Only offer browser session for paused-for-human tasks
+    if (task.status === "waiting_human") {
       try {
-        const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
-        const kasmUrl = ghJob?.metadata?.kasm_url as string | undefined;
-        if (kasmUrl) {
-          // Detect type from URL shape
-          if (kasmUrl.includes(":6901")) {
-            // Direct KasmVNC on ASG worker (https://{IP}:6901)
-            return { url: kasmUrl, readOnly, type: "kasmvnc" };
-          }
-          if (kasmUrl.startsWith("/#/") || kasmUrl.startsWith("/")) {
-            // Legacy Kasm Workspaces relative path — resolve against KASM_API_URL
-            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "");
-            if (kasmBase) {
-              return { url: `${kasmBase}${kasmUrl}`, readOnly, type: "kasm" };
-            }
-            this.logger.warn({ taskId }, "KASM_API_URL not set — cannot resolve relative kasm_url");
-          } else {
-            // Absolute URL — treat as legacy Kasm Workspaces if it contains /api/public
-            const type = kasmUrl.includes("/api/public") ? "kasm" : "kasmvnc";
-            return { url: kasmUrl, readOnly, type };
-          }
-        }
+        const session = await this.createLiveviewSession(taskId, userId);
+        return { url: session.url, readOnly: false, type: "browser_session" };
       } catch {
-        // Fall through to sandbox-based lookup
+        // Browser session not available — fall through to null
+        this.logger.debug({ taskId }, "Browser session unavailable for compat VNC URL");
       }
     }
 
-    // 2. Construct from sandbox publicIp (worker hasn't reported kasm_url yet)
-    if (task.sandboxId) {
-      try {
-        const sandbox = await this.sandboxRepo.findById(task.sandboxId);
-        if (sandbox?.publicIp) {
-          return { url: `https://${sandbox.publicIp}:6901`, readOnly, type: "kasmvnc" };
-        }
-        // 3. Fallback to noVNC URL (backward compat)
-        if (sandbox?.novncUrl) {
-          return { url: sandbox.novncUrl, readOnly, type: "novnc" };
-        }
-      } catch {
-        // Fall through
-      }
-    }
-
-    this.logger.debug({ taskId }, "No VNC URL available for task");
     return null;
   }
 

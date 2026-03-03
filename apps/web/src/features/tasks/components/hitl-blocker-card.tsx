@@ -34,8 +34,8 @@ interface HitlBlockerCardProps {
     } | null;
     pausedAt: string;
   };
-  vncUrl?: string | null;
-  vncType?: "browser_session" | "novnc" | "kasm" | "kasmvnc";
+  /** Whether a browser liveview session is available for this task */
+  browserSessionAvailable?: boolean;
   onCancel: () => void;
 }
 
@@ -86,8 +86,7 @@ function formatCountdown(seconds: number): string {
 export function HitlBlockerCard({
   taskId,
   interaction,
-  vncUrl: _vncUrl,
-  vncType: _vncType,
+  browserSessionAvailable,
   onCancel,
 }: HitlBlockerCardProps) {
   const resolveBlocker = useResolveBlocker();
@@ -258,20 +257,28 @@ export function HitlBlockerCard({
         )}
 
         {/* Browser session — opens live browser view in new tab */}
-        <Button
-          variant="primary"
-          className="w-full"
-          disabled={browserSession.isPending}
-          onClick={() =>
-            browserSession.mutate({
-              params: { id: taskId },
-              body: {},
-            })
-          }
-        >
-          <Monitor className="h-4 w-4 mr-1.5" />
-          {browserSession.isPending ? "Opening..." : "Open Browser Session"}
-        </Button>
+        {browserSessionAvailable ? (
+          <Button
+            variant="primary"
+            className="w-full"
+            disabled={browserSession.isPending}
+            onClick={() =>
+              browserSession.mutate({
+                params: { id: taskId },
+                body: {},
+              })
+            }
+          >
+            <Monitor className="h-4 w-4 mr-1.5" />
+            {browserSession.isPending ? "Opening..." : "Open Browser Session"}
+          </Button>
+        ) : (
+          <div className="rounded-[var(--wk-radius-md)] bg-[var(--wk-surface-sunken)] px-3 py-2 text-center">
+            <p className="text-xs text-[var(--wk-text-tertiary)]">
+              Browser session not available for this task
+            </p>
+          </div>
+        )}
 
         {/* Type-specific resolution controls */}
         <div className="space-y-3 pt-2">

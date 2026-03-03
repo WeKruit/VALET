@@ -24,8 +24,37 @@ export async function registerBrowserSessionWs(fastify: FastifyInstance) {
       return;
     }
 
-    // 2. Connect to GH CDP proxy
+    // 2. Verify the worker's current paused session matches this token's ghJobId.
+    //    Without this check, a stale token could connect to a different task's browser
+    //    if the same worker paused on a new job before TTL expiry.
     const ghServiceKey = process.env.GHOSTHANDS_SERVICE_KEY ?? process.env.GH_SERVICE_SECRET ?? "";
+    try {
+      const verifyRes = await fetch(`http://${session.workerIp}:3100/internal/browser-session`, {
+        headers: { "X-GH-Service-Key": ghServiceKey },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (verifyRes.ok) {
+        const ghSession = (await verifyRes.json()) as Record<string, unknown>;
+        if (!ghSession.available || !ghSession.pausedForHuman) {
+          browserSessionTokenStore.invalidateByTaskId(session.taskId);
+          socket.close(4001, "Browser session no longer paused");
+          return;
+        }
+        if (ghSession.jobId !== session.ghJobId) {
+          browserSessionTokenStore.invalidateByTaskId(session.taskId);
+          socket.close(4001, "Browser session belongs to a different job");
+          return;
+        }
+      } else {
+        socket.close(1011, "Worker unreachable");
+        return;
+      }
+    } catch {
+      socket.close(1011, "Worker verification failed");
+      return;
+    }
+
+    // 3. Connect to GH CDP proxy
     const ghWsUrl = `ws://${session.workerIp}:3100/internal/cdp-proxy?key=${encodeURIComponent(ghServiceKey)}`;
 
     let cdpSocket: WebSocket;

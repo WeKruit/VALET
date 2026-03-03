@@ -4,6 +4,7 @@ import type { GHCallbackPayload, GHDeployWebhookPayload } from "./ghosthands.typ
 import type { TaskStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
 import { streamKey } from "../../lib/redis-streams.js";
+import { browserSessionTokenStore } from "../tasks/browser-session-token-store.js";
 
 /**
  * Verify shared service key from GhostHands.
@@ -152,6 +153,13 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           "Callback skipped — task in terminal state or not found",
         );
         return reply.status(200).send({ received: true, skipped: true });
+      }
+
+      // Invalidate browser-session tokens when task leaves waiting_human
+      // (resumed, completed, failed, cancelled). Prevents stale tokens
+      // from connecting to a different paused job on the same worker.
+      if (taskStatus !== "waiting_human") {
+        browserSessionTokenStore.invalidateByTaskId(valetTaskId);
       }
 
       // HITL-specific data handling
