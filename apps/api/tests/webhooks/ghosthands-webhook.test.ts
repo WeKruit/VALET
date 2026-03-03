@@ -193,12 +193,17 @@ async function buildWebhookTestApp(): Promise<{
 
     // Status mapping
     const statusMap: Record<string, string> = {
+      pending: "queued",
+      queued: "queued",
       running: "in_progress",
+      paused: "waiting_human",
+      awaiting_review: "waiting_human",
+      needs_human: "waiting_human",
       completed: "completed",
       failed: "failed",
       cancelled: "cancelled",
-      needs_human: "waiting_human",
-      resumed: "in_progress",
+      expired: "failed",
+      resumed: "in_progress", // legacy compatibility
     };
 
     const taskStatus = statusMap[payload.status as string];
@@ -217,6 +222,7 @@ async function buildWebhookTestApp(): Promise<{
       }
     }
 
+    const previousStatus = taskStore.get(valetTaskId)?.status ?? null;
     const task = await taskRepo.updateStatus(valetTaskId, taskStatus);
     if (!task) {
       return reply.status(404).send({
@@ -230,7 +236,10 @@ async function buildWebhookTestApp(): Promise<{
       "2fa": "two_factor",
       login: "login_required",
     };
-    if (payload.status === "needs_human" && payload.interaction) {
+    const isWaitingGhStatus = ["paused", "needs_human", "awaiting_review"].includes(
+      payload.status as string,
+    );
+    if (isWaitingGhStatus && payload.interaction) {
       const interaction = payload.interaction as Record<string, unknown>;
       const mappedType = interactionTypeMap[interaction.type as string] ?? interaction.type;
       await taskRepo.updateInteractionData(valetTaskId, {
@@ -238,7 +247,8 @@ async function buildWebhookTestApp(): Promise<{
         interactionData: { ...interaction, type: mappedType },
       });
     }
-    if (payload.status === "resumed") {
+    const leftWaitingHuman = previousStatus === "waiting_human" && taskStatus !== "waiting_human";
+    if (payload.status === "resumed" || leftWaitingHuman) {
       await taskRepo.clearInteractionData(valetTaskId);
     }
 
@@ -477,8 +487,8 @@ describe("GhostHands Webhook Regression Tests", () => {
     expect(task?.interactionData).toBeDefined();
   });
 
-  // W-05: Handles resumed status
-  it("W-05: handles resumed status, sets task to in_progress", async () => {
+  // W-05: Handles running callback after HITL unblock
+  it("W-05: handles running after waiting_human, sets task to in_progress", async () => {
     // First set to waiting_human
     const task = taskStore.get(TASK_1_ID)!;
     task.status = "waiting_human";
@@ -495,7 +505,7 @@ describe("GhostHands Webhook Regression Tests", () => {
       payload: JSON.stringify({
         job_id: GH_JOB_1,
         valet_task_id: TASK_1_ID,
-        status: "resumed",
+        status: "running",
       }),
     });
 

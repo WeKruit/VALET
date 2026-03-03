@@ -31,22 +31,26 @@ const ghStatusVariant: Record<string, "default" | "success" | "warning" | "error
   pending: "default",
   queued: "default",
   running: "info",
+  resumed: "info",
+  paused: "warning",
+  awaiting_review: "warning",
+  expired: "error",
+  needs_human: "warning",
   completed: "success",
   failed: "error",
   cancelled: "default",
-  needs_human: "warning",
 };
 
 // ─── Sync logic ───
 
 /** Maps task status to the expected GH job status */
 const expectedGhStatus: Record<string, string[]> = {
-  failed: ["failed"],
+  failed: ["failed", "expired"],
   completed: ["completed"],
   cancelled: ["cancelled"],
-  in_progress: ["running"],
-  testing: ["pending", "queued", "running"],
-  waiting_human: ["needs_human"],
+  in_progress: ["running", "resumed"],
+  testing: ["pending", "queued", "running", "resumed"],
+  waiting_human: ["needs_human", "paused", "awaiting_review"],
   queued: ["queued", "pending"],
   created: ["pending", "queued"],
 };

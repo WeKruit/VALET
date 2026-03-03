@@ -12,10 +12,14 @@ const statusColors: Record<string, "default" | "success" | "warning" | "error" |
   pending: "default",
   queued: "default",
   running: "info",
+  paused: "warning",
+  awaiting_review: "warning",
+  resumed: "info",
+  expired: "error",
+  needs_human: "warning",
   completed: "success",
   failed: "error",
   cancelled: "default",
-  needs_human: "warning",
 };
 
 const modeLabels: Record<string, string> = {
@@ -53,15 +57,23 @@ export function GhJobCard({ ghJob }: GhJobCardProps) {
       <CardContent className="space-y-4">
         {/* Progress bar */}
         {(ghJob.ghStatus === "running" ||
+          ghJob.ghStatus === "paused" ||
+          ghJob.ghStatus === "needs_human" ||
+          ghJob.ghStatus === "awaiting_review" ||
           ghJob.ghStatus === "completed" ||
-          ghJob.ghStatus === "failed") && (
+          ghJob.ghStatus === "failed" ||
+          ghJob.ghStatus === "expired") && (
           <div>
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-[var(--wk-text-secondary)]">
                 {ghJob.ghStatus === "completed"
                   ? "Completed"
-                  : ghJob.ghStatus === "failed"
+                  : ghJob.ghStatus === "failed" || ghJob.ghStatus === "expired"
                     ? (ghJob.statusMessage ?? "Failed")
+                    : ghJob.ghStatus === "paused" || ghJob.ghStatus === "needs_human"
+                      ? (ghJob.statusMessage ?? "Paused for human action")
+                      : ghJob.ghStatus === "awaiting_review"
+                        ? (ghJob.statusMessage ?? "Awaiting review")
                     : (ghJob.statusMessage ?? "Processing...")}
               </span>
               <span className="text-xs font-medium">
@@ -71,7 +83,7 @@ export function GhJobCard({ ghJob }: GhJobCardProps) {
             <div className="h-2 w-full rounded-full bg-[var(--wk-surface-sunken)] overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  ghJob.ghStatus === "failed"
+                  ghJob.ghStatus === "failed" || ghJob.ghStatus === "expired"
                     ? "bg-[var(--wk-status-error)]"
                     : "bg-gradient-to-r from-[var(--wk-copilot)] to-[var(--wk-accent-teal)]"
                 }`}
@@ -104,7 +116,12 @@ export function GhJobCard({ ghJob }: GhJobCardProps) {
               {completedAt && startedAt
                 ? formatDistanceStrict(completedAt, startedAt)
                 : startedAt
-                  ? formatDistanceStrict(new Date(), startedAt) + " (running)"
+                  ? formatDistanceStrict(new Date(), startedAt) +
+                    (ghJob.ghStatus === "paused" || ghJob.ghStatus === "needs_human"
+                      ? " (paused)"
+                      : ghJob.ghStatus === "awaiting_review"
+                        ? " (awaiting review)"
+                        : " (running)")
                   : formatDistanceStrict(new Date(), createdAt) + " (waiting)"}
             </p>
           </div>

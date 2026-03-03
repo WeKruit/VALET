@@ -96,12 +96,17 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
 
       // Map GhostHands status to VALET task status
       const statusMap: Record<string, TaskStatus> = {
+        pending: "queued",
+        queued: "queued",
         running: "in_progress",
+        paused: "waiting_human",
+        awaiting_review: "waiting_human",
+        needs_human: "waiting_human",
         completed: "completed",
         failed: "failed",
         cancelled: "cancelled",
-        needs_human: "waiting_human",
-        resumed: "in_progress",
+        expired: "failed",
+        resumed: "in_progress", // legacy compatibility
       };
 
       const mappedStatus = statusMap[payload.status];
@@ -133,13 +138,26 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         }
       }
 
-      // Keep test-task semantics: GH running/resumed should preserve "testing"
+      // Keep test-task semantics: GH queue/running callbacks should preserve "testing"
       // until a terminal status arrives.
       const existingTask = await taskRepo.findByIdAdmin(valetTaskId);
       const taskStatus: TaskStatus =
-        existingTask?.status === "testing" && mappedStatus === "in_progress"
+        existingTask?.status === "testing" &&
+        (mappedStatus === "queued" || mappedStatus === "in_progress")
           ? "testing"
           : mappedStatus;
+      const leftWaitingHuman =
+        existingTask?.status === "waiting_human" &&
+        (taskStatus === "testing" ||
+          taskStatus === "in_progress" ||
+          taskStatus === "completed" ||
+          taskStatus === "failed" ||
+          taskStatus === "cancelled");
+      const transitionedFromWaitingHuman = existingTask?.status === "waiting_human";
+      const isWaitingGhStatus =
+        payload.status === "paused" ||
+        payload.status === "needs_human" ||
+        payload.status === "awaiting_review";
 
       // EC7: Atomic status update — single UPDATE ... WHERE status NOT IN (terminal).
       // No read-then-write race; the DB enforces the guard in one round-trip.
@@ -165,7 +183,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         verification: "verification",
         visual_verification: "verification", // backwards compat with old GH
       };
-      if (payload.status === "needs_human" && payload.interaction) {
+      if (isWaitingGhStatus && payload.interaction) {
         const mappedType = interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
         await taskRepo.updateInteractionData(valetTaskId, {
           interactionType: mappedType,
@@ -178,7 +196,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           },
         });
       }
-      if (payload.status === "resumed") {
+      if (payload.status === "resumed" || leftWaitingHuman) {
         await taskRepo.clearInteractionData(valetTaskId);
       }
 
@@ -246,7 +264,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         if (
           payload.status === "completed" ||
           payload.status === "failed" ||
-          payload.status === "cancelled"
+          payload.status === "cancelled" ||
+          payload.status === "expired"
         ) {
           ghJobUpdate.completedAt = completedAt ? new Date(completedAt) : now;
         }
@@ -268,14 +287,16 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
             };
           }
         }
-        if (payload.status === "needs_human" && payload.interaction) {
-          const mappedInteractionType =
-            interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
-          ghJobUpdate.interactionType = mappedInteractionType;
-          ghJobUpdate.interactionData = payload.interaction as unknown as Record<string, unknown>;
+        if (isWaitingGhStatus) {
+          if (payload.interaction) {
+            const mappedInteractionType =
+              interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
+            ghJobUpdate.interactionType = mappedInteractionType;
+            ghJobUpdate.interactionData = payload.interaction as unknown as Record<string, unknown>;
+          }
           ghJobUpdate.pausedAt = now;
         }
-        if (payload.status === "resumed") {
+        if (payload.status === "resumed" || leftWaitingHuman) {
           ghJobUpdate.interactionType = null;
           ghJobUpdate.interactionData = null;
           ghJobUpdate.pausedAt = null;
@@ -387,14 +408,23 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
             metadata: payload.interaction.metadata ?? null,
           },
         });
-      } else if (taskStatus === "in_progress" && payload.status === "resumed") {
-        // Resumed from HITL: publish task_resumed
+      } else if (
+        taskStatus === "in_progress" &&
+        (payload.status === "resumed" || transitionedFromWaitingHuman)
+      ) {
+        // Resumed from HITL: publish task_resumed.
+        // New GH status model reports "running" after unblock; "resumed" is legacy.
         await publishToUser(redis, task.userId, {
           type: "task_resumed",
           taskId: task.id,
           status: taskStatus,
         });
-      } else if (taskStatus === "in_progress" && payload.status === "running") {
+      } else if (
+        taskStatus === "in_progress" ||
+        taskStatus === "queued" ||
+        taskStatus === "testing" ||
+        taskStatus === "waiting_human"
+      ) {
         // WEK-71: Progress is now computed from gh_job_events (single source of truth).
         // No longer persist progress/currentStep to the tasks table from callbacks.
         // The frontend reads live progress via getById() -> computeProgressFromEvents().
@@ -404,7 +434,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           status: taskStatus,
         });
       } else {
-        // Standard task_update for completed/failed/cancelled
+        // Standard task_update for terminal task statuses.
         // WEK-71: Progress is computed from gh_job_events at read time.
         // No progress writes to tasks table.
         const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
@@ -412,7 +442,9 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           taskStatus === "completed"
             ? (payload.result_summary ?? "Application submitted")
             : taskStatus === "failed"
-              ? `Failed: ${errorMessage}`
+              ? payload.status === "expired"
+                ? "Expired: job timed out before execution"
+                : `Failed: ${errorMessage}`
               : "Cancelled";
         await publishToUser(redis, task.userId, {
           type: "task_update",

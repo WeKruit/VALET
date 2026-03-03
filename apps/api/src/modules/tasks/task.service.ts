@@ -216,7 +216,15 @@ export class TaskService {
     if (!workflowRunId) return null;
 
     const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
-    const GH_NON_TERMINAL = new Set(["pending", "queued", "running", "needs_human"]);
+    const GH_NON_TERMINAL = new Set([
+      "pending",
+      "queued",
+      "running",
+      "paused",
+      "needs_human",
+      "awaiting_review",
+      "resumed", // legacy compatibility
+    ]);
 
     // Map task status -> gh_automation_jobs status for reverse sync
     const taskToGhStatus: Partial<Record<TaskStatus, string>> = {
@@ -1134,7 +1142,7 @@ export class TaskService {
       resolution_data: resolutionData,
     });
 
-    // Do NOT update task status here — wait for GH resumed callback
+    // Do NOT update task status here — wait for GH status callback (running/resumed)
     return {
       taskId,
       status: "waiting_human" as const,
@@ -1226,17 +1234,26 @@ export class TaskService {
 
     // GH status -> task status mapping
     const ghToTaskStatus: Record<string, TaskStatus> = {
+      pending: "queued",
+      queued: "queued",
       running: "in_progress",
+      paused: "waiting_human",
+      awaiting_review: "waiting_human",
+      needs_human: "waiting_human",
       completed: "completed",
       failed: "failed",
       cancelled: "cancelled",
-      needs_human: "waiting_human",
+      expired: "failed",
+      resumed: "in_progress", // legacy compatibility
     };
 
     try {
       const ghApiStatus = await this.ghosthandsClient.getJobStatus(task.workflowRunId);
       let mappedTaskStatus = ghToTaskStatus[ghApiStatus.status];
-      if (task.status === "testing" && mappedTaskStatus === "in_progress") {
+      if (
+        task.status === "testing" &&
+        (mappedTaskStatus === "queued" || mappedTaskStatus === "in_progress")
+      ) {
         mappedTaskStatus = "testing";
       }
 

@@ -226,7 +226,7 @@ export class GhAutomationJobRepository {
       .from(ghAutomationJobs)
       .where(
         and(
-          inArray(ghAutomationJobs.status, ["running", "paused", "needs_human"]),
+          inArray(ghAutomationJobs.status, ["running", "paused", "needs_human", "awaiting_review"]),
           sql`${ghAutomationJobs.metadata}->>'kasm_id' IS NOT NULL`,
         ),
       )
@@ -241,7 +241,7 @@ export class GhAutomationJobRepository {
       .from(ghAutomationJobs)
       .where(
         and(
-          inArray(ghAutomationJobs.status, ["queued", "running"]),
+          inArray(ghAutomationJobs.status, ["pending", "queued", "running"]),
           sql`${ghAutomationJobs.updatedAt} < ${cutoff}`,
         ),
       )

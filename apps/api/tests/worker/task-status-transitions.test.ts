@@ -12,16 +12,29 @@ import type { TaskStatus } from "@valet/shared/schemas";
  * This mirrors the exact mapping in the webhook handler.
  */
 const statusMap: Record<string, TaskStatus> = {
+  pending: "queued",
+  queued: "queued",
   running: "in_progress",
+  paused: "waiting_human",
+  awaiting_review: "waiting_human",
+  needs_human: "waiting_human",
   completed: "completed",
   failed: "failed",
   cancelled: "cancelled",
-  needs_human: "waiting_human",
-  resumed: "in_progress",
+  expired: "failed",
+  resumed: "in_progress", // legacy compatibility
 };
 
 describe("Task Status Transitions (Webhook Handler)", () => {
   describe("GH status -> VALET status mapping", () => {
+    it("pending maps to queued", () => {
+      expect(statusMap["pending"]).toBe("queued");
+    });
+
+    it("queued maps to queued", () => {
+      expect(statusMap["queued"]).toBe("queued");
+    });
+
     it("running maps to in_progress", () => {
       expect(statusMap["running"]).toBe("in_progress");
     });
@@ -42,6 +55,18 @@ describe("Task Status Transitions (Webhook Handler)", () => {
       expect(statusMap["needs_human"]).toBe("waiting_human");
     });
 
+    it("paused maps to waiting_human", () => {
+      expect(statusMap["paused"]).toBe("waiting_human");
+    });
+
+    it("awaiting_review maps to waiting_human", () => {
+      expect(statusMap["awaiting_review"]).toBe("waiting_human");
+    });
+
+    it("expired maps to failed", () => {
+      expect(statusMap["expired"]).toBe("failed");
+    });
+
     it("resumed maps to in_progress", () => {
       expect(statusMap["resumed"]).toBe("in_progress");
     });
@@ -49,19 +74,22 @@ describe("Task Status Transitions (Webhook Handler)", () => {
 
   describe("Invalid status transitions", () => {
     it("unknown GH statuses return undefined (rejected)", () => {
-      expect(statusMap["pending"]).toBeUndefined();
-      expect(statusMap["queued"]).toBeUndefined();
       expect(statusMap["unknown_status"]).toBeUndefined();
       expect(statusMap[""]).toBeUndefined();
     });
 
     it("statusMap only contains expected keys", () => {
       const expectedKeys = [
+        "pending",
+        "queued",
         "running",
+        "paused",
+        "awaiting_review",
+        "needs_human",
         "completed",
         "failed",
         "cancelled",
-        "needs_human",
+        "expired",
         "resumed",
       ];
       expect(Object.keys(statusMap).sort()).toEqual(expectedKeys.sort());
@@ -104,8 +132,14 @@ describe("Task Status Transitions (Webhook Handler)", () => {
       expect(statusMap["running"]).toBe("in_progress");
     });
 
+    it("paused/needs_human/awaiting_review all map to waiting_human", () => {
+      expect(statusMap["paused"]).toBe("waiting_human");
+      expect(statusMap["needs_human"]).toBe("waiting_human");
+      expect(statusMap["awaiting_review"]).toBe("waiting_human");
+    });
+
     it("all terminal GH statuses map to terminal VALET statuses", () => {
-      const ghTerminal = ["completed", "failed", "cancelled"];
+      const ghTerminal = ["completed", "failed", "cancelled", "expired"];
       const valetTerminal = ["completed", "failed", "cancelled"];
 
       for (const gh of ghTerminal) {

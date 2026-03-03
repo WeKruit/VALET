@@ -167,7 +167,18 @@ export interface GHCallbackCostBreakdown {
 export interface GHCallbackPayload {
   job_id: string;
   valet_task_id: string | null;
-  status: "running" | "completed" | "failed" | "cancelled" | "needs_human" | "resumed";
+  status:
+    | "pending"
+    | "queued"
+    | "running"
+    | "paused"
+    | "needs_human"
+    | "awaiting_review"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "expired"
+    | "resumed"; // legacy compatibility
   worker_id?: string;
   completed_at?: string;
   progress?: number;
