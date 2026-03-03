@@ -31,7 +31,6 @@ import {
   HeartPulse,
   RefreshCw,
   Trash2,
-  ExternalLink,
   Cpu,
   HardDrive,
   MemoryStick,
@@ -399,19 +398,6 @@ export function SandboxDetailPage() {
             </InfoField>
             <InfoField label="Created">{formatRelativeTime(createdAt)}</InfoField>
             <InfoField label="Updated">{formatRelativeTime(updatedAt)}</InfoField>
-            {sandbox.novncUrl && (
-              <InfoField label="noVNC">
-                <a
-                  href={`${sandbox.novncUrl}/vnc.html`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-[var(--wk-copilot)] hover:underline flex items-center gap-1"
-                >
-                  Open VNC
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </InfoField>
-            )}
           </div>
         </CardContent>
       </Card>

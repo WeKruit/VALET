@@ -4,6 +4,7 @@ import type { GHCallbackPayload, GHDeployWebhookPayload } from "./ghosthands.typ
 import type { TaskStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
 import { streamKey } from "../../lib/redis-streams.js";
+import { browserSessionTokenStore } from "../tasks/browser-session-token-store.js";
 
 /**
  * Verify shared service key from GhostHands.
@@ -172,6 +173,13 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(200).send({ received: true, skipped: true });
       }
 
+      // Invalidate browser-session tokens when task leaves waiting_human
+      // (resumed, completed, failed, cancelled). Prevents stale tokens
+      // from connecting to a different paused job on the same worker.
+      if (taskStatus !== "waiting_human") {
+        browserSessionTokenStore.invalidateByTaskId(valetTaskId);
+      }
+
       // HITL-specific data handling
       // Map GH interaction types to VALET's schema (e.g. "2fa" → "two_factor")
       const interactionTypeMap: Record<string, string> = {
@@ -252,6 +260,14 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         ghJobUpdate.metadata = {
           ...((ghJobUpdate.metadata as Record<string, unknown>) ?? {}),
           kasm_url: payload.kasm_url,
+        };
+      }
+
+      // Store browser_session_available in job metadata
+      if (payload.browser_session_available != null) {
+        ghJobUpdate.metadata = {
+          ...((ghJobUpdate.metadata as Record<string, unknown>) ?? {}),
+          browser_session_available: payload.browser_session_available,
         };
       }
 
@@ -398,6 +414,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           taskId: task.id,
           status: taskStatus,
           ...(vncUrl ? { vncUrl, vncType } : {}),
+          browserSessionAvailable: payload.browser_session_available ?? false,
           interaction: {
             type: wsMappedType,
             screenshotUrl: payload.interaction.screenshot_url ?? null,

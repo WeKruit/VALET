@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@valet/ui/components/tooltip";
-import { Terminal, Monitor, HeartPulse, Copy, Check, ExternalLink } from "lucide-react";
+import { Terminal, HeartPulse, Copy, Check, ExternalLink } from "lucide-react";
 
 interface SandboxConnectionInfoProps {
   publicIp: string | null | undefined;
@@ -50,7 +50,6 @@ export function SandboxConnectionInfo({ publicIp, sshKeyName }: SandboxConnectio
 
   const keyPath = sshKeyName ? `~/.ssh/${sshKeyName}.pem` : "~/.ssh/wekruit-atm-server.pem";
   const sshCommand = `ssh -i ${keyPath} ubuntu@${publicIp}`;
-  const novncUrl = `http://${publicIp}:6080/vnc.html`;
   const healthUrl = `http://${publicIp}:8080/health`;
 
   return (
@@ -63,12 +62,6 @@ export function SandboxConnectionInfo({ publicIp, sshKeyName }: SandboxConnectio
       </CardHeader>
       <CardContent className="space-y-4">
         <ConnectionRow icon={<Terminal className="h-4 w-4" />} label="SSH" value={sshCommand} />
-        <ConnectionRow
-          icon={<Monitor className="h-4 w-4" />}
-          label="noVNC"
-          value={novncUrl}
-          href={novncUrl}
-        />
         <ConnectionRow
           icon={<HeartPulse className="h-4 w-4" />}
           label="Health"

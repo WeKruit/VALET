@@ -196,6 +196,8 @@ export interface GHCallbackPayload {
   interaction?: GHInteractionData;
   /** Kasm session URL for live browser view (WEK-162) */
   kasm_url?: string;
+  /** Whether a browser liveview session is available for takeover */
+  browser_session_available?: boolean;
   // Legacy format support (if GH is updated to match original spec)
   result?: GHJobResult;
   error?: GHJobError;

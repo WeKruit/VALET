@@ -383,7 +383,7 @@ export function WorkersPage() {
                         Uptime
                       </th>
                       <th className="px-4 py-3 text-center font-medium text-[var(--wk-text-secondary)]">
-                        VNC
+                        Session
                       </th>
                       <th className="px-4 py-3 text-right font-medium text-[var(--wk-text-secondary)]">
                         Actions
@@ -465,25 +465,21 @@ export function WorkersPage() {
                           {formatUptime(w.uptime_seconds)}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {w.ec2_ip ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <a
-                                  href={`http://${w.ec2_ip}:6901/`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center justify-center rounded-md p-1.5 text-[var(--wk-text-secondary)] hover:text-[var(--wk-text-primary)] hover:bg-[var(--wk-surface-sunken)] transition-colors"
-                                >
-                                  <Monitor className="h-4 w-4" />
-                                </a>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Open VNC session ({w.ec2_ip}:6901)</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            <span className="text-[var(--wk-text-tertiary)]">{"\u2014"}</span>
-                          )}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled
+                                className="inline-flex items-center justify-center rounded-md p-1.5"
+                              >
+                                <Monitor className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Coming soon</p>
+                            </TooltipContent>
+                          </Tooltip>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">

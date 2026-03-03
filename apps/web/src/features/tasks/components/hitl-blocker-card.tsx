@@ -16,6 +16,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { useResolveBlocker } from "../hooks/use-tasks";
+import { useCreateBrowserSession } from "../hooks/use-browser-session";
 
 interface HitlBlockerCardProps {
   taskId: string;
@@ -33,8 +34,8 @@ interface HitlBlockerCardProps {
     } | null;
     pausedAt: string;
   };
-  vncUrl?: string | null;
-  vncType?: "novnc" | "kasm" | "kasmvnc";
+  /** Whether a browser liveview session is available for this task */
+  browserSessionAvailable?: boolean;
   onCancel: () => void;
 }
 
@@ -85,11 +86,11 @@ function formatCountdown(seconds: number): string {
 export function HitlBlockerCard({
   taskId,
   interaction,
-  vncUrl,
-  vncType: _vncType,
+  browserSessionAvailable,
   onCancel,
 }: HitlBlockerCardProps) {
   const resolveBlocker = useResolveBlocker();
+  const browserSession = useCreateBrowserSession();
   const [remaining, setRemaining] = useState<number | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [loginUsername, setLoginUsername] = useState("");
@@ -255,15 +256,28 @@ export function HitlBlockerCard({
           </div>
         )}
 
-        {/* Watch & Resolve in browser */}
-        {vncUrl && (
+        {/* Browser session — opens live browser view in new tab */}
+        {browserSessionAvailable ? (
           <Button
             variant="primary"
             className="w-full"
-            onClick={() => window.open(vncUrl, "_blank", "noopener,noreferrer")}
+            disabled={browserSession.isPending}
+            onClick={() =>
+              browserSession.mutate({
+                params: { id: taskId },
+                body: {},
+              })
+            }
           >
-            <Monitor className="h-4 w-4 mr-1.5" /> Watch & Resolve in Browser
+            <Monitor className="h-4 w-4 mr-1.5" />
+            {browserSession.isPending ? "Opening..." : "Open Browser Session"}
           </Button>
+        ) : (
+          <div className="rounded-[var(--wk-radius-md)] bg-[var(--wk-surface-sunken)] px-3 py-2 text-center">
+            <p className="text-xs text-[var(--wk-text-tertiary)]">
+              Browser session not available for this task
+            </p>
+          </div>
         )}
 
         {/* Type-specific resolution controls */}

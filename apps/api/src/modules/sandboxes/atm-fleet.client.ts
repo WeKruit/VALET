@@ -168,6 +168,23 @@ export class AtmFleetClient {
     return status.workers.find((w) => w.serverId === fleetId) ?? null;
   }
 
+  // ── Cache Invalidation ──────────────────────────────────────────
+
+  /** Clear all caches — used by liveview session IP-churn guard. */
+  invalidateAllCaches(): void {
+    this.idleStatusCache = null;
+    this.fleetIdCache.clear();
+  }
+
+  /**
+   * Resolve fleet ID after invalidating all caches.
+   * Used for the one-retry path when a stale worker IP causes a GH call to fail.
+   */
+  async resolveFleetIdFresh(sandbox: SandboxRecord): Promise<string | null> {
+    this.invalidateAllCaches();
+    return this.resolveFleetId(sandbox);
+  }
+
   // ── Private ──────────────────────────────────────────────────────
 
   private cacheFleetId(instanceId: string, fleetId: string): void {
