@@ -61,7 +61,7 @@ const ENV_MAP: Record<string, SandboxEnvironment> = {
 };
 
 function resolveEnvironment(): SandboxEnvironment {
-  const raw = process.env.VALET_ENVIRONMENT ?? process.env.NODE_ENV ?? "staging";
+  const raw = process.env.VALET_ENVIRONMENT ?? "staging";
   return ENV_MAP[raw] ?? "staging";
 }
 
@@ -450,13 +450,13 @@ export class InstanceDiscoveryService {
     // Determine sandbox name using sequential numbering
     const existingAsg = await this.sandboxRepo.findAsgManaged();
     const maxN = existingAsg.reduce((max, s) => {
-      const match = s.name.match(/gh-worker-asg-(\d+)/);
+      const match = s.name.match(/gh-worker-(\d+)/);
       const num = match?.[1];
       return num ? Math.max(max, parseInt(num, 10)) : max;
     }, 0);
 
     const sandbox = await this.sandboxRepo.create({
-      name: `gh-worker-asg-${maxN + 1}`,
+      name: `gh-worker-${maxN + 1}`,
       environment: this.environment,
       instanceId: instance.instanceId,
       instanceType: instance.instanceType,

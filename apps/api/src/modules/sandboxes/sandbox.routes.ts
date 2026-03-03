@@ -3,6 +3,8 @@ import { sandboxContract } from "@valet/contracts";
 import { adminOnly } from "../../common/middleware/admin.js";
 import { AppError } from "../../common/errors.js";
 import type { DeployRecord } from "./deploy.service.js";
+// SANDBOX_AGENT_PORT (8080) is only used by deploy/drain/etc methods in SandboxAgentClient.
+// listWorkers fallback now uses GH_API_PORT (3100) directly.
 
 const s = initServer();
 
@@ -323,23 +325,30 @@ export const sandboxRouter = s.router(sandboxContract, {
     await adminOnly(request);
     const {
       sandboxService,
-      sandboxProviderFactory,
       sandboxAgentClient,
       auditLogService,
       sandboxRepo,
       logger,
+      atmFleetClient,
     } = request.diScope.cradle;
 
     const sandbox = await sandboxService.getById(params.id);
-    const provider = sandboxProviderFactory.getProvider(sandbox);
 
-    // Try live agent first; fall back to DB-based worker info from gh_worker_registry
+    // Async fleet resolution first (tags → cache → ATM lookup by instanceId → by IP)
     let agentUrl: string | null = null;
-    try {
-      agentUrl = provider.getAgentUrl(sandbox);
-    } catch {
-      logger.debug({ sandboxId: params.id }, "No agent URL for sandbox (no publicIp)");
+    const atmBaseUrl = process.env.ATM_BASE_URL;
+    if (atmFleetClient.isConfigured && atmBaseUrl) {
+      const fleetId = await atmFleetClient.resolveFleetId(sandbox);
+      if (fleetId) {
+        agentUrl = `${atmBaseUrl}/fleet/${fleetId}`;
+      }
     }
+
+    // No direct-IP fallback: the old deploy-server (port 8080) that provided
+    // a /workers endpoint matching the WorkerInfo contract has been migrated
+    // to ATM on a different host. GH's own /monitoring/workers returns a
+    // different shape (Supabase registry rows, not WorkerInfo). If ATM
+    // resolution fails, we fall through to the DB fallback below.
 
     if (agentUrl) {
       try {

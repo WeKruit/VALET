@@ -183,6 +183,7 @@ export class AtmFleetClient {
 
   private async get<T>(path: string, timeoutMs = 10_000): Promise<T> {
     const resp = await fetch(`${this.baseUrl}${path}`, {
+      headers: { "X-Deploy-Secret": this.deploySecret },
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!resp.ok) {
