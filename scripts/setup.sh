@@ -159,15 +159,6 @@ pnpm turbo build --filter=@valet/shared --filter=@valet/contracts --filter=@vale
 ok "Packages built"
 echo ""
 
-# ── 8. Check Hatchet token ──
-HATCHET_TOKEN=$(env_val "HATCHET_CLIENT_TOKEN")
-if [ -z "$HATCHET_TOKEN" ] || echo "$HATCHET_TOKEN" | grep -qE "$PLACEHOLDERS"; then
-  warn "HATCHET_CLIENT_TOKEN is not set."
-  warn "Get it from the Hatchet dashboard → Settings → API Tokens"
-  warn "The worker won't start without it, but API and Web will work."
-  echo ""
-fi
-
 # ── Done ──
 echo "╔══════════════════════════════════════════╗"
 echo "║           Setup complete!                ║"

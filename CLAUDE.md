@@ -37,7 +37,7 @@ Open: http://localhost:5173 (web) / http://localhost:8000 (api)
 
 ## Project Structure
 
-Turborepo + pnpm monorepo with 8 workspaces:
+Turborepo + pnpm monorepo with 7 workspaces:
 
 ```
 packages/shared    - Zod schemas, types, constants
@@ -46,7 +46,6 @@ packages/db        - Drizzle ORM, migrations, seed
 packages/ui        - Radix + Tailwind component library
 packages/llm       - LLM provider abstraction (Anthropic, OpenAI)
 apps/api           - Fastify API server (port 8000)
-apps/worker        - GhostHands browser automation worker (dispatches jobs via REST)
 apps/web           - React SPA (Vite + React Router, port 5173)
 ```
 
@@ -190,7 +189,6 @@ Note: flyctl resolves Dockerfile paths relative to the toml file directory.
 ```bash
 # Staging
 fly deploy --config fly/api.toml --app valet-api-stg --remote-only
-fly deploy --config fly/worker.toml --app valet-worker-stg --remote-only
 fly deploy --config fly/web.toml --app valet-web-stg --remote-only \
   --build-arg VITE_API_URL=https://valet-api-stg.fly.dev \
   --build-arg VITE_WS_URL=wss://valet-api-stg.fly.dev \
@@ -198,7 +196,6 @@ fly deploy --config fly/web.toml --app valet-web-stg --remote-only \
 
 # Production
 fly deploy --config fly/api.toml --app valet-api --remote-only
-fly deploy --config fly/worker.toml --app valet-worker --remote-only
 fly deploy --config fly/web.toml --app valet-web --remote-only \
   --build-arg VITE_API_URL=https://valet-api.fly.dev \
   --build-arg VITE_WS_URL=wss://valet-api.fly.dev \

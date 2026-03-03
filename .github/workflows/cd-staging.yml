@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       deploy-api: ${{ steps.targets.outputs.deploy-api }}
-      deploy-worker: ${{ steps.targets.outputs.deploy-worker }}
       deploy-web: ${{ steps.targets.outputs.deploy-web }}
       any-deploy: ${{ steps.targets.outputs.any-deploy }}
     steps:
@@ -46,8 +45,6 @@ jobs:
               - 'packages/ui/**'
             api:
               - 'apps/api/**'
-            worker:
-              - 'apps/worker/**'
             web:
               - 'apps/web/**'
             infra:
@@ -62,7 +59,6 @@ jobs:
           # Manual dispatch with deploy-all overrides change detection
           if [[ "${{ inputs.deploy-all }}" == "true" ]]; then
             echo "deploy-api=true" >> $GITHUB_OUTPUT
-            echo "deploy-worker=true" >> $GITHUB_OUTPUT
             echo "deploy-web=true" >> $GITHUB_OUTPUT
             echo "any-deploy=true" >> $GITHUB_OUTPUT
             echo "Manual deploy-all: deploying all services"
@@ -86,19 +82,6 @@ jobs:
             DEPLOY_API=false
           fi
 
-          # Worker depends on: shared, contracts, db, llm
-          if [[ "${{ steps.changes.outputs.worker }}" == "true" \
-             || "${{ steps.changes.outputs.shared }}" == "true" \
-             || "${{ steps.changes.outputs.contracts }}" == "true" \
-             || "${{ steps.changes.outputs.db }}" == "true" \
-             || "${{ steps.changes.outputs.llm }}" == "true" \
-             || "${{ steps.changes.outputs.infra }}" == "true" ]]; then
-            DEPLOY_WORKER=true
-            CHANGES_DETECTED=true
-          else
-            DEPLOY_WORKER=false
-          fi
-
           # Web depends on: shared, contracts, ui
           if [[ "${{ steps.changes.outputs.web }}" == "true" \
              || "${{ steps.changes.outputs.shared }}" == "true" \
@@ -117,12 +100,10 @@ jobs:
           if [[ "$CHANGES_DETECTED" == "false" ]]; then
             echo "⚠️ No path changes detected — deploying all as safety fallback"
             DEPLOY_API=true
-            DEPLOY_WORKER=true
             DEPLOY_WEB=true
           fi
 
           echo "deploy-api=$DEPLOY_API" >> $GITHUB_OUTPUT
-          echo "deploy-worker=$DEPLOY_WORKER" >> $GITHUB_OUTPUT
           echo "deploy-web=$DEPLOY_WEB" >> $GITHUB_OUTPUT
           echo "any-deploy=true" >> $GITHUB_OUTPUT
 
@@ -130,7 +111,6 @@ jobs:
           echo "| Target | Deploy? |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|---------|" >> $GITHUB_STEP_SUMMARY
           echo "| API | $DEPLOY_API |" >> $GITHUB_STEP_SUMMARY
-          echo "| Worker | $DEPLOY_WORKER |" >> $GITHUB_STEP_SUMMARY
           echo "| Web | $DEPLOY_WEB |" >> $GITHUB_STEP_SUMMARY
           echo "Note: DB migrations run automatically via Fly.io release_command during API deploy" >> $GITHUB_STEP_SUMMARY
 
@@ -141,12 +121,10 @@ jobs:
     with:
       environment: staging
       api-app: valet-api-stg
-      worker-app: valet-worker-stg
       web-app: valet-web-stg
       api-url: https://valet-api-stg.fly.dev
       google-client-id: "108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com"
       deploy-api: ${{ needs.detect-changes.outputs.deploy-api == 'true' }}
-      deploy-worker: ${{ needs.detect-changes.outputs.deploy-worker == 'true' }}
       deploy-web: ${{ needs.detect-changes.outputs.deploy-web == 'true' }}
     secrets:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

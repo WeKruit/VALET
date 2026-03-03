@@ -24,8 +24,7 @@ pnpm dev                          # Start all apps with hot-reload
 wekruit-valet/
 ├── apps/
 │   ├── web/              @valet/web       React + Vite dashboard (SPA)
-│   ├── api/              @valet/api       Fastify REST API + WebSocket
-│   └── worker/           @valet/worker    GhostHands job dispatch worker
+│   └── api/              @valet/api       Fastify REST API + WebSocket
 ├── packages/
 │   ├── shared/           @valet/shared    Zod schemas, types, constants, errors
 │   ├── contracts/        @valet/contracts ts-rest API contract definitions
@@ -34,7 +33,6 @@ wekruit-valet/
 │   └── llm/              @valet/llm       LLM provider router (Anthropic + OpenAI)
 ├── fly/                                   Fly.io deployment configs
 ├── infra/                                 Terraform + EC2 provisioning scripts
-├── docker/                                Docker Compose for local infrastructure
 ├── tests/                                 E2E tests, fixtures, mock ATS pages
 ├── scripts/                               Dev setup and health check scripts
 ├── docs/                                  Technical documentation
@@ -51,7 +49,6 @@ llm --> shared
 ui --> shared
 api --> contracts, db, shared, llm
 web --> contracts, shared, ui
-worker --> contracts, db, shared, llm
 ```
 
 ### How It Works
