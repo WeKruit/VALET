@@ -105,7 +105,7 @@ export type SandboxProfileStatus = "available" | "in_use" | "error" | "retired";
 
 /**
  * Snapshot of the current page state.
- * JSON-serializable so it can cross Hatchet task boundaries.
+ * JSON-serializable for cross-service communication.
  */
 export interface PageState {
   url: string;
