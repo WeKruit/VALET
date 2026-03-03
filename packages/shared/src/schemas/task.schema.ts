@@ -165,7 +165,7 @@ export const resolveBlockerResponse = z.object({
 });
 
 // ─── VNC URL Response ───
-export const liveViewType = z.enum(["novnc", "kasm", "kasmvnc"]);
+export const liveViewType = z.enum(["browser_session", "novnc", "kasm", "kasmvnc"]);
 export type LiveViewType = z.infer<typeof liveViewType>;
 
 export const vncUrlResponse = z.object({
@@ -175,6 +175,19 @@ export const vncUrlResponse = z.object({
 });
 
 export type VncUrlResponse = z.infer<typeof vncUrlResponse>;
+
+// ─── Browser Session Response ───
+export const browserSessionResponse = z.object({
+  url: z.string().url(),
+  expiresAt: z.string(),
+  readOnly: z.boolean(),
+  type: z.literal("browser_session"),
+  mode: z.literal("simple_browser"),
+  pageUrl: z.string().optional(),
+  pageTitle: z.string().optional(),
+});
+
+export type BrowserSessionResponse = z.infer<typeof browserSessionResponse>;
 
 // ─── GhostHands Job Data (enriched from GH API) ───
 export const ghJobSchema = z.object({
@@ -205,6 +218,7 @@ export const ghJobSchema = z.object({
     completedAt: z.string().nullable().optional(),
   }),
   targetWorkerId: z.string().nullable().optional(),
+  browserSessionAvailable: z.boolean().optional(),
 });
 
 // ─── Response DTOs ───

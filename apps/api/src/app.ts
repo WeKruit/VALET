@@ -16,6 +16,7 @@ import securityPlugin from "./plugins/security.js";
 import swaggerPlugin from "./plugins/swagger.js";
 import caslPlugin from "./plugins/casl.js";
 import { registerWebSocket } from "./websocket/handler.js";
+import { registerBrowserSessionWs } from "./modules/tasks/browser-session-ws.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { taskRouter } from "./modules/tasks/task.routes.js";
 import { taskEventRouter } from "./modules/task-events/task-event.routes.js";
@@ -156,6 +157,9 @@ export async function buildApp() {
 
   // WebSocket
   await registerWebSocket(fastify);
+
+  // Browser session WebSocket (must be after @fastify/websocket registration)
+  await registerBrowserSessionWs(fastify);
 
   // Start monitors after server is ready
   fastify.addHook("onReady", async () => {
