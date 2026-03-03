@@ -237,6 +237,14 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         };
       }
 
+      // Store browser_session_available in job metadata
+      if (payload.browser_session_available != null) {
+        ghJobUpdate.metadata = {
+          ...((ghJobUpdate.metadata as Record<string, unknown>) ?? {}),
+          browser_session_available: payload.browser_session_available,
+        };
+      }
+
       {
         const now = new Date();
         if (payload.status === "running") {
@@ -377,6 +385,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           taskId: task.id,
           status: taskStatus,
           ...(vncUrl ? { vncUrl, vncType } : {}),
+          browserSessionAvailable: payload.browser_session_available ?? false,
           interaction: {
             type: wsMappedType,
             screenshotUrl: payload.interaction.screenshot_url ?? null,
