@@ -14,7 +14,12 @@ interface PrivateMethods {
   deregisterStaleSandbox(sandbox: SandboxRecord): Promise<number>;
   recoverOrphanedJobs(sandbox: SandboxRecord): Promise<number>;
   updateSandboxIp(sandbox: SandboxRecord, instance: AsgInstance): Promise<void>;
-  probeAndActivate(sandboxId: string): Promise<void>;
+  scheduleProbeWithRetry(sandboxId: string, attempt?: number): void;
+  probeAndActivateWithRetry(sandboxId: string, attempt: number): Promise<void>;
+  syncEc2Status(
+    sandbox: SandboxRecord,
+    instance: AsgInstance,
+  ): Promise<"stopped" | "waking" | "unchanged">;
 }
 
 // ─── Mock Factories ───
@@ -160,6 +165,7 @@ function makeAsgInstance(overrides: Partial<AsgInstance> = {}): AsgInstance {
     instanceType: "t3.large",
     lifecycleState: "InService",
     healthStatus: "Healthy",
+    ec2State: "running",
     ...overrides,
   };
 }
@@ -308,6 +314,24 @@ describe("InstanceDiscoveryService", () => {
       expect(diff.staleRecords).toHaveLength(0);
     });
 
+    it("reports no IP change when instance IP is null (stopped)", () => {
+      const mocks = makeMocks();
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      const sandbox = makeSandbox({
+        instanceId: "i-stopped",
+        publicIp: "10.0.0.1",
+      });
+
+      const diff = priv(service).computeDiff(
+        [makeAsgInstance({ instanceId: "i-stopped", publicIp: null, ec2State: "stopped" })],
+        [sandbox],
+      );
+
+      expect(diff.matched).toHaveLength(1);
+      expect(diff.matched[0]?.ipChanged).toBe(false);
+    });
+
     it("reports no IP change when IPs match", () => {
       const mocks = makeMocks();
       const service = new InstanceDiscoveryService(mocks as never);
@@ -369,6 +393,58 @@ describe("InstanceDiscoveryService", () => {
           result: "success",
         }),
       );
+    });
+
+    it("reactivates terminated sandbox only when EC2 is running", async () => {
+      const mocks = makeMocks();
+      mocks.sandboxRepo.findByInstanceId.mockResolvedValue(
+        makeSandbox({ id: "sb-old", instanceId: "i-new123", status: "terminated" }),
+      );
+
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      await priv(service).registerNewInstance(
+        makeAsgInstance({ instanceId: "i-new123", ec2State: "running", publicIp: "10.0.0.5" }),
+      );
+
+      expect(mocks.sandboxRepo.update).toHaveBeenCalledWith(
+        "sb-old",
+        expect.objectContaining({
+          status: "provisioning",
+          ec2Status: "running",
+          publicIp: "10.0.0.5",
+        }),
+      );
+
+      service.stop();
+    });
+
+    it("transitions terminated sandbox to stopped when EC2 is stopped", async () => {
+      const mocks = makeMocks();
+      mocks.sandboxRepo.findByInstanceId.mockResolvedValue(
+        makeSandbox({ id: "sb-old", instanceId: "i-new123", status: "terminated" }),
+      );
+
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      await priv(service).registerNewInstance(
+        makeAsgInstance({ instanceId: "i-new123", ec2State: "stopped", publicIp: null }),
+      );
+
+      expect(mocks.sandboxRepo.update).toHaveBeenCalledWith(
+        "sb-old",
+        expect.objectContaining({
+          status: "stopped",
+          ec2Status: "stopped",
+          publicIp: null,
+          healthStatus: "unhealthy",
+          lastStoppedAt: expect.any(Date),
+        }),
+      );
+
+      // Should NOT schedule probes for a stopped instance
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(mocks.sandboxRepo.findById).not.toHaveBeenCalled();
     });
 
     it("auto-increments sandbox name based on existing", async () => {
@@ -538,6 +614,20 @@ describe("InstanceDiscoveryService", () => {
   });
 
   describe("updateSandboxIp", () => {
+    it("skips update when instance IP is null", async () => {
+      const mocks = makeMocks();
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      const sandbox = makeSandbox({ id: "sb-1", publicIp: "10.0.0.1" });
+      await priv(service).updateSandboxIp(
+        sandbox,
+        makeAsgInstance({ instanceId: "i-abc", publicIp: null, ec2State: "stopped" }),
+      );
+
+      expect(mocks.sandboxRepo.update).not.toHaveBeenCalled();
+      expect(mocks.auditLogService.log).not.toHaveBeenCalled();
+    });
+
     it("updates sandbox IP and worker registry", async () => {
       const mocks = makeMocks();
 
@@ -565,7 +655,7 @@ describe("InstanceDiscoveryService", () => {
     });
   });
 
-  describe("probeAndActivate", () => {
+  describe("probeAndActivateWithRetry", () => {
     it("activates sandbox when health check passes", async () => {
       const mocks = makeMocks();
       const sandbox = makeSandbox({ id: "sb-new", status: "provisioning" });
@@ -578,7 +668,7 @@ describe("InstanceDiscoveryService", () => {
 
       const service = new InstanceDiscoveryService(mocks as never);
 
-      await priv(service).probeAndActivate("sb-new");
+      await priv(service).probeAndActivateWithRetry("sb-new", 0);
 
       expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-new", {
         status: "active",
@@ -590,11 +680,12 @@ describe("InstanceDiscoveryService", () => {
         expect.objectContaining({
           sandboxId: "sb-new",
           action: "instance_activated",
+          details: expect.objectContaining({ attempt: 1 }),
         }),
       );
     });
 
-    it("leaves sandbox as provisioning when unhealthy", async () => {
+    it("leaves sandbox as provisioning when unhealthy and schedules next retry", async () => {
       const mocks = makeMocks();
       const sandbox = makeSandbox({ id: "sb-new", status: "provisioning" });
       mocks.sandboxRepo.findById.mockResolvedValue(sandbox);
@@ -606,7 +697,7 @@ describe("InstanceDiscoveryService", () => {
 
       const service = new InstanceDiscoveryService(mocks as never);
 
-      await priv(service).probeAndActivate("sb-new");
+      await priv(service).probeAndActivateWithRetry("sb-new", 0);
 
       expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-new", {
         healthStatus: "unhealthy",
@@ -618,6 +709,15 @@ describe("InstanceDiscoveryService", () => {
         "sb-new",
         expect.objectContaining({ status: "active" }),
       );
+
+      // Verify retry was scheduled: advance to the next retry delay (45s for attempt 1)
+      // and confirm probeAndActivateWithRetry fires again via findById
+      mocks.sandboxRepo.findById.mockClear();
+      await vi.advanceTimersByTimeAsync(46_000);
+      expect(mocks.sandboxRepo.findById).toHaveBeenCalledWith("sb-new");
+
+      // Cleanup pending timeouts
+      service.stop();
     });
 
     it("does nothing when sandbox not found", async () => {
@@ -626,9 +726,128 @@ describe("InstanceDiscoveryService", () => {
 
       const service = new InstanceDiscoveryService(mocks as never);
 
-      await priv(service).probeAndActivate("sb-nonexistent");
+      await priv(service).probeAndActivateWithRetry("sb-nonexistent", 0);
 
       expect(mocks.deepHealthChecker.check).not.toHaveBeenCalled();
+    });
+
+    it("stops retrying if sandbox is no longer provisioning", async () => {
+      const mocks = makeMocks();
+      const sandbox = makeSandbox({ id: "sb-stopped", status: "stopped" });
+      mocks.sandboxRepo.findById.mockResolvedValue(sandbox);
+
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      await priv(service).probeAndActivateWithRetry("sb-stopped", 1);
+
+      expect(mocks.deepHealthChecker.check).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("syncEc2Status", () => {
+    it("transitions active sandbox to stopped when EC2 is stopped", async () => {
+      const mocks = makeMocks();
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      const sandbox = makeSandbox({ id: "sb-1", status: "active", publicIp: "10.0.0.1" });
+      const instance = makeAsgInstance({
+        instanceId: "i-abc123",
+        publicIp: null,
+        ec2State: "stopped",
+      });
+
+      const result = await priv(service).syncEc2Status(sandbox, instance);
+
+      expect(result).toBe("stopped");
+      expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-1", {
+        status: "stopped",
+        ec2Status: "stopped",
+        publicIp: null,
+        healthStatus: "unhealthy",
+        lastStoppedAt: expect.any(Date),
+      });
+    });
+
+    it("transitions stopped sandbox to provisioning when EC2 is running", async () => {
+      const mocks = makeMocks();
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      const sandbox = makeSandbox({ id: "sb-1", status: "stopped", publicIp: null });
+      const instance = makeAsgInstance({
+        instanceId: "i-abc123",
+        publicIp: "10.0.0.99",
+        ec2State: "running",
+      });
+
+      const result = await priv(service).syncEc2Status(sandbox, instance);
+
+      expect(result).toBe("waking");
+      expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-1", {
+        status: "provisioning",
+        ec2Status: "running",
+        publicIp: "10.0.0.99",
+        healthStatus: "degraded",
+        lastStartedAt: expect.any(Date),
+      });
+    });
+
+    it("returns unchanged when active sandbox has running EC2", async () => {
+      const mocks = makeMocks();
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      const sandbox = makeSandbox({ id: "sb-1", status: "active" });
+      const instance = makeAsgInstance({ instanceId: "i-abc123", ec2State: "running" });
+
+      const result = await priv(service).syncEc2Status(sandbox, instance);
+
+      expect(result).toBe("unchanged");
+      expect(mocks.sandboxRepo.update).not.toHaveBeenCalled();
+    });
+
+    it("transitions provisioning sandbox to stopped when EC2 stops", async () => {
+      const mocks = makeMocks();
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      const sandbox = makeSandbox({ id: "sb-1", status: "provisioning", publicIp: "10.0.0.1" });
+      const instance = makeAsgInstance({
+        instanceId: "i-abc123",
+        publicIp: null,
+        ec2State: "stopping",
+      });
+
+      const result = await priv(service).syncEc2Status(sandbox, instance);
+
+      expect(result).toBe("stopped");
+      expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-1", {
+        status: "stopped",
+        ec2Status: "stopping",
+        publicIp: null,
+        healthStatus: "unhealthy",
+        lastStoppedAt: expect.any(Date),
+      });
+    });
+
+    it("transitions stopping sandbox to stopped when EC2 is stopped", async () => {
+      const mocks = makeMocks();
+      const service = new InstanceDiscoveryService(mocks as never);
+
+      const sandbox = makeSandbox({ id: "sb-1", status: "stopping", publicIp: "10.0.0.1" });
+      const instance = makeAsgInstance({
+        instanceId: "i-abc123",
+        publicIp: null,
+        ec2State: "stopped",
+      });
+
+      const result = await priv(service).syncEc2Status(sandbox, instance);
+
+      expect(result).toBe("stopped");
+      expect(mocks.sandboxRepo.update).toHaveBeenCalledWith("sb-1", {
+        status: "stopped",
+        ec2Status: "stopped",
+        publicIp: null,
+        healthStatus: "unhealthy",
+        lastStoppedAt: expect.any(Date),
+      });
     });
   });
 

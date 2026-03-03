@@ -9,7 +9,7 @@ import type Redis from "ioredis";
 import type { Database } from "@valet/db";
 import type { SandboxEnvironment } from "@valet/shared/schemas";
 import type { SandboxRepository, SandboxRecord } from "../sandboxes/sandbox.repository.js";
-import type { DeepHealthChecker, DeepHealthResult } from "../sandboxes/deep-health-checker.js";
+import type { DeepHealthChecker } from "../sandboxes/deep-health-checker.js";
 import type { AuditLogService } from "../sandboxes/audit-log.service.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { TaskRepository } from "../tasks/task.repository.js";
@@ -20,10 +20,11 @@ import { publishToUser } from "../../websocket/handler.js";
 
 export interface AsgInstance {
   instanceId: string;
-  publicIp: string;
+  publicIp: string | null;
   instanceType: string;
   lifecycleState: string;
   healthStatus: string;
+  ec2State: string;
 }
 
 export interface DiscoveryDiff {
@@ -42,6 +43,7 @@ export interface ReconciliationResult {
   registered: number;
   deregistered: number;
   ipUpdated: number;
+  statusSynced: number;
   orphanedJobsRecovered: number;
   errors: string[];
   timestamp: number;
@@ -50,7 +52,7 @@ export interface ReconciliationResult {
 // ─── Constants ───
 
 const DISCOVERY_INTERVAL_MS = 60_000; // 60 seconds
-const HEALTH_PROBE_DELAY_MS = 15_000; // Wait 15s before probing new instances
+const PROBE_RETRY_DELAYS_MS = [15_000, 45_000, 90_000, 150_000]; // 15s, 45s, 90s, 150s
 
 const ENV_MAP: Record<string, SandboxEnvironment> = {
   production: "prod",
@@ -209,6 +211,7 @@ export class InstanceDiscoveryService {
         registered: 0,
         deregistered: 0,
         ipUpdated: 0,
+        statusSynced: 0,
         orphanedJobsRecovered: 0,
         errors: [],
         timestamp: Date.now(),
@@ -221,6 +224,7 @@ export class InstanceDiscoveryService {
         registered: 0,
         deregistered: 0,
         ipUpdated: 0,
+        statusSynced: 0,
         orphanedJobsRecovered: 0,
         errors: ["skipped: already running"],
         timestamp: Date.now(),
@@ -232,6 +236,7 @@ export class InstanceDiscoveryService {
       registered: 0,
       deregistered: 0,
       ipUpdated: 0,
+      statusSynced: 0,
       orphanedJobsRecovered: 0,
       errors: [],
       timestamp: Date.now(),
@@ -289,6 +294,20 @@ export class InstanceDiscoveryService {
         }
       }
 
+      // Sync EC2 status for matched instances (stop/wake lifecycle transitions)
+      for (const match of diff.matched) {
+        try {
+          const syncResult = await this.syncEc2Status(match.sandbox, match.instance);
+          if (syncResult !== "unchanged") {
+            result.statusSynced++;
+          }
+        } catch (err) {
+          const msg = `Failed to sync EC2 status for ${match.sandbox.id}: ${err instanceof Error ? err.message : "unknown"}`;
+          result.errors.push(msg);
+          this.logger.error({ err, sandboxId: match.sandbox.id }, msg);
+        }
+      }
+
       this.logger.info(result, "Instance discovery reconciliation complete");
     } catch (err) {
       this.logger.error({ err }, "Instance discovery reconciliation failed");
@@ -331,13 +350,17 @@ export class InstanceDiscoveryService {
       }),
     );
 
-    const ec2Info = new Map<string, { publicIp: string; instanceType: string }>();
+    const ec2Info = new Map<
+      string,
+      { publicIp: string | null; instanceType: string; ec2State: string }
+    >();
     for (const reservation of ec2Result.Reservations ?? []) {
       for (const inst of reservation.Instances ?? []) {
-        if (inst.InstanceId && inst.PublicIpAddress) {
+        if (inst.InstanceId) {
           ec2Info.set(inst.InstanceId, {
-            publicIp: inst.PublicIpAddress,
+            publicIp: inst.PublicIpAddress ?? null,
             instanceType: inst.InstanceType ?? "t3.large",
+            ec2State: inst.State?.Name ?? "unknown",
           });
         }
       }
@@ -351,6 +374,7 @@ export class InstanceDiscoveryService {
           ...i,
           publicIp: info.publicIp,
           instanceType: info.instanceType,
+          ec2State: info.ec2State,
         };
       });
   }
@@ -360,6 +384,7 @@ export class InstanceDiscoveryService {
       "active",
       "provisioning",
       "stopping",
+      "stopped",
     ]);
   }
 
@@ -386,7 +411,7 @@ export class InstanceDiscoveryService {
         matched.push({
           instance,
           sandbox,
-          ipChanged: sandbox.publicIp !== instance.publicIp,
+          ipChanged: instance.publicIp !== null && sandbox.publicIp !== instance.publicIp,
         });
       }
     }
@@ -413,29 +438,45 @@ export class InstanceDiscoveryService {
     const existing = await this.sandboxRepo.findByInstanceId(instance.instanceId);
     if (existing) {
       if (existing.status === "terminated" || existing.status === "stopping") {
-        this.logger.info(
-          { sandboxId: existing.id, instanceId: instance.instanceId, oldStatus: existing.status },
-          "Reactivating terminated sandbox record for returning instance",
-        );
-        await this.sandboxRepo.update(existing.id, {
-          status: "provisioning",
-          ec2Status: "running",
-          healthStatus: "degraded",
-          publicIp: instance.publicIp,
-          instanceType: instance.instanceType,
-        });
-
-        // Schedule health probe
-        const timeoutId = setTimeout(() => {
-          this.pendingTimeouts.delete(timeoutId);
-          this.probeAndActivate(existing.id).catch((err) => {
-            this.logger.error(
-              { err, sandboxId: existing.id },
-              "Health probe after reactivation failed",
-            );
+        // Only reactivate if the EC2 instance is actually running
+        if (instance.ec2State === "running") {
+          this.logger.info(
+            {
+              sandboxId: existing.id,
+              instanceId: instance.instanceId,
+              oldStatus: existing.status,
+              ec2State: instance.ec2State,
+            },
+            "Reactivating terminated sandbox record for running instance",
+          );
+          await this.sandboxRepo.update(existing.id, {
+            status: "provisioning",
+            ec2Status: "running",
+            healthStatus: "degraded",
+            publicIp: instance.publicIp,
+            instanceType: instance.instanceType,
           });
-        }, HEALTH_PROBE_DELAY_MS);
-        this.pendingTimeouts.add(timeoutId);
+          this.scheduleProbeWithRetry(existing.id);
+        } else {
+          // EC2 is stopped/stopping/pending — transition to stopped, don't fake a running state
+          this.logger.info(
+            {
+              sandboxId: existing.id,
+              instanceId: instance.instanceId,
+              oldStatus: existing.status,
+              ec2State: instance.ec2State,
+            },
+            "Returning instance is not running — transitioning to stopped",
+          );
+          await this.sandboxRepo.update(existing.id, {
+            status: "stopped",
+            ec2Status: instance.ec2State as "stopped" | "stopping",
+            healthStatus: "unhealthy",
+            publicIp: null,
+            instanceType: instance.instanceType,
+            lastStoppedAt: new Date(),
+          });
+        }
 
         return;
       }
@@ -460,7 +501,7 @@ export class InstanceDiscoveryService {
       environment: this.environment,
       instanceId: instance.instanceId,
       instanceType: instance.instanceType,
-      publicIp: instance.publicIp,
+      publicIp: instance.publicIp ?? undefined,
       capacity: 1,
       sshKeyName: "wekruit-atm-server.pem",
       tags: {
@@ -493,25 +534,57 @@ export class InstanceDiscoveryService {
       result: "success",
     });
 
-    // Schedule health probe after delay (tracked for cleanup on stop)
+    // Schedule health probe with retry
+    this.scheduleProbeWithRetry(sandbox.id);
+  }
+
+  /**
+   * Schedule a probe with retry. Each attempt checks if the sandbox is still
+   * in provisioning status before probing — if it's already active or stopped,
+   * the retry chain stops.
+   */
+  private scheduleProbeWithRetry(sandboxId: string, attempt = 0): void {
+    if (attempt >= PROBE_RETRY_DELAYS_MS.length) {
+      this.logger.warn(
+        { sandboxId, attempts: PROBE_RETRY_DELAYS_MS.length },
+        "All probe retry attempts exhausted — sandbox remains provisioning",
+      );
+      return;
+    }
+
+    const delay = PROBE_RETRY_DELAYS_MS[attempt]!;
     const timeoutId = setTimeout(() => {
       this.pendingTimeouts.delete(timeoutId);
-      this.probeAndActivate(sandbox.id).catch((err) => {
-        this.logger.error({ err, sandboxId: sandbox.id }, "Health probe after registration failed");
+      this.probeAndActivateWithRetry(sandboxId, attempt).catch((err) => {
+        this.logger.error({ err, sandboxId, attempt }, "Probe retry attempt failed");
       });
-    }, HEALTH_PROBE_DELAY_MS);
+    }, delay);
     this.pendingTimeouts.add(timeoutId);
   }
 
-  private async probeAndActivate(sandboxId: string): Promise<void> {
+  private async probeAndActivateWithRetry(sandboxId: string, attempt: number): Promise<void> {
     const sandbox = await this.sandboxRepo.findById(sandboxId);
     if (!sandbox) return;
 
-    const result: DeepHealthResult = await this.deepHealthChecker.check(sandbox);
+    // Stop retrying if sandbox is no longer in provisioning
+    if (sandbox.status !== "provisioning") {
+      this.logger.debug(
+        { sandboxId, status: sandbox.status, attempt },
+        "Sandbox no longer provisioning — stopping probe retries",
+      );
+      return;
+    }
+
+    const result = await this.deepHealthChecker.check(sandbox);
 
     this.logger.info(
-      { sandboxId, overall: result.overall, checks: result.checks.length },
-      "Health probe result for new instance",
+      {
+        sandboxId,
+        overall: result.overall,
+        attempt: attempt + 1,
+        maxAttempts: PROBE_RETRY_DELAYS_MS.length,
+      },
+      "Probe retry result",
     );
 
     if (result.overall === "healthy") {
@@ -526,25 +599,22 @@ export class InstanceDiscoveryService {
         action: "instance_activated",
         details: {
           healthResult: result.overall,
-          checks: result.checks.map((c) => ({
-            name: c.name,
-            status: c.status,
-          })),
+          attempt: attempt + 1,
+          checks: result.checks.map((c) => ({ name: c.name, status: c.status })),
         },
         result: "success",
       });
-    } else {
-      // Mark degraded but keep as provisioning — the regular health monitor will retry
-      await this.sandboxRepo.update(sandboxId, {
-        healthStatus: result.overall,
-        lastHealthCheckAt: new Date(),
-      });
-
-      this.logger.warn(
-        { sandboxId, overall: result.overall },
-        "New instance not yet healthy, leaving as provisioning",
-      );
+      return;
     }
+
+    // Update health status but keep as provisioning
+    await this.sandboxRepo.update(sandboxId, {
+      healthStatus: result.overall,
+      lastHealthCheckAt: new Date(),
+    });
+
+    // Schedule next retry
+    this.scheduleProbeWithRetry(sandboxId, attempt + 1);
   }
 
   // ─── Private: WEK-168 Auto-Deregister + Orphan Recovery ───
@@ -708,7 +778,63 @@ export class InstanceDiscoveryService {
 
   // ─── Private: IP Update ───
 
+  /**
+   * Synchronize sandbox status with actual EC2 instance state.
+   * State transitions:
+   *   active/provisioning/stopping + ec2 stopped → status=stopped, clear stale publicIp
+   *   stopped + ec2 running → status=provisioning, schedule probe
+   */
+  private async syncEc2Status(
+    sandbox: SandboxRecord,
+    instance: AsgInstance,
+  ): Promise<"stopped" | "waking" | "unchanged"> {
+    const ec2State = instance.ec2State;
+
+    // Active/provisioning/stopping sandbox but EC2 is stopped → mark stopped
+    if (
+      (sandbox.status === "active" ||
+        sandbox.status === "provisioning" ||
+        sandbox.status === "stopping") &&
+      (ec2State === "stopped" || ec2State === "stopping")
+    ) {
+      this.logger.info(
+        { sandboxId: sandbox.id, instanceId: instance.instanceId, ec2State },
+        "EC2 instance stopped — transitioning sandbox to stopped",
+      );
+      await this.sandboxRepo.update(sandbox.id, {
+        status: "stopped",
+        ec2Status: ec2State as "stopped" | "stopping",
+        publicIp: null,
+        healthStatus: "unhealthy",
+        lastStoppedAt: new Date(),
+      });
+      return "stopped";
+    }
+
+    // Stopped sandbox but EC2 is running → instance woke up, start probe cycle
+    if (sandbox.status === "stopped" && ec2State === "running") {
+      this.logger.info(
+        { sandboxId: sandbox.id, instanceId: instance.instanceId, newIp: instance.publicIp },
+        "EC2 instance running again — transitioning sandbox to provisioning",
+      );
+      await this.sandboxRepo.update(sandbox.id, {
+        status: "provisioning",
+        ec2Status: "running",
+        publicIp: instance.publicIp,
+        healthStatus: "degraded",
+        lastStartedAt: new Date(),
+      });
+
+      this.scheduleProbeWithRetry(sandbox.id);
+      return "waking";
+    }
+
+    return "unchanged";
+  }
+
   private async updateSandboxIp(sandbox: SandboxRecord, instance: AsgInstance): Promise<void> {
+    if (!instance.publicIp) return; // stopped instance — no IP to update
+
     this.logger.info(
       {
         sandboxId: sandbox.id,
