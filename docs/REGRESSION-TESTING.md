@@ -325,9 +325,9 @@ test.describe("P0: Frontend Smoke", () => {
 
 ---
 
-## 3. Worker Regression Tests (apps/worker)
+## 3. GhostHands Dispatch Regression Tests (apps/api)
 
-The worker is a GhostHands browser automation client. It dispatches jobs via HTTP POST to GH and handles callbacks. Tests mock the GhostHands API.
+The API dispatches browser automation jobs to GhostHands via HTTP POST and handles callbacks. Tests mock the GhostHands API.
 
 ### P0
 

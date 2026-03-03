@@ -6,31 +6,29 @@
 
 ### Monorepo Layout
 
-VALET is a Turborepo + pnpm workspaces monorepo with 8 workspaces:
+VALET is a Turborepo + pnpm workspaces monorepo with 7 workspaces:
 
 ```
 wekruit-valet/
 ├── apps/
 │   ├── api/              Fastify 5.x REST API + WebSocket server
-│   ├── web/              React 18 SPA (Vite + React Router)
-│   └── worker/           GhostHands job dispatch worker
+│   └── web/              React 18 SPA (Vite + React Router)
 ├── packages/
 │   ├── shared/           Zod schemas, types, constants, error classes
 │   ├── contracts/        ts-rest API contract definitions
 │   ├── db/               Drizzle ORM schema, migrations, database client
 │   ├── ui/               shadcn/ui component library (WeKruit themed)
 │   └── llm/              LLM provider router (Anthropic + OpenAI)
-├── fly/                  Fly.io deployment configs (api.toml, web.toml, worker.toml)
+├── fly/                  Fly.io deployment configs (api.toml, web.toml)
 ├── infra/
 │   ├── terraform/        EC2 sandbox provisioning
-│   ├── scripts/          Install scripts (AdsPower, set-secrets, health-check)
+│   ├── scripts/          Install scripts (set-secrets, health-check)
 │   └── docs/             Infrastructure documentation
-├── docker/               Docker Compose + init-db.sql for local infra
 ├── scripts/              Dev setup, Fly setup, health check, CI validation
 ├── tests/                E2E tests, fixtures
 ├── docs/                 Technical documentation
 ├── core-docs/            Architecture specs, research, GH integration docs
-├── .github/workflows/    CI/CD pipelines (10 workflow files)
+├── .github/workflows/    CI/CD pipelines
 └── product-research/     Product research and analysis
 ```
 
@@ -40,10 +38,10 @@ wekruit-valet/
                   shared
                  /  |   \
            contracts llm  ui
-           /  |      |
-         api  worker  web
-          |   |
-          db  db
+           /         |
+         api         web
+          |
+          db
 ```
 
 Explicit dependencies:
@@ -53,7 +51,6 @@ Explicit dependencies:
 - `ui` -> `shared`
 - `api` -> `contracts`, `db`, `shared`, `llm`
 - `web` -> `contracts`, `shared`, `ui`
-- `worker` -> `contracts`, `db`, `shared`, `llm`
 - `db` -> standalone (no internal deps)
 
 ### Runtime Architecture
@@ -549,103 +546,7 @@ Each module follows repository/service/routes pattern:
 - `SandboxHealthMonitor`: Periodically checks EC2 sandbox health
 - `AutoStopMonitor`: Auto-stops idle sandboxes after configured timeout
 
-## 5. Worker (apps/worker)
-
-### Tech Stack
-
-- Direct REST dispatch to GhostHands API (POST /api/v1/gh/valet/apply with X-GH-Service-Key auth)
-- Callbacks received at POST /api/v1/webhooks/ghosthands
-- pino for logging
-- Sentry for error tracking
-- Redis for pub/sub progress updates
-- Drizzle for database access
-
-### Entry Point (`main.ts`)
-
-1. Initialize Sentry
-2. Detect browser engine from `BROWSER_ENGINE` env var (chromium or adspower)
-3. Connect to Redis and database
-4. Build sandbox providers (AdsPowerEC2Provider if `ADSPOWER_API_URL` is set)
-5. Initialize GhostHands API client (dispatches jobs via POST /api/v1/gh/valet/apply)
-6. Start health HTTP server
-7. Graceful shutdown on SIGTERM/SIGINT
-
-### Workflows
-
-#### `job-application` (v1 - mock)
-
-Event trigger: `task:created`
-
-DAG: `start-browser -> analyze-form -> fill-fields -> upload-resume -> check-captcha* -> submit* -> verify`
-(\* = durableTask with pause/resume capability)
-
-Uses mock adapters (LinkedInMockAdapter). Simulates the full flow with delays. Publishes progress via Redis pub/sub.
-
-#### `job-application-v2` (real browser automation)
-
-Event trigger: `task:created`
-
-DAG: `start-browser -> navigate-and-analyze -> fill-fields -> check-captcha* -> review-or-submit* -> verify -> cleanup`
-
-Features:
-
-- StickyStrategy.SOFT for closure-scoped sandbox/engine sharing across tasks
-- Concurrency limit: 3 runs per userId (GROUP_ROUND_ROBIN)
-- SandboxController for browser lifecycle and CDP mutex
-- EngineOrchestrator for fallback cascade (Stagehand DOM -> CUA -> Magnitude)
-- ExecutionEngine + ManualManager for Reuse/Explore self-learning
-- Copilot mode pauses at review-or-submit for user approval
-- Autopilot mode runs quality gates (confidence >= 0.7 + resume uploaded)
-- onFailure handler captures error screenshot and destroys sandbox
-
-Tier -> Provider mapping:
-
-- Tier 1: adspower-ec2
-- Tier 2: browserbase
-- Tier 3: fly-machine
-
-#### `resume-parse`
-
-Event trigger: `resume:uploaded`
-
-DAG: `extract-text -> llm-parse -> save-results`
-
-1. Downloads file from S3 (supports PDF via pdf-parse, DOCX via mammoth, plain text)
-2. Sends extracted text to LLM (via @valet/llm router) with structured output prompt
-3. Saves parsed data to resumes table, inferred Q&A answers to qa_bank table
-4. Publishes `resume_parsed` event via Redis
-
-### Adapters (apps/worker/src/adapters/)
-
-Mock implementations for testing: `linkedin.mock.ts`, `greenhouse.mock.ts`, `browser-agent.mock.ts`, `form-analyzer.mock.ts`, `captcha-detector.mock.ts`, `proxy-manager.mock.ts`, `ads-power.mock.ts`
-
-Base adapter interface: `base.ts`
-
-### Browser Engines (apps/worker/src/engines/)
-
-- `stagehand-engine.ts` - Stagehand SDK integration
-- `magnitude-engine.ts` - Magnitude browser agent
-- `agent-browser.ts` - Generic agent browser interface
-- `humanized-page.ts` - Human-like interaction patterns
-- `mock-engine.ts` - Mock engine for testing
-
-### Services (apps/worker/src/services/)
-
-- `sandbox-controller.ts` - Browser lifecycle, CDP mutex, session management
-- `engine-orchestrator.ts` - Fallback cascade between engines
-- `execution-engine.ts` - Reuse/Explore self-learning execution
-- `manual-manager.ts` - Action manual CRUD and step management
-- `event-logger.ts` - Database event persistence
-- `application-tracker.ts` - Application state tracking
-- `failure-classifier.ts` - Error classification for retry decisions
-- `learning-loop.ts` - Post-execution learning feedback
-
-### Providers (apps/worker/src/providers/)
-
-- `adspower-ec2.ts` - AdsPower on EC2 instances
-- `browserbase.ts` - Browserbase cloud browser provider
-
-## 6. GhostHands Integration
+## 5. GhostHands Integration
 
 ### Job Dispatch Flow
 
@@ -796,27 +697,15 @@ Three Fly.io apps per environment:
 - Health check: GET /health every 30s
 - Build args: VITE_API_URL, VITE_WS_URL, VITE_GOOGLE_CLIENT_ID
 
-**Worker (`fly/worker.toml`):**
-
-- Region: iad
-- No HTTP service (connects to GhostHands outbound)
-- VM: 1GB RAM, shared CPU
-- Process: `node apps/worker/dist/main.js`
-- No auto-stop (must stay running)
-- Kill timeout: 60s (allows in-flight tasks to complete)
-
 ### Terraform (infra/terraform/)
 
-EC2 sandbox provisioning for browser worker instances. Managed via GitHub Actions workflows.
+EC2 sandbox provisioning for GhostHands worker instances. Managed via GitHub Actions workflows.
 
 ### EC2 Sandboxes
 
-- Ubuntu instances with browser engine (AdsPower or Chromium)
-- Worker deployed via tarball (built in CI, uploaded via SCP)
-- Systemd service: `valet-worker`
-- App directory: `/opt/valet/app`
-- Env file: `/opt/valet/.env`
-- noVNC for remote debugging
+- Ubuntu instances with GhostHands Docker containers
+- Managed via ATM (Automation & Tooling Manager) on EC2
+- noVNC/KasmVNC for remote debugging
 - Shared SSH key across all sandboxes (SANDBOX_SSH_KEY GitHub Secret)
 
 ### Docker (docker/)
