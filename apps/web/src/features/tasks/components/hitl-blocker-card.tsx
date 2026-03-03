@@ -16,6 +16,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { useResolveBlocker } from "../hooks/use-tasks";
+import { useCreateBrowserSession } from "../hooks/use-browser-session";
 
 interface HitlBlockerCardProps {
   taskId: string;
@@ -90,6 +91,7 @@ export function HitlBlockerCard({
   onCancel,
 }: HitlBlockerCardProps) {
   const resolveBlocker = useResolveBlocker();
+  const browserSession = useCreateBrowserSession();
   const [remaining, setRemaining] = useState<number | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [loginUsername, setLoginUsername] = useState("");
@@ -255,9 +257,20 @@ export function HitlBlockerCard({
           </div>
         )}
 
-        {/* Browser session placeholder — raw VNC links removed */}
-        <Button variant="primary" className="w-full" disabled>
-          <Monitor className="h-4 w-4 mr-1.5" /> Browser Session — Coming Soon
+        {/* Browser session — opens live browser view in new tab */}
+        <Button
+          variant="primary"
+          className="w-full"
+          disabled={browserSession.isPending}
+          onClick={() =>
+            browserSession.mutate({
+              params: { id: taskId },
+              body: {},
+            })
+          }
+        >
+          <Monitor className="h-4 w-4 mr-1.5" />
+          {browserSession.isPending ? "Opening..." : "Open Browser Session"}
         </Button>
 
         {/* Type-specific resolution controls */}

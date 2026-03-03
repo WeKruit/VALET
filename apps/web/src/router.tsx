@@ -59,6 +59,11 @@ const EarlyAccessPage = lazy(() =>
     default: m.EarlyAccessPage,
   })),
 );
+const BrowserSessionPage = lazy(() =>
+  import("./features/tasks/pages/browser-session-page").then((m) => ({
+    default: m.BrowserSessionPage,
+  })),
+);
 const SettingsPage = lazy(() =>
   import("./features/settings/pages/settings-page").then((m) => ({
     default: m.SettingsPage,
@@ -163,6 +168,7 @@ export function AppRouter() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/legal/terms" element={<TermsOfServicePage />} />
         <Route path="/legal/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/browser-session/:token" element={<BrowserSessionPage />} />
 
         {/* Auth-protected routes */}
         <Route

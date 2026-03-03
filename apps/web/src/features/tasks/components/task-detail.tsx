@@ -34,6 +34,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { LiveView } from "./live-view";
 import { useVncUrl } from "../hooks/use-vnc-url";
+import { useCreateBrowserSession } from "../hooks/use-browser-session";
 
 interface TaskDetailProps {
   taskId: string;
@@ -123,6 +124,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
       toast.error("Failed to update external status.");
     },
   });
+
+  const browserSession = useCreateBrowserSession();
 
   if (isLoading) {
     return (
@@ -325,10 +328,27 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 </p>
               </div>
             </div>
-            <Button variant="secondary" size="sm" disabled>
-              <Monitor className="h-4 w-4 mr-1.5" />
-              Browser Session — Coming Soon
-            </Button>
+            {isWaitingReview ? (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={browserSession.isPending}
+                onClick={() =>
+                  browserSession.mutate({
+                    params: { id: taskId },
+                    body: {},
+                  })
+                }
+              >
+                <Monitor className="h-4 w-4 mr-1.5" />
+                {browserSession.isPending ? "Opening..." : "Open Browser Session"}
+              </Button>
+            ) : (
+              <Button variant="secondary" size="sm" disabled>
+                <Monitor className="h-4 w-4 mr-1.5" />
+                Browser Session — Coming Soon
+              </Button>
+            )}
           </div>
           <p className="text-xs text-[var(--wk-text-tertiary)] mt-2">
             Only one person can view at a time. Opening in another tab will disconnect your current
