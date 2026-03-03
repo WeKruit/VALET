@@ -641,26 +641,9 @@ Called by cd-staging and cd-prod. Steps per service:
 
 1. Validate (typecheck + build)
 2. Deploy API to Fly.io (with health check)
-3. Deploy Worker to Fly.io
-4. Deploy Web to Fly.io (with build args for VITE\_\* env vars)
+3. Deploy Web to Fly.io (with build args for VITE\_\* env vars)
 
 DB migrations run automatically via Fly.io `release_command` during API deploy.
-
-#### `cd-ec2.yml` - EC2 Worker Deploy
-
-Trigger: push to staging/main (worker/package changes) + workflow_dispatch
-Steps:
-
-1. Build worker tarball with all package dependencies
-2. Discover fleet (API query -> SANDBOX_IPS secret fallback)
-3. Deploy to each sandbox in parallel (matrix strategy, max 5 parallel)
-4. Per-instance: backup, extract, install deps, restart systemd service
-5. Health check with retries + automatic rollback on failure
-6. Update sandbox status via API
-
-#### `provision-sandbox.yml` - Provision Sandbox
-
-Manual trigger only. Creates new EC2 instance via Terraform, installs browser engine (chromium or adspower), deploys worker, registers with API.
 
 #### `terminate-sandbox.yml` - Terminate Sandbox
 
@@ -678,7 +661,7 @@ Claude AI code review integration for PRs.
 
 ### Fly.io Configuration
 
-Three Fly.io apps per environment:
+Two Fly.io apps per environment:
 
 **API (`fly/api.toml`):**
 

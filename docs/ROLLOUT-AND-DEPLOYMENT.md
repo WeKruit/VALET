@@ -985,25 +985,14 @@ gh workflow run secrets-sync.yml \
 
 ### Provisioning a new sandbox
 
-**Workflow:** `.github/workflows/provision-sandbox.yml` (manual dispatch only)
+Sandbox provisioning is now managed via the **ASG (Auto Scaling Group)** `ghosthands-worker-asg` and **ATM** (Automation & Tooling Manager). New instances are launched from the golden AMI and self-register with the fleet.
 
-| Input            | Options                          | Default |
-| ---------------- | -------------------------------- | ------- |
-| `environment`    | dev, staging, prod               | --      |
-| `instance_type`  | t3.medium, t3.large, t3.xlarge   | --      |
-| `browser_engine` | chromium, adspower               | --      |
-| `capacity`       | Number (max concurrent sessions) | 5       |
+**Manual provisioning (if needed):**
 
-**Steps:**
-
-1. **Terraform apply** -- creates EC2 instance in `us-east-1` with specified type
-2. **Wait for SSH** (5-minute timeout, 15s polling)
-3. **Wait for cloud-init** completion
-4. **Install browser engine:**
-   - Chromium: `sudo apt-get install -y chromium-browser`
-   - AdsPower: uploads and runs `infra/scripts/install-adspower.sh`
-5. **Register sandbox** via `POST /api/v1/admin/sandboxes` with metadata (name, instance_id, public_ip, instance_type, browser_engine, capacity, environment)
-6. **Health check** (3 retries)
+1. Scale the ASG: `aws autoscaling set-desired-capacity --auto-scaling-group-name ghosthands-worker-asg --desired-capacity <N>`
+2. New instances boot from golden AMI, start GhostHands Docker containers
+3. ATM discovers new instances via EC2 ASG tag within 60s
+4. Register sandbox via `POST /api/v1/admin/sandboxes` with metadata
 
 **Post-provisioning manual steps:**
 
@@ -1087,5 +1076,5 @@ Additional per-instance costs: 40GB gp3 EBS ($3.20/mo), Elastic IP ($3.65/mo), ~
 | **Separate staging/production databases** | Split completed 2026-02-24. Staging: `unistzvhgvgjyzotwzxr`, Production: `ugidjvgzyeiiktnqstro`. Migrations must be applied to both. |
 | **No automated DB rollback**              | Failed migrations abort the deploy, but there is no reverse-migration tooling. Must write and deploy corrective SQL manually.        |
 | **Single SSH key across all sandboxes**   | All instances share `SANDBOX_SSH_KEY`. Key rotation requires updating the secret and reprovisioning SSH access.                      |
-| **EC2 fleet discovery requires API**      | If the VALET API is down, `cd-ec2.yml` falls back to `SANDBOX_IPS` secret which must be manually maintained.                         |
+| **EC2 fleet discovery requires ATM**      | If ATM is down, VALET falls back to `gh_worker_registry` DB table which may have stale IPs.                                          |
 | **No SPA versioning**                     | Web app rollback means redeploying a previous commit. No built-in version tracking for the static SPA bundle.                        |
