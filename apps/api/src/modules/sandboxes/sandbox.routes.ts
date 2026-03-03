@@ -354,6 +354,11 @@ export const sandboxRouter = s.router(sandboxContract, {
       try {
         const workers = await sandboxAgentClient.getWorkers(agentUrl);
 
+        logger.info(
+          { sandboxId: sandbox.id, source: "atm-proxy", agentUrl },
+          "listWorkers: resolved via ATM proxy",
+        );
+
         await auditLogService.log({
           sandboxId: sandbox.id,
           userId: request.userId,
@@ -365,11 +370,22 @@ export const sandboxRouter = s.router(sandboxContract, {
 
         return { status: 200 as const, body: { data: workers } };
       } catch (err) {
-        logger.debug(
-          { sandboxId: params.id, err },
-          "Agent unreachable for listWorkers, using DB fallback",
+        logger.warn(
+          { sandboxId: params.id, err, agentUrl },
+          "listWorkers: ATM proxy failed, falling through to DB fallback",
         );
       }
+    } else {
+      logger.warn(
+        {
+          sandboxId: sandbox.id,
+          instanceId: sandbox.instanceId,
+          publicIp: sandbox.publicIp,
+          atmConfigured: atmFleetClient.isConfigured,
+          atmBaseUrl: !!atmBaseUrl,
+        },
+        "listWorkers: no ATM agent URL resolved, using DB fallback",
+      );
     }
 
     // Fallback: build worker list from gh_worker_registry matched by sandbox publicIp
