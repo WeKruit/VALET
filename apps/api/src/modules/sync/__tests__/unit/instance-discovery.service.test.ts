@@ -339,7 +339,7 @@ describe("InstanceDiscoveryService", () => {
 
       expect(mocks.sandboxRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: "gh-worker-asg-1",
+          name: "gh-worker-1",
           environment: "prod",
           instanceId: "i-new123",
           instanceType: "t3.xlarge",
@@ -375,7 +375,7 @@ describe("InstanceDiscoveryService", () => {
       const mocks = makeMocks();
       mocks.sandboxRepo.findAsgManaged.mockResolvedValue([
         makeSandbox({ name: "gh-worker-1" }),
-        makeSandbox({ name: "gh-worker-asg-3" }),
+        makeSandbox({ name: "gh-worker-3" }),
       ]);
 
       const service = new InstanceDiscoveryService(mocks as never);
@@ -384,7 +384,7 @@ describe("InstanceDiscoveryService", () => {
 
       expect(mocks.sandboxRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: "gh-worker-asg-4",
+          name: "gh-worker-4",
         }),
       );
     });

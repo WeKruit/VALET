@@ -427,7 +427,7 @@ describe("AutoScaleService", () => {
       // create returns a new sandbox
       (sandboxRepo.create as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: "new-sb-id",
-        name: "gh-worker-asg-def456",
+        name: "gh-worker-def456",
         instanceId: "i-def456",
       });
 
@@ -526,7 +526,7 @@ describe("AutoScaleService", () => {
         },
         {
           id: "sb-gone",
-          name: "gh-worker-asg-2",
+          name: "gh-worker-2",
           instanceId: "i-gone",
           publicIp: "10.0.0.2",
           status: "active",

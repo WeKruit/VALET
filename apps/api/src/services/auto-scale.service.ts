@@ -277,7 +277,7 @@ export class AutoScaleService {
 
             try {
               const newSandbox = await this.sandboxRepo.create({
-                name: `gh-worker-asg-${instanceId.slice(-6)}`,
+                name: `gh-worker-${instanceId.slice(-6)}`,
                 environment: "staging",
                 instanceId,
                 instanceType: "t3.large",
