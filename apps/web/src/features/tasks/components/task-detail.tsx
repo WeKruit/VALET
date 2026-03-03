@@ -28,7 +28,6 @@ import {
   ChevronDown,
   ChevronUp,
   Monitor,
-  MousePointer,
 } from "lucide-react";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -326,31 +325,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 </p>
               </div>
             </div>
-            <Button
-              variant={isWaitingReview ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => {
-                if (
-                  (vncType === "kasm" || vncType === "kasmvnc") &&
-                  import.meta.env.VITE_KASM_INLINE_IFRAME !== "true"
-                ) {
-                  window.open(vncUrl, "_blank", "noopener,noreferrer");
-                } else {
-                  setShowLiveView(true);
-                }
-              }}
-            >
-              {isWaitingReview ? (
-                <>
-                  <MousePointer className="h-4 w-4 mr-1.5" />
-                  Take Control
-                </>
-              ) : (
-                <>
-                  <Monitor className="h-4 w-4 mr-1.5" />
-                  Watch Live
-                </>
-              )}
+            <Button variant="secondary" size="sm" disabled>
+              <Monitor className="h-4 w-4 mr-1.5" />
+              Browser Session — Coming Soon
             </Button>
           </div>
           <p className="text-xs text-[var(--wk-text-tertiary)] mt-2">

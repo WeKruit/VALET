@@ -85,7 +85,7 @@ function formatCountdown(seconds: number): string {
 export function HitlBlockerCard({
   taskId,
   interaction,
-  vncUrl,
+  vncUrl: _vncUrl,
   vncType: _vncType,
   onCancel,
 }: HitlBlockerCardProps) {
@@ -255,16 +255,10 @@ export function HitlBlockerCard({
           </div>
         )}
 
-        {/* Watch & Resolve in browser */}
-        {vncUrl && (
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={() => window.open(vncUrl, "_blank", "noopener,noreferrer")}
-          >
-            <Monitor className="h-4 w-4 mr-1.5" /> Watch & Resolve in Browser
-          </Button>
-        )}
+        {/* Browser session placeholder — raw VNC links removed */}
+        <Button variant="primary" className="w-full" disabled>
+          <Monitor className="h-4 w-4 mr-1.5" /> Browser Session — Coming Soon
+        </Button>
 
         {/* Type-specific resolution controls */}
         <div className="space-y-3 pt-2">
