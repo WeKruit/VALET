@@ -58,7 +58,7 @@ function makeMockDeps() {
   };
 }
 
-describe("TaskService — getVncUrl()", () => {
+describe("TaskService — getVncUrl() compatibility alias", () => {
   let deps: ReturnType<typeof makeMockDeps>;
   let service: TaskService;
 
@@ -72,181 +72,150 @@ describe("TaskService — getVncUrl()", () => {
     vi.unstubAllEnvs();
   });
 
-  it("returns kasmvnc type when kasm_url contains :6901", async () => {
+  it("throws TaskNotFoundError for missing task", async () => {
+    deps.taskRepo.findById.mockResolvedValue(null);
+
+    await expect(service.getVncUrl("nonexistent", "user-1")).rejects.toThrow(TaskNotFoundError);
+  });
+
+  it("returns null for non-waiting_human tasks (in_progress)", async () => {
     deps.taskRepo.findById.mockResolvedValue({
       id: "task-1",
       status: "in_progress",
       workflowRunId: "gh-job-1",
       sandboxId: "sb-1",
-    });
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: { kasm_url: "https://10.0.0.1:6901" },
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result).toEqual({
-      url: "https://10.0.0.1:6901",
-      readOnly: true,
-      type: "kasmvnc",
-    });
-  });
-
-  it("returns kasm type when kasm_url contains /api/public", async () => {
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "in_progress",
-      workflowRunId: "gh-job-1",
-      sandboxId: "sb-1",
-    });
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: { kasm_url: "https://kasm.example.com/api/public/session/abc" },
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result).toEqual({
-      url: "https://kasm.example.com/api/public/session/abc",
-      readOnly: true,
-      type: "kasm",
-    });
-  });
-
-  it("resolves relative kasm_url against KASM_API_URL", async () => {
-    vi.stubEnv("KASM_API_URL", "https://kasm.example.com/api/public");
-
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "in_progress",
-      workflowRunId: "gh-job-1",
-      sandboxId: "sb-1",
-    });
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: { kasm_url: "/#/connect/session/abc123" },
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result).toEqual({
-      url: "https://kasm.example.com/#/connect/session/abc123",
-      readOnly: true,
-      type: "kasm",
-    });
-  });
-
-  it("constructs https://{IP}:6901 from sandbox publicIp (path 2)", async () => {
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "in_progress",
-      workflowRunId: "gh-job-1",
-      sandboxId: "sb-1",
-    });
-    // No kasm_url in GH job metadata
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: {},
-    });
-    deps.sandboxRepo.findById.mockResolvedValue({
-      id: "sb-1",
-      publicIp: "34.197.248.80",
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result).toEqual({
-      url: "https://34.197.248.80:6901",
-      readOnly: true,
-      type: "kasmvnc",
-    });
-  });
-
-  it("returns sandbox novncUrl when no publicIp (path 3 fallback)", async () => {
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "in_progress",
-      workflowRunId: "gh-job-1",
-      sandboxId: "sb-1",
-    });
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: {},
-    });
-    deps.sandboxRepo.findById.mockResolvedValue({
-      id: "sb-1",
-      publicIp: null,
-      novncUrl: "https://novnc.example.com/vnc_lite.html?host=sb-1",
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result).toEqual({
-      url: "https://novnc.example.com/vnc_lite.html?host=sb-1",
-      readOnly: true,
-      type: "novnc",
-    });
-  });
-
-  it("readOnly=true for in_progress task", async () => {
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "in_progress",
-      workflowRunId: "gh-job-1",
-      sandboxId: "sb-1",
-    });
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: { kasm_url: "https://10.0.0.1:6901" },
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result?.readOnly).toBe(true);
-  });
-
-  it("readOnly=false for waiting_human task (interactive Take Control)", async () => {
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "waiting_human",
-      workflowRunId: "gh-job-1",
-      sandboxId: "sb-1",
-    });
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: { kasm_url: "https://10.0.0.1:6901" },
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result?.readOnly).toBe(false);
-  });
-
-  it("readOnly=true for completed task", async () => {
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "completed",
-      workflowRunId: "gh-job-1",
-      sandboxId: "sb-1",
-    });
-    deps.ghJobRepo.findById.mockResolvedValue({
-      id: "gh-job-1",
-      metadata: { kasm_url: "https://10.0.0.1:6901" },
-    });
-
-    const result = await service.getVncUrl("task-1", "user-1");
-    expect(result?.readOnly).toBe(true);
-  });
-
-  it("returns null when no VNC source available", async () => {
-    deps.taskRepo.findById.mockResolvedValue({
-      id: "task-1",
-      status: "in_progress",
-      workflowRunId: null, // no GH job
-      sandboxId: null, // no sandbox
     });
 
     const result = await service.getVncUrl("task-1", "user-1");
     expect(result).toBeNull();
   });
 
-  it("throws TaskNotFoundError for missing task", async () => {
-    deps.taskRepo.findById.mockResolvedValue(null);
+  it("returns null for completed tasks", async () => {
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-1",
+      status: "completed",
+      workflowRunId: "gh-job-1",
+      sandboxId: "sb-1",
+    });
 
-    await expect(service.getVncUrl("nonexistent", "user-1")).rejects.toThrow(TaskNotFoundError);
+    const result = await service.getVncUrl("task-1", "user-1");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for failed tasks", async () => {
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-1",
+      status: "failed",
+      workflowRunId: "gh-job-1",
+      sandboxId: "sb-1",
+    });
+
+    const result = await service.getVncUrl("task-1", "user-1");
+    expect(result).toBeNull();
+  });
+
+  it("delegates to createLiveviewSession for waiting_human tasks", async () => {
+    const mockSession = {
+      url: "https://valet-web-stg.fly.dev/browser-session/abc123",
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      readOnly: false,
+      type: "browser_session" as const,
+      mode: "simple_browser" as const,
+    };
+
+    // Spy on createLiveviewSession to avoid needing full ATM/GH mock chain
+    const createSpy = vi.spyOn(service, "createLiveviewSession").mockResolvedValue(mockSession);
+
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-1",
+      status: "waiting_human",
+      workflowRunId: "gh-job-1",
+      sandboxId: "sb-1",
+    });
+
+    const result = await service.getVncUrl("task-1", "user-1");
+
+    expect(createSpy).toHaveBeenCalledWith("task-1", "user-1");
+    expect(result).toEqual({
+      url: "https://valet-web-stg.fly.dev/browser-session/abc123",
+      readOnly: false,
+      type: "browser_session",
+    });
+  });
+
+  it("returns type browser_session, never raw VNC types", async () => {
+    const mockSession = {
+      url: "https://valet-web-stg.fly.dev/browser-session/xyz",
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      readOnly: false,
+      type: "browser_session" as const,
+      mode: "simple_browser" as const,
+    };
+
+    vi.spyOn(service, "createLiveviewSession").mockResolvedValue(mockSession);
+
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-1",
+      status: "waiting_human",
+      workflowRunId: "gh-job-1",
+      sandboxId: "sb-1",
+    });
+
+    const result = await service.getVncUrl("task-1", "user-1");
+
+    // Must never return novnc, kasm, or kasmvnc — always browser_session
+    expect(result?.type).toBe("browser_session");
+    // URL is a VALET page URL, not a raw worker IP
+    expect(result?.url).toContain("/browser-session/");
+    expect(result?.url).not.toMatch(/:\d{4}/); // no raw port like :6901 or :6080
+  });
+
+  it("returns readOnly=false for waiting_human (interactive)", async () => {
+    const mockSession = {
+      url: "https://valet-web-stg.fly.dev/browser-session/abc",
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      readOnly: false,
+      type: "browser_session" as const,
+      mode: "simple_browser" as const,
+    };
+
+    vi.spyOn(service, "createLiveviewSession").mockResolvedValue(mockSession);
+
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-1",
+      status: "waiting_human",
+      workflowRunId: "gh-job-1",
+      sandboxId: "sb-1",
+    });
+
+    const result = await service.getVncUrl("task-1", "user-1");
+    expect(result?.readOnly).toBe(false);
+  });
+
+  it("returns null when createLiveviewSession throws (browser session unavailable)", async () => {
+    vi.spyOn(service, "createLiveviewSession").mockRejectedValue(new Error("Worker unreachable"));
+
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-1",
+      status: "waiting_human",
+      workflowRunId: "gh-job-1",
+      sandboxId: "sb-1",
+    });
+
+    const result = await service.getVncUrl("task-1", "user-1");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when task has no sandbox (no worker)", async () => {
+    deps.taskRepo.findById.mockResolvedValue({
+      id: "task-1",
+      status: "waiting_human",
+      workflowRunId: null,
+      sandboxId: null,
+    });
+
+    // createLiveviewSession will throw TaskNotFoundError internally due to no sandbox
+    const result = await service.getVncUrl("task-1", "user-1");
+    expect(result).toBeNull();
   });
 });

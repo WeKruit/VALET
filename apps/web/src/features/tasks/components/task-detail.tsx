@@ -295,8 +295,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         </CardContent>
       </Card>
 
-      {/* Browser Session CTA — driven by task pause state, not VNC URL */}
-      {isWaitingReview && (
+      {/* Browser Session CTA — only when paused AND browser session is available */}
+      {isWaitingReview && task.ghJob?.browserSessionAvailable && (
         <>
           <div className="rounded-[var(--wk-radius-lg)] border-2 border-[var(--wk-status-warning)] bg-amber-50/50 dark:bg-amber-950/10 p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">

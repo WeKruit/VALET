@@ -54,6 +54,9 @@ export async function registerBrowserSessionWs(fastify: FastifyInstance) {
       return;
     }
 
+    // Capture task ID for closure use (TS doesn't narrow `session` across closures)
+    const sessionTaskId = session.taskId;
+
     // 3. Connect to GH CDP proxy
     const ghWsUrl = `ws://${session.workerIp}:3100/internal/cdp-proxy?key=${encodeURIComponent(ghServiceKey)}`;
 
@@ -203,10 +206,26 @@ export async function registerBrowserSessionWs(fastify: FastifyInstance) {
     });
 
     // Cleanup helpers
+    let cleaned = false;
     function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
       if (screenshotInterval) clearInterval(screenshotInterval);
       screenshotInterval = null;
+      browserSessionTokenStore.events.removeListener(
+        `invalidated:${sessionTaskId}`,
+        onTokenInvalidated,
+      );
     }
+
+    // Immediate shutdown when token is invalidated (task resumes, completes, etc.)
+    function onTokenInvalidated() {
+      cleanup();
+      socket.send(JSON.stringify({ type: "session_state", state: "expired" }));
+      socket.close(4002, "Session expired");
+      cdpSocket.close();
+    }
+    browserSessionTokenStore.events.on(`invalidated:${sessionTaskId}`, onTokenInvalidated);
 
     cdpSocket.on("close", () => {
       cleanup();
@@ -229,18 +248,5 @@ export async function registerBrowserSessionWs(fastify: FastifyInstance) {
       cleanup();
       cdpSocket.close();
     });
-
-    // Token expiry check (every 10s)
-    const expiryCheck = setInterval(() => {
-      if (!browserSessionTokenStore.validate(token)) {
-        cleanup();
-        clearInterval(expiryCheck);
-        socket.send(JSON.stringify({ type: "session_state", state: "expired" }));
-        socket.close(4002, "Session expired");
-        cdpSocket.close();
-      }
-    }, 10_000);
-
-    socket.on("close", () => clearInterval(expiryCheck));
   });
 }
