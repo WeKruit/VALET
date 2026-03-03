@@ -164,12 +164,10 @@ function getFlyApps(env: string) {
   return env === "staging"
     ? [
         { name: "valet-api-stg", role: "api" },
-        { name: "valet-worker-stg", role: "worker" },
         { name: "valet-web-stg", role: "web" },
       ]
     : [
         { name: "valet-api", role: "api" },
-        { name: "valet-worker", role: "worker" },
         { name: "valet-web", role: "web" },
       ];
 }

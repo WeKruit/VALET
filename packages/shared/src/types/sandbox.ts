@@ -5,7 +5,7 @@
  * session management, human intervention, and the self-learning manual system.
  *
  * Depends on: automation.ts (FormField, FormAnalysis, etc.)
- * Consumed by: apps/worker, apps/api, apps/web
+ * Consumed by: apps/api, apps/web, GhostHands
  */
 
 import type {
@@ -146,10 +146,7 @@ export interface ObservedElement {
 /**
  * IBrowserEngine - unified interface for browser automation engines.
  *
- * Implementations:
- *   - StagehandEngine (apps/worker/src/engines/stagehand-engine.ts)
- *   - MagnitudeEngine (apps/worker/src/engines/magnitude-engine.ts)
- *   - MockEngine      (apps/worker/src/engines/mock-engine.ts)
+ * Implementations live in GhostHands (browser automation service).
  *
  * NOT serializable. Lives in worker process memory only.
  */
@@ -230,7 +227,7 @@ export interface EngineSwitchEvent {
  *
  * Invariant: at most one engine is connected to the CDP endpoint at any time.
  *
- * Implementation: apps/worker/src/services/sandbox-controller.ts
+ * Implementation lives in GhostHands.
  * NOT serializable. Created once per workflow run and shared via closure.
  */
 export interface ISandboxController {
@@ -297,7 +294,7 @@ export interface SwitchDecision {
 /**
  * IEngineOrchestrator - decides which engine to use and handles fallback.
  *
- * Implementation: apps/worker/src/services/engine-orchestrator.ts
+ * Implementation lives in GhostHands.
  * NOT serializable. Wraps ISandboxController and adds decision logic.
  */
 export interface IEngineOrchestrator {
@@ -626,7 +623,7 @@ export interface ProgressUpdate {
 /**
  * IApplicationTracker - tracks application status and emits progress events.
  *
- * Implementation: apps/worker/src/services/application-tracker.ts
+ * Implementation lives in GhostHands.
  */
 export interface IApplicationTracker {
   transition(

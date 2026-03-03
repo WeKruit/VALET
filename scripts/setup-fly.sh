@@ -41,18 +41,16 @@ case "$ENV" in
 esac
 
 API_APP="valet-api${SUFFIX}"
-WORKER_APP="valet-worker${SUFFIX}"
 WEB_APP="valet-web${SUFFIX}"
 echo "╔══════════════════════════════════════════╗"
 echo "║  Setting up Fly.io apps for: ${ENV}        "
 echo "║  API:     ${API_APP}                       "
-echo "║  Worker:  ${WORKER_APP}                    "
 echo "║  Web:     ${WEB_APP}                       "
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
 # ── Create apps ──
-for APP in "$API_APP" "$WORKER_APP" "$WEB_APP"; do
+for APP in "$API_APP" "$WEB_APP"; do
   if fly apps list | grep -q "$APP"; then
     echo "✓ App $APP already exists"
   else
@@ -85,17 +83,6 @@ echo "    ANTHROPIC_API_KEY=\"your-anthropic-key\" \\"
 echo "    OPENAI_API_KEY=\"your-openai-key\" \\"
 echo "    CORS_ORIGIN=\"https://${WEB_APP}.fly.dev\""
 echo ""
-echo "─── Required secrets for Worker (${WORKER_APP}) ───"
-echo ""
-echo "  fly secrets set -a ${WORKER_APP} \\"
-echo "    DATABASE_URL=\"your-supabase-connection-string\" \\"
-echo "    REDIS_URL=\"your-upstash-redis-url\" \\"
-echo "    S3_ENDPOINT=\"https://[project-ref].storage.supabase.co/storage/v1/s3\" \\"
-echo "    S3_ACCESS_KEY=\"your-supabase-s3-access-key\" \\"
-echo "    S3_SECRET_KEY=\"your-supabase-s3-secret-key\" \\"
-echo "    ANTHROPIC_API_KEY=\"your-anthropic-key\" \\"
-echo "    OPENAI_API_KEY=\"your-openai-key\""
-echo ""
 echo "─── Web app (${WEB_APP}) needs no runtime secrets ───"
 echo "  (VITE_* vars are injected at build time via --build-arg)"
 echo ""
@@ -109,7 +96,6 @@ echo "    fly tokens create deploy -a ${API_APP}"
 echo ""
 echo "Done! After setting secrets, deploy with:"
 echo "  fly deploy --config fly/api.toml --app ${API_APP} --remote-only"
-echo "  fly deploy --config fly/worker.toml --app ${WORKER_APP} --remote-only"
 echo "  fly deploy --config fly/web.toml --app ${WEB_APP} --remote-only \\"
 echo "    --build-arg VITE_API_URL=https://${API_APP}.fly.dev \\"
 echo "    --build-arg VITE_WS_URL=wss://${API_APP}.fly.dev"
