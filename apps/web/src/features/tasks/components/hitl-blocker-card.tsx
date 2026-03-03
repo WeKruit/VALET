@@ -34,7 +34,7 @@ interface HitlBlockerCardProps {
     pausedAt: string;
   };
   vncUrl?: string | null;
-  vncType?: "novnc" | "kasm" | "kasmvnc";
+  vncType?: "browser_session" | "novnc" | "kasm" | "kasmvnc";
   onCancel: () => void;
 }
 

@@ -11,6 +11,9 @@ import type { ResumeRepository } from "../resumes/resume.repository.js";
 import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
 import type { SandboxRepository } from "../sandboxes/sandbox.repository.js";
 import type { UserSandboxRepository } from "../sandboxes/user-sandbox.repository.js";
+import type { AtmFleetClient } from "../sandboxes/atm-fleet.client.js";
+import type { BrowserSessionResponse } from "@valet/shared/schemas";
+import { browserSessionTokenStore } from "./browser-session-token-store.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
@@ -22,6 +25,7 @@ import {
   TaskNotCancellableError,
   TaskNotResolvableError,
 } from "./task.errors.js";
+import { AppError } from "../../common/errors.js";
 import { publishToUser } from "../../websocket/handler.js";
 
 function useQueueDispatch(): boolean {
@@ -67,6 +71,7 @@ export class TaskService {
   private logger: FastifyBaseLogger;
   private sandboxRepo: SandboxRepository;
   private userSandboxRepo: UserSandboxRepository;
+  private atmFleetClient: AtmFleetClient;
 
   constructor({
     taskRepo,
@@ -81,6 +86,7 @@ export class TaskService {
     logger,
     sandboxRepo,
     userSandboxRepo,
+    atmFleetClient,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -94,6 +100,7 @@ export class TaskService {
     logger: FastifyBaseLogger;
     sandboxRepo: SandboxRepository;
     userSandboxRepo: UserSandboxRepository;
+    atmFleetClient: AtmFleetClient;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -107,6 +114,7 @@ export class TaskService {
     this.logger = logger;
     this.sandboxRepo = sandboxRepo;
     this.userSandboxRepo = userSandboxRepo;
+    this.atmFleetClient = atmFleetClient;
   }
 
   /**
@@ -1427,6 +1435,132 @@ export class TaskService {
 
     this.logger.debug({ taskId }, "No VNC URL available for task");
     return null;
+  }
+
+  /**
+   * Create a VALET-owned browser liveview session for a paused task.
+   * Resolves the worker IP via ATM, checks GH browser-session availability,
+   * mints a short-lived token, and returns a VALET web page URL.
+   *
+   * IP-churn guard: if the initial GH call fails, invalidates ATM caches
+   * and retries resolution exactly once.
+   */
+  async createLiveviewSession(taskId: string, userId: string): Promise<BrowserSessionResponse> {
+    const task = await this.taskRepo.findById(taskId, userId);
+    if (!task) throw new TaskNotFoundError(taskId);
+
+    if (task.status !== "waiting_human") {
+      throw new TaskNotResolvableError(taskId, task.status);
+    }
+
+    // Resolve worker IP via sandbox + ATM
+    if (!task.sandboxId) {
+      throw new TaskNotFoundError(taskId); // no sandbox = no worker
+    }
+    const sandbox = await this.sandboxRepo.findById(task.sandboxId);
+    if (!sandbox) {
+      throw new TaskNotFoundError(taskId);
+    }
+
+    const ghServiceKey = process.env.GHOSTHANDS_SERVICE_KEY ?? process.env.GH_SERVICE_SECRET ?? "";
+
+    let workerIp: string | null = null;
+    let fleetId: string | undefined;
+
+    // First attempt: resolve via ATM (cached)
+    try {
+      const resolved = await this.atmFleetClient.resolveFleetId(sandbox);
+      if (resolved) {
+        fleetId = resolved;
+        const state = await this.atmFleetClient.getWorkerState(resolved);
+        workerIp = state?.ip ?? sandbox.publicIp ?? null;
+      } else {
+        workerIp = sandbox.publicIp ?? null;
+      }
+    } catch {
+      workerIp = sandbox.publicIp ?? null;
+    }
+
+    if (!workerIp) {
+      throw new AppError(502, "WORKER_UNREACHABLE", "Worker unreachable — no IP available");
+    }
+
+    // Call GH /internal/browser-session
+    let ghSession: Record<string, unknown> | null = null;
+    try {
+      ghSession = await this.callGhBrowserSession(workerIp, ghServiceKey);
+    } catch (err) {
+      // IP-churn guard: invalidate caches, retry ONCE
+      this.logger.info(
+        { taskId, workerIp, err: (err as Error).message },
+        "GH browser-session call failed, retrying with fresh ATM resolution",
+      );
+      this.atmFleetClient.invalidateAllCaches();
+      try {
+        const freshFleetId = await this.atmFleetClient.resolveFleetId(sandbox);
+        if (freshFleetId) {
+          fleetId = freshFleetId;
+          const freshState = await this.atmFleetClient.getWorkerState(freshFleetId);
+          workerIp = freshState?.ip ?? null;
+        } else {
+          workerIp = sandbox.publicIp ?? null;
+        }
+        if (!workerIp) {
+          throw new AppError(502, "WORKER_UNREACHABLE", "Worker unreachable after cache refresh");
+        }
+        ghSession = await this.callGhBrowserSession(workerIp, ghServiceKey);
+      } catch {
+        throw new AppError(502, "WORKER_UNREACHABLE", "Worker unreachable after retry");
+      }
+    }
+
+    if (!ghSession?.available || !ghSession.pausedForHuman) {
+      throw new AppError(
+        503,
+        "BROWSER_SESSION_UNAVAILABLE",
+        "Browser session not available on worker",
+      );
+    }
+
+    // Mint VALET-owned session token
+    const tokenEntry = browserSessionTokenStore.mint({
+      taskId,
+      ghJobId: ghSession.jobId as string,
+      workerIp,
+      fleetId,
+      pageUrl: ghSession.pageUrl as string | undefined,
+      pageTitle: ghSession.pageTitle as string | undefined,
+    });
+
+    // Build page URL from WEB_URL
+    const webUrl = process.env.WEB_URL;
+    if (!webUrl) {
+      throw new AppError(500, "CONFIG_ERROR", "WEB_URL not configured");
+    }
+
+    return {
+      url: `${webUrl.replace(/\/$/, "")}/browser-session/${tokenEntry.token}`,
+      expiresAt: tokenEntry.expiresAt.toISOString(),
+      readOnly: false,
+      type: "browser_session" as const,
+      mode: "simple_browser" as const,
+      pageUrl: (ghSession.pageUrl as string) ?? undefined,
+      pageTitle: (ghSession.pageTitle as string) ?? undefined,
+    };
+  }
+
+  private async callGhBrowserSession(
+    workerIp: string,
+    serviceKey: string,
+  ): Promise<Record<string, unknown>> {
+    const resp = await fetch(`http://${workerIp}:3100/internal/browser-session`, {
+      headers: { "X-GH-Service-Key": serviceKey },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) {
+      throw new Error(`GH browser-session returned ${resp.status}`);
+    }
+    return resp.json() as Promise<Record<string, unknown>>;
   }
 
   /**

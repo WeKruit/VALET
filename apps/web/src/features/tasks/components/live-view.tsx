@@ -7,7 +7,7 @@ interface LiveViewProps {
   isVisible: boolean;
   onToggle: () => void;
   readOnly?: boolean;
-  type?: "novnc" | "kasm" | "kasmvnc";
+  type?: "browser_session" | "novnc" | "kasm" | "kasmvnc";
 }
 
 export function LiveView({

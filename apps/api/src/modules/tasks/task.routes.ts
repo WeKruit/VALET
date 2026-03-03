@@ -108,4 +108,28 @@ export const taskRouter = s.router(taskContract, {
     }
     return { status: 200 as const, body: result };
   },
+
+  createLiveviewSession: async ({ params, request }) => {
+    await requireAbility("read", "Task")(request);
+    const { taskService } = request.diScope.cradle;
+    try {
+      const result = await taskService.createLiveviewSession(params.id, request.userId);
+      return { status: 200 as const, body: result };
+    } catch (err: unknown) {
+      const appErr = err as { statusCode?: number; code?: string; message?: string };
+      const statusCode = appErr.statusCode ?? 500;
+      const code = appErr.code ?? "INTERNAL_ERROR";
+      const message = appErr.message ?? "Internal error";
+      if (statusCode === 404) {
+        return { status: 404 as const, body: { error: code, message } };
+      }
+      if (statusCode === 409) {
+        return { status: 409 as const, body: { error: code, message } };
+      }
+      if (statusCode === 502) {
+        return { status: 502 as const, body: { error: code, message } };
+      }
+      return { status: 503 as const, body: { error: code, message } };
+    }
+  },
 });
