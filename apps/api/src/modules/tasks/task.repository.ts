@@ -458,6 +458,36 @@ export class TaskRepository {
     return rows[0]?.count ?? 0;
   }
 
+  /**
+   * Count active tasks grouped by sandboxId for derived load calculation.
+   * Active statuses: queued, testing, in_progress, waiting_human.
+   * - "created" excluded (not yet dispatched to a sandbox)
+   * - "waiting_human" included (task still occupies the sandbox; relies on
+   *   stale-task reconciliation to clear abandoned ones)
+   * Uses idx_tasks_sandbox_status index.
+   */
+  async countActiveBySandboxIds(sandboxIds: string[]): Promise<Map<string, number>> {
+    if (sandboxIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        sandboxId: tasks.sandboxId,
+        count: count(),
+      })
+      .from(tasks)
+      .where(
+        and(
+          inArray(tasks.sandboxId, sandboxIds),
+          inArray(tasks.status, ["queued", "testing", "in_progress", "waiting_human"]),
+        ),
+      )
+      .groupBy(tasks.sandboxId);
+    const result = new Map<string, number>();
+    for (const row of rows) {
+      if (row.sandboxId) result.set(row.sandboxId, row.count);
+    }
+    return result;
+  }
+
   async clearInteractionData(id: string) {
     await this.db
       .update(tasks)

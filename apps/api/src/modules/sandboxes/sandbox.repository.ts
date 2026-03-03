@@ -33,6 +33,7 @@ export interface SandboxRecord {
   healthStatus: SandboxHealthStatus;
   lastHealthCheckAt: Date | null;
   capacity: number;
+  /** @deprecated Legacy — not authoritative for stop/scale decisions. Derive load from tasks table. */
   currentLoad: number;
   sshKeyName: string | null;
   novncUrl: string | null;
@@ -44,6 +45,7 @@ export interface SandboxRecord {
   lastStartedAt: Date | null;
   lastStoppedAt: Date | null;
   autoStopEnabled: boolean;
+  autoStopOwner: "none" | "valet" | "atm";
   idleMinutesBeforeStop: number;
   machineType: string;
   agentVersion: string | null;
@@ -52,6 +54,7 @@ export interface SandboxRecord {
   ghImageUpdatedAt: Date | null;
   deployedCommitSha: string | null;
   healthCheckFailureCount: number;
+  lastBecameIdleAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -286,18 +289,43 @@ export class SandboxRepository {
     return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
   }
 
-  async findAutoStopCandidates(): Promise<SandboxRecord[]> {
+  /**
+   * Find sandboxes eligible for VALET auto-stop.
+   * Scope boundary: autoStopOwner = "valet" (not machineType).
+   * ASG-managed GH workers are excluded as defense-in-depth
+   * (ATM is sole stop authority for ASG workers).
+   * Does NOT use currentLoad (legacy, non-authoritative for stop decisions).
+   */
+  async findValetAutoStopCandidates(): Promise<SandboxRecord[]> {
     const data = await this.db
       .select()
       .from(sandboxes)
       .where(
         and(
           eq(sandboxes.autoStopEnabled, true),
+          eq(sandboxes.autoStopOwner, "valet"),
+          eq(sandboxes.status, "active"),
           eq(sandboxes.ec2Status, "running"),
-          eq(sandboxes.currentLoad, 0),
         ),
       );
-    return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
+    // Defense-in-depth: exclude ASG-managed rows (same pattern as findAsgManaged())
+    return data
+      .map((r) => toSandboxRecord(r as Record<string, unknown>))
+      .filter((r) => {
+        const tags = r.tags as Record<string, unknown> | null;
+        return tags?.asg_managed !== true;
+      });
+  }
+
+  /**
+   * Set or clear the idle anchor timestamp for VALET auto-stop.
+   * Pass a Date to record when the sandbox became idle, or null to clear it.
+   */
+  async setLastBecameIdleAt(id: string, at: Date | null): Promise<void> {
+    await this.db
+      .update(sandboxes)
+      .set({ lastBecameIdleAt: at, updatedAt: new Date() })
+      .where(eq(sandboxes.id, id));
   }
 
   /**

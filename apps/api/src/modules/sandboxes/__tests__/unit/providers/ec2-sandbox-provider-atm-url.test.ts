@@ -42,6 +42,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   lastStartedAt: null,
   lastStoppedAt: null,
   autoStopEnabled: false,
+  autoStopOwner: "none",
   idleMinutesBeforeStop: 30,
   machineType: "ec2",
   agentVersion: null,
@@ -50,6 +51,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   ghImageUpdatedAt: null,
   deployedCommitSha: null,
   healthCheckFailureCount: 0,
+  lastBecameIdleAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
