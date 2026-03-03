@@ -205,11 +205,25 @@ export async function registerBrowserSessionWs(fastify: FastifyInstance) {
       }
     });
 
+    // Per-connection TTL timer: closes the socket exactly when the token expires.
+    // This is separate from the event-driven invalidation (which fires immediately
+    // when the task leaves waiting_human). Both paths are needed:
+    //   - expiryTimer: enforces the 5-minute token TTL ceiling
+    //   - onTokenInvalidated: immediate close on task state transitions
+    const ttlMs = Math.max(0, session.expiresAt.getTime() - Date.now());
+    const expiryTimer = setTimeout(() => {
+      cleanup();
+      socket.send(JSON.stringify({ type: "session_state", state: "expired" }));
+      socket.close(4002, "Session expired");
+      cdpSocket.close();
+    }, ttlMs);
+
     // Cleanup helpers
     let cleaned = false;
     function cleanup() {
       if (cleaned) return;
       cleaned = true;
+      clearTimeout(expiryTimer);
       if (screenshotInterval) clearInterval(screenshotInterval);
       screenshotInterval = null;
       browserSessionTokenStore.events.removeListener(
