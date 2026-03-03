@@ -415,7 +415,10 @@ export class SandboxRepository {
    * Used by syncAsgIps to reconcile ASG instances with DB records.
    */
   async findAsgManaged(): Promise<SandboxRecord[]> {
-    const data = await this.db.select().from(sandboxes).where(eq(sandboxes.status, "active"));
+    const data = await this.db
+      .select()
+      .from(sandboxes)
+      .where(inArray(sandboxes.status, ["active", "stopped", "provisioning", "stopping"]));
     // Filter in JS since tags is a JSONB column and Drizzle doesn't natively
     // support deep JSON field queries in a portable way.
     return data
