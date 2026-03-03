@@ -469,7 +469,7 @@ export function WorkersPage() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <a
-                                  href={`https://${w.ec2_ip}:6901/`}
+                                  href={`http://${w.ec2_ip}:6901/`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center justify-center rounded-md p-1.5 text-[var(--wk-text-secondary)] hover:text-[var(--wk-text-primary)] hover:bg-[var(--wk-surface-sunken)] transition-colors"
