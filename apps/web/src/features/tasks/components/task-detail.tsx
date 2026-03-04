@@ -14,6 +14,7 @@ import { FieldReview } from "./field-review";
 import { HitlBlockerCard } from "./hitl-blocker-card";
 import { GhJobCard } from "./gh-job-card";
 import { ActivityFeed } from "./activity-feed";
+import { ProofPack } from "./proof-pack";
 import { useTask } from "../hooks/use-tasks";
 import { useTaskWebSocket } from "../hooks/use-task-websocket";
 import { useSSEEvents } from "../hooks/use-sse-events";
@@ -348,6 +349,11 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 : String(task.interaction.pausedAt),
           }}
           browserSessionAvailable={task.ghJob?.browserSessionAvailable === true}
+          credentialIssue={
+            task.interaction.type === "login_required" ||
+            (task.interaction.type === "two_factor" &&
+              task.interaction.metadata?.detection_method === "credential_failure")
+          }
           onCancel={() =>
             cancelTask.mutate({
               params: { id: taskId },
@@ -362,6 +368,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
 
       {/* Activity Feed - real GH job events timeline */}
       {task.ghJob && <ActivityFeed taskId={taskId} isTerminal={isTerminal} />}
+
+      {/* Submission Proof Pack - for completed tasks */}
+      {task.status === "completed" && <ProofPack taskId={taskId} />}
 
       {/* Field Review Panel - copilot field review */}
       {needsFieldReview && (

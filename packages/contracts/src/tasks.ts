@@ -12,6 +12,7 @@ import {
   resolveBlockerResponse,
   vncUrlResponse,
   browserSessionResponse,
+  submissionProofResponse,
   errorResponse,
 } from "@valet/shared/schemas";
 
@@ -70,6 +71,16 @@ export const taskContract = c.router({
       404: errorResponse,
     },
     summary: "Get a task by ID",
+  },
+  getProof: {
+    method: "GET",
+    path: "/api/v1/tasks/:id/proof",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: submissionProofResponse,
+      404: errorResponse,
+    },
+    summary: "Get submission proof pack for a completed task",
   },
   create: {
     method: "POST",

@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { workHistoryEntry, educationEntry } from "./resume.schema.js";
+import {
+  autonomyLevel,
+  emailReadiness,
+  mailboxReadiness,
+  platformReadiness,
+} from "./autonomy.schema.js";
 
 export const userRole = z.enum(["user", "developer", "admin", "superadmin"]);
 
@@ -80,6 +86,11 @@ export const userProfileResponse = userSchema.extend({
   preferences: userPreferences,
   jobPreferences: jobPreferences.optional(),
   notificationPreferences: notificationPreferences.optional(),
+  autonomyLevel: autonomyLevel.optional(),
+  autonomyBlockingReasons: z.array(z.string()).optional(),
+  emailReadiness: emailReadiness.optional(),
+  mailboxReadiness: mailboxReadiness.optional(),
+  platformReadiness: platformReadiness.optional(),
 });
 
 // ─── Inferred Types ───

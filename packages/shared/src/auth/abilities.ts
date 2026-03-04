@@ -19,6 +19,7 @@ export function defineAbilitiesFor(role: string): AppAbility {
       can("manage", "QaBank");
       can("manage", "Dashboard");
       can("manage", "Settings");
+      can("manage", "JobLead");
       break;
     case "user":
       can("manage", "Task");
@@ -26,6 +27,7 @@ export function defineAbilitiesFor(role: string): AppAbility {
       can("manage", "QaBank");
       can("manage", "Dashboard");
       can("manage", "Settings");
+      can("manage", "JobLead");
       break;
     case "beta":
       can("read", "Task");
@@ -34,6 +36,8 @@ export function defineAbilitiesFor(role: string): AppAbility {
       can("manage", "Resume");
       can("read", "QaBank");
       can("read", "Dashboard");
+      can("read", "JobLead");
+      can("create", "JobLead");
       break;
     case "waitlist":
       // No permissions — redirected to /early-access

@@ -86,18 +86,22 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return <>{children}</>;
   }
 
-  // Determine onboarding completion: has at least 1 resume + copilot disclaimer accepted
+  // Onboarding is complete when the user has uploaded a resume, accepted the
+  // copilot disclaimer, AND clicked "Enter Workbench" on the readiness result
+  // screen (which sets the localStorage flag). This keeps the result step
+  // visible across refreshes until the user explicitly finishes onboarding.
   const hasResumes = resumesQuery.data?.status === 200 && resumesQuery.data.body.data.length > 0;
-  const onboardingComplete = hasResumes && !!copilotAccepted;
+  const onboardingFinished = !!localStorage.getItem(`valet:onboarding:completed:${user.id}`);
+  const onboardingComplete = hasResumes && !!copilotAccepted && onboardingFinished;
 
   // If onboarding NOT complete and not already on /onboarding → redirect there
   if (!onboardingComplete && !isOnboardingPath) {
     return <Navigate to="/onboarding" replace />;
   }
 
-  // If onboarding IS complete and on /onboarding → redirect to /dashboard
+  // If onboarding IS complete and on /onboarding → redirect to workbench
   if (onboardingComplete && isOnboardingPath) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/apply" replace />;
   }
 
   return <>{children}</>;

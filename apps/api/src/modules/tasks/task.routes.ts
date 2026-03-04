@@ -43,6 +43,20 @@ export const taskRouter = s.router(taskContract, {
     return { status: 200, body: task as TaskResponse };
   },
 
+  getProof: async ({ params, request }) => {
+    await requireAbility("read", "Task")(request);
+    const { taskService } = request.diScope.cradle;
+    try {
+      const proof = await taskService.getProof(params.id, request.userId);
+      return { status: 200 as const, body: proof };
+    } catch {
+      return {
+        status: 404 as const,
+        body: { error: "NOT_FOUND", message: "Task not found or no proof available" },
+      };
+    }
+  },
+
   create: async ({ body, request }) => {
     await requireAbility("create", "Task")(request);
     const { taskService } = request.diScope.cradle;

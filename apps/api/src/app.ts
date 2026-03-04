@@ -42,6 +42,10 @@ import { taskEventsSSERoutes } from "./modules/tasks/task-events-sse.routes.js";
 import { earlyAccessRouter } from "./modules/early-access/early-access.routes.js";
 import { earlyAccessAdminRouter } from "./modules/early-access/early-access.admin-routes.js";
 import { emailTemplatesAdminRouter } from "./modules/email-templates/email-templates.admin-routes.js";
+import { credentialRouter } from "./modules/credentials/credential.routes.js";
+import { fitLabRouter } from "./modules/fit-lab/fit-lab.routes.js";
+import { insightsRouter } from "./modules/insights/insights.routes.js";
+import { jobLeadRouter } from "./modules/job-leads/job-lead.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -133,6 +137,10 @@ export async function buildApp() {
   fastify.register(s.plugin(earlyAccessRouter));
   fastify.register(s.plugin(earlyAccessAdminRouter));
   fastify.register(s.plugin(emailTemplatesAdminRouter));
+  fastify.register(s.plugin(credentialRouter));
+  fastify.register(s.plugin(fitLabRouter));
+  fastify.register(s.plugin(insightsRouter));
+  fastify.register(s.plugin(jobLeadRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);

@@ -64,6 +64,16 @@ const BrowserSessionPage = lazy(() =>
     default: m.BrowserSessionPage,
   })),
 );
+const InsightsPage = lazy(() =>
+  import("./features/insights/pages/insights-page").then((m) => ({
+    default: m.InsightsPage,
+  })),
+);
+const JobsPage = lazy(() =>
+  import("./features/job-inbox/pages/jobs-page").then((m) => ({
+    default: m.JobsPage,
+  })),
+);
 const SettingsPage = lazy(() =>
   import("./features/settings/pages/settings-page").then((m) => ({
     default: m.SettingsPage,
@@ -200,6 +210,8 @@ export function AppRouter() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="/apply" element={<ApplyPage />} />
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/insights" element={<InsightsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/settings/*" element={<SettingsPage />} />
           <Route

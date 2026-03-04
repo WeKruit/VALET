@@ -58,6 +58,14 @@ import { InstanceDiscoveryService } from "../modules/sync/instance-discovery.ser
 import { EarlyAccessRepository } from "../modules/early-access/early-access.repository.js";
 import { EarlyAccessService } from "../modules/early-access/early-access.service.js";
 import { EmailTemplatesRepository } from "../modules/email-templates/email-templates.repository.js";
+import { CredentialRepository } from "../modules/credentials/credential.repository.js";
+import { CredentialService } from "../modules/credentials/credential.service.js";
+import { FitLabRepository } from "../modules/fit-lab/fit-lab.repository.js";
+import { FitLabService } from "../modules/fit-lab/fit-lab.service.js";
+import { SubmissionProofRepository } from "../modules/tasks/submission-proof.repository.js";
+import { InsightsService } from "../modules/insights/insights.service.js";
+import { JobLeadRepository } from "../modules/job-leads/job-lead.repository.js";
+import { JobLeadService } from "../modules/job-leads/job-lead.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -116,6 +124,14 @@ export interface AppCradle {
   earlyAccessService: EarlyAccessService;
   emailTemplatesRepo: EmailTemplatesRepository;
   userSandboxRepo: UserSandboxRepository;
+  credentialRepo: CredentialRepository;
+  credentialService: CredentialService;
+  fitLabRepo: FitLabRepository;
+  fitLabService: FitLabService;
+  submissionProofRepo: SubmissionProofRepository;
+  insightsService: InsightsService;
+  jobLeadRepo: JobLeadRepository;
+  jobLeadService: JobLeadService;
 }
 
 declare module "@fastify/awilix" {
@@ -232,5 +248,13 @@ export default fp(async (fastify: FastifyInstance) => {
     earlyAccessService: asClass(EarlyAccessService, { lifetime: Lifetime.SINGLETON }),
     emailTemplatesRepo: asClass(EmailTemplatesRepository, { lifetime: Lifetime.SINGLETON }),
     userSandboxRepo: asClass(UserSandboxRepository, { lifetime: Lifetime.SINGLETON }),
+    credentialRepo: asClass(CredentialRepository, { lifetime: Lifetime.SINGLETON }),
+    credentialService: asClass(CredentialService, { lifetime: Lifetime.SINGLETON }),
+    fitLabRepo: asClass(FitLabRepository, { lifetime: Lifetime.SINGLETON }),
+    fitLabService: asClass(FitLabService, { lifetime: Lifetime.SINGLETON }),
+    submissionProofRepo: asClass(SubmissionProofRepository, { lifetime: Lifetime.SINGLETON }),
+    insightsService: asClass(InsightsService, { lifetime: Lifetime.SINGLETON }),
+    jobLeadRepo: asClass(JobLeadRepository, { lifetime: Lifetime.SINGLETON }),
+    jobLeadService: asClass(JobLeadService, { lifetime: Lifetime.SINGLETON }),
   });
 });
