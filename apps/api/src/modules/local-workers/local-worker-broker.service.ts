@@ -569,31 +569,48 @@ export class LocalWorkerBrokerService {
         throw leaseErr;
       }
 
-      await this.ghJobRepo.updateStatus(ghJob.id, {
-        status: "running",
-        startedAt: ghJob.startedAt ?? new Date(),
-        lastHeartbeat: new Date(),
-        workerId: session.desktopWorkerId,
-        targetWorkerId: session.desktopWorkerId,
-        statusMessage: "Claimed by desktop local worker",
-        metadata: {
-          ...(ghJob.metadata ?? {}),
-          active_lease_id: leaseId,
-        },
-      });
+      try {
+        await this.ghJobRepo.updateStatus(ghJob.id, {
+          status: "running",
+          startedAt: ghJob.startedAt ?? new Date(),
+          lastHeartbeat: new Date(),
+          workerId: session.desktopWorkerId,
+          targetWorkerId: session.desktopWorkerId,
+          statusMessage: "Claimed by desktop local worker",
+          metadata: {
+            ...(ghJob.metadata ?? {}),
+            active_lease_id: leaseId,
+          },
+        });
 
-      await this.ghJobEventRepo.insertEvent({
-        jobId: ghJob.id,
-        eventType: "job_claimed",
-        fromStatus: ghJob.status,
-        toStatus: "running",
-        message: "Claimed by desktop local worker",
-        actor: "valet",
-        metadata: {
-          desktopWorkerId: session.desktopWorkerId,
-          leaseId,
-        },
-      });
+        await this.ghJobEventRepo.insertEvent({
+          jobId: ghJob.id,
+          eventType: "job_claimed",
+          fromStatus: ghJob.status,
+          toStatus: "running",
+          message: "Claimed by desktop local worker",
+          actor: "valet",
+          metadata: {
+            desktopWorkerId: session.desktopWorkerId,
+            leaseId,
+          },
+        });
+      } catch (postLeaseErr) {
+        this.logger.error(
+          {
+            err: postLeaseErr,
+            jobId: ghJob.id,
+            pgBossJobId: fetchedJob.id,
+            desktopWorkerId: session.desktopWorkerId,
+          },
+          "Post-lease operation failed in claim(); rolling back lease and pg-boss job",
+        );
+        await this.deleteLease(lease);
+        await boss.fail(queueName, fetchedJob.id, {
+          error: postLeaseErr instanceof Error ? postLeaseErr.message : String(postLeaseErr),
+        });
+        throw postLeaseErr;
+      }
 
       const inputData = ghJob.inputData ?? {};
       return {
@@ -750,9 +767,14 @@ export class LocalWorkerBrokerService {
         { jobId: input.jobId, currentStatus: ghJob.status },
         "Ignoring complete for job already in terminal state",
       );
+      const boss = this.requireBoss();
+      await boss.complete(lease.queueName, lease.pgBossJobId);
       await this.deleteLease(lease);
       return;
     }
+
+    const boss = this.requireBoss();
+    await boss.complete(lease.queueName, lease.pgBossJobId);
 
     await this.ghJobRepo.updateStatus(input.jobId, {
       status: "completed",
@@ -773,8 +795,6 @@ export class LocalWorkerBrokerService {
       metadata: input.result ?? null,
     });
 
-    const boss = this.requireBoss();
-    await boss.complete(lease.queueName, lease.pgBossJobId);
     await this.deleteLease(lease);
   }
 
@@ -795,9 +815,14 @@ export class LocalWorkerBrokerService {
         { jobId: input.jobId, currentStatus: ghJob.status },
         "Ignoring fail for job already in terminal state",
       );
+      const boss = this.requireBoss();
+      await boss.complete(lease.queueName, lease.pgBossJobId);
       await this.deleteLease(lease);
       return;
     }
+
+    const boss = this.requireBoss();
+    await boss.fail(lease.queueName, lease.pgBossJobId, { error: input.error });
 
     await this.ghJobRepo.updateStatus(input.jobId, {
       status: "failed",
@@ -818,8 +843,6 @@ export class LocalWorkerBrokerService {
       metadata: input.details ?? null,
     });
 
-    const boss = this.requireBoss();
-    await boss.fail(lease.queueName, lease.pgBossJobId, { error: input.error });
     await this.deleteLease(lease);
   }
 
@@ -831,7 +854,7 @@ export class LocalWorkerBrokerService {
   }): Promise<void> {
     this.ensureEnabled();
 
-    if (input.reason === "cancelled") {
+    if (input.reason.startsWith("cancel")) {
       return this.cancelJob(input);
     }
 
@@ -935,9 +958,14 @@ export class LocalWorkerBrokerService {
         { jobId: input.jobId, currentStatus: ghJob.status },
         "Ignoring cancel for job already in terminal state",
       );
+      const boss = this.requireBoss();
+      await boss.complete(lease.queueName, lease.pgBossJobId);
       await this.deleteLease(lease);
       return;
     }
+
+    const boss = this.requireBoss();
+    await boss.cancel(lease.queueName, lease.pgBossJobId);
 
     await this.ghJobRepo.updateStatus(input.jobId, {
       status: "cancelled",
@@ -959,8 +987,6 @@ export class LocalWorkerBrokerService {
       },
     });
 
-    const boss = this.requireBoss();
-    await boss.cancel(lease.queueName, lease.pgBossJobId);
     await this.deleteLease(lease);
   }
 }
