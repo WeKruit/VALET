@@ -7,8 +7,7 @@ import { OnboardingPage } from "./onboarding-page";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
-  const actual =
-    await vi.importActual<typeof ReactRouterDom>("react-router-dom");
+  const actual = await vi.importActual<typeof ReactRouterDom>("react-router-dom");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -25,6 +24,7 @@ let latestUploadOpts: any = null;
 vi.mock("@/lib/api-client", () => ({
   api: {
     resumes: {
+      list: { useQuery: () => ({ data: { status: 200, body: { data: [] } }, isLoading: false }) },
       upload: {
         useMutation: (opts?: any) => {
           // Update the ref on each render so onSuccess has fresh closure
@@ -36,7 +36,10 @@ vi.mock("@/lib/api-client", () => ({
               // so React can flush state and re-render with fresh closure
               setTimeout(() => {
                 if (latestUploadOpts?.onSuccess) {
-                  latestUploadOpts.onSuccess({ status: 202, body: { id: "resume-1", status: "parsing" } });
+                  latestUploadOpts.onSuccess({
+                    status: 202,
+                    body: { id: "resume-1", status: "parsing" },
+                  });
                 }
               }, 0);
             },
@@ -74,6 +77,23 @@ vi.mock("@/lib/api-client", () => ({
           isPending: false,
         }),
       },
+      getJobPreferences: {
+        useQuery: () => ({
+          data: {
+            status: 200,
+            body: {
+              targetJobTitles: [],
+              preferredLocations: [],
+              remotePreference: "any",
+              excludedCompanies: [],
+              preferredIndustries: [],
+            },
+          },
+          isLoading: false,
+        }),
+      },
+      updateJobPreferences: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      completeOnboarding: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     consent: {
       check: {
@@ -93,7 +113,30 @@ vi.mock("@/lib/api-client", () => ({
         }),
       },
     },
+    credentials: {
+      listMailboxCredentials: {
+        useQuery: () => ({ data: { status: 200, body: { data: [] } }, isLoading: false }),
+      },
+      listPlatformCredentials: {
+        useQuery: () => ({ data: { status: 200, body: { data: [] } }, isLoading: false }),
+      },
+      createMailboxCredential: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      createPlatformCredential: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
+    qaBank: {
+      list: { useQuery: () => ({ data: { status: 200, body: { data: [] } }, isLoading: false }) },
+      create: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
   },
+}));
+
+// Mock useAuth
+vi.mock("@/features/auth/hooks/use-auth", () => ({
+  useAuth: () => ({
+    user: { id: "test-user-id", email: "test@example.com", name: "Test User", role: "developer" },
+    isLoading: false,
+    setUser: vi.fn(),
+  }),
 }));
 
 // Mock cn utility
@@ -125,7 +168,13 @@ vi.mock("@/features/consent/hooks/use-consent", () => ({
 
 // Mock consent text
 vi.mock("@/content/legal/consent-text", () => ({
-  LAYER_1_REGISTRATION: { type: "tos", version: "1.0", title: "Terms of Service", preamble: "", risks: [] },
+  LAYER_1_REGISTRATION: {
+    type: "tos",
+    version: "1.0",
+    title: "Terms of Service",
+    preamble: "",
+    risks: [],
+  },
   LAYER_2_COPILOT_DISCLAIMER: {
     type: "copilot_disclaimer",
     version: "1.0",
@@ -139,7 +188,7 @@ function renderOnboardingPage() {
   return render(
     <MemoryRouter>
       <OnboardingPage />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -175,9 +224,7 @@ describe("OnboardingPage", () => {
 
   it("renders drag-and-drop instructions", () => {
     renderOnboardingPage();
-    expect(
-      screen.getByText("Drag and drop your resume here")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Drag and drop your resume here")).toBeInTheDocument();
     expect(screen.getByText("or click to browse")).toBeInTheDocument();
     expect(screen.getByText("PDF or DOCX, max 10MB")).toBeInTheDocument();
   });
@@ -185,17 +232,13 @@ describe("OnboardingPage", () => {
   it("renders the speed promise text", () => {
     renderOnboardingPage();
     expect(
-      screen.getByText(
-        "You'll be applying to your first job in about 2 minutes."
-      )
+      screen.getByText("You'll be applying to your first job in about 2 minutes."),
     ).toBeInTheDocument();
   });
 
   it("renders a hidden file input accepting pdf and docx", () => {
     renderOnboardingPage();
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput).toBeInTheDocument();
     expect(fileInput.accept).toBe(".pdf,.docx");
     expect(fileInput.className).toContain("hidden");
@@ -207,9 +250,7 @@ describe("OnboardingPage", () => {
     const user = userEvent.setup();
     renderOnboardingPage();
 
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
 
     const file = new File(["resume content"], "resume.pdf", {
       type: "application/pdf",
@@ -229,9 +270,7 @@ describe("OnboardingPage", () => {
     const user = userEvent.setup();
     renderOnboardingPage();
 
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
 
     const file = new File(["resume content"], "resume.pdf", {
       type: "application/pdf",
@@ -249,9 +288,7 @@ describe("OnboardingPage", () => {
     renderOnboardingPage();
 
     // Upload file to get to review
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["resume content"], "resume.pdf", {
       type: "application/pdf",
     });
@@ -278,9 +315,7 @@ describe("OnboardingPage", () => {
     const user = userEvent.setup();
     renderOnboardingPage();
 
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
 
     const invalidFile = new File(["content"], "resume.txt", {
       type: "text/plain",
