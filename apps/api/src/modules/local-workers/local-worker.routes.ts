@@ -249,14 +249,14 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
         if (!token) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
-        await localWorkerBrokerService.complete({
+        const result = await localWorkerBrokerService.complete({
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,
           result: body.result,
           summary: body.summary,
         });
-        return reply.status(200).send({ ok: true });
+        return reply.status(200).send({ ok: true, ...result });
       } catch (error) {
         return sendBrokerError(reply, error, "Failed to complete local worker job");
       }
@@ -274,7 +274,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
         if (!token) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
-        await localWorkerBrokerService.fail({
+        const result = await localWorkerBrokerService.fail({
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,
@@ -282,7 +282,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           code: body.code,
           details: body.details,
         });
-        return reply.status(200).send({ ok: true });
+        return reply.status(200).send({ ok: true, ...result });
       } catch (error) {
         return sendBrokerError(reply, error, "Failed to fail local worker job");
       }

@@ -757,7 +757,7 @@ export class LocalWorkerBrokerService {
     leaseId: string;
     result?: Record<string, unknown>;
     summary?: string;
-  }): Promise<void> {
+  }): Promise<{ actualStatus?: string }> {
     this.ensureEnabled();
     const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
     const ghJob = await this.ghJobRepo.findById(input.jobId);
@@ -770,7 +770,7 @@ export class LocalWorkerBrokerService {
       const boss = this.requireBoss();
       await boss.complete(lease.queueName, lease.pgBossJobId);
       await this.deleteLease(lease);
-      return;
+      return { actualStatus: ghJob.status };
     }
 
     const boss = this.requireBoss();
@@ -796,6 +796,7 @@ export class LocalWorkerBrokerService {
     });
 
     await this.deleteLease(lease);
+    return {};
   }
 
   async fail(input: {
@@ -805,7 +806,7 @@ export class LocalWorkerBrokerService {
     error: string;
     code?: string;
     details?: Record<string, unknown>;
-  }): Promise<void> {
+  }): Promise<{ actualStatus?: string }> {
     this.ensureEnabled();
     const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
     const ghJob = await this.ghJobRepo.findById(input.jobId);
@@ -818,7 +819,7 @@ export class LocalWorkerBrokerService {
       const boss = this.requireBoss();
       await boss.complete(lease.queueName, lease.pgBossJobId);
       await this.deleteLease(lease);
-      return;
+      return { actualStatus: ghJob.status };
     }
 
     const boss = this.requireBoss();
@@ -844,6 +845,7 @@ export class LocalWorkerBrokerService {
     });
 
     await this.deleteLease(lease);
+    return {};
   }
 
   async release(input: {
