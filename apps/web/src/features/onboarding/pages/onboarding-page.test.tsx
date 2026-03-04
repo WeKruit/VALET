@@ -191,6 +191,19 @@ vi.mock("../components/quick-review", () => ({
       >
         Confirm
       </button>
+      <button
+        onClick={() =>
+          onConfirm({
+            phone: "",
+            location: "",
+            skills: [],
+            workHistory: [],
+            education: [],
+          })
+        }
+      >
+        Confirm Empty
+      </button>
     </div>
   ),
 }));
@@ -407,7 +420,7 @@ async function navigateToJobPreview(user: ReturnType<typeof userEvent.setup>) {
   // parse-feedback: simulate parse complete
   await user.click(screen.getByRole("button", { name: /parse complete/i }));
   // parse-review: confirm
-  await user.click(screen.getByRole("button", { name: /confirm/i }));
+  await user.click(screen.getByRole("button", { name: /^confirm$/i }));
 
   expect(screen.getByTestId("job-preview-step")).toBeInTheDocument();
 }
@@ -423,7 +436,7 @@ async function navigateToQaStep(user: ReturnType<typeof userEvent.setup>) {
   // parse-feedback: simulate parse complete
   await user.click(screen.getByRole("button", { name: /parse complete/i }));
   // parse-review: confirm
-  await user.click(screen.getByRole("button", { name: /confirm/i }));
+  await user.click(screen.getByRole("button", { name: /^confirm$/i }));
 
   expect(screen.getByTestId("qa-step")).toBeInTheDocument();
 }
@@ -664,7 +677,7 @@ describe("OnboardingPage", () => {
     expect(screen.getByTestId("parse-review-step")).toBeInTheDocument();
 
     // Click confirm — mutation fires but does NOT auto-succeed
-    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    await user.click(screen.getByRole("button", { name: /^confirm$/i }));
 
     // The mutation was called but hasn't resolved yet
     expect(profileUpdateCallbacks.current).toHaveLength(1);
@@ -761,7 +774,7 @@ describe("OnboardingPage", () => {
     await user.click(screen.getByRole("button", { name: /parse complete/i }));
 
     // Confirm (default mock auto-succeeds)
-    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    await user.click(screen.getByRole("button", { name: /^confirm$/i }));
 
     // After success, parse-review IS marked visited
     const visited = JSON.parse(
@@ -772,7 +785,7 @@ describe("OnboardingPage", () => {
 
   // ─── Clear-values regression (035fcd9) ───
 
-  it("always includes all five profile fields in mutation body even when arrays are empty", async () => {
+  it("always includes all five profile fields in mutation body even when all values are cleared", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
 
@@ -782,14 +795,14 @@ describe("OnboardingPage", () => {
     await user.click(screen.getByRole("button", { name: /parse complete/i }));
     expect(screen.getByTestId("parse-review-step")).toBeInTheDocument();
 
-    // Confirm — mock QuickReview sends phone="555", location="NY", skills=[], workHistory=[], education=[]
-    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    // Confirm with all-empty payload (phone="", location="", skills=[], workHistory=[], education=[])
+    await user.click(screen.getByRole("button", { name: /confirm empty/i }));
 
-    // The mutation must fire with all five fields present — empty arrays must not be dropped
+    // The mutation must fire with all five fields present — empty strings/arrays must not be dropped
     expect(profileUpdateCallbacks.lastPayload).not.toBeNull();
     const body = profileUpdateCallbacks.lastPayload.body;
-    expect(body).toHaveProperty("phone");
-    expect(body).toHaveProperty("location");
+    expect(body).toHaveProperty("phone", "");
+    expect(body).toHaveProperty("location", "");
     expect(body).toHaveProperty("skills", []);
     expect(body).toHaveProperty("workHistory", []);
     expect(body).toHaveProperty("education", []);
