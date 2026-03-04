@@ -43,6 +43,7 @@ const SELF_AUTH_PATTERNS = [
   /^\/api\/v1\/local-workers\/jobs\/[^/]+\/complete$/,
   /^\/api\/v1\/local-workers\/jobs\/[^/]+\/fail$/,
   /^\/api\/v1\/local-workers\/jobs\/[^/]+\/release$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/cancel$/,
 ];
 
 export async function authMiddleware(request: FastifyRequest, _reply: FastifyReply) {

@@ -706,6 +706,15 @@ export class LocalWorkerBrokerService {
     await this.writeLease(lease);
 
     const ghJob = await this.ghJobRepo.findById(input.jobId);
+
+    if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
+      this.logger.warn(
+        { jobId: input.jobId, currentStatus: ghJob.status },
+        "Ignoring awaiting-review transition for job already in terminal state",
+      );
+      return;
+    }
+
     await this.ghJobRepo.updateStatus(input.jobId, {
       status: "awaiting_review",
       lastHeartbeat: new Date(),
@@ -735,6 +744,15 @@ export class LocalWorkerBrokerService {
     this.ensureEnabled();
     const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
     const ghJob = await this.ghJobRepo.findById(input.jobId);
+
+    if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
+      this.logger.warn(
+        { jobId: input.jobId, currentStatus: ghJob.status },
+        "Ignoring complete for job already in terminal state",
+      );
+      await this.deleteLease(lease);
+      return;
+    }
 
     await this.ghJobRepo.updateStatus(input.jobId, {
       status: "completed",
@@ -771,6 +789,15 @@ export class LocalWorkerBrokerService {
     this.ensureEnabled();
     const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
     const ghJob = await this.ghJobRepo.findById(input.jobId);
+
+    if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
+      this.logger.warn(
+        { jobId: input.jobId, currentStatus: ghJob.status },
+        "Ignoring fail for job already in terminal state",
+      );
+      await this.deleteLease(lease);
+      return;
+    }
 
     await this.ghJobRepo.updateStatus(input.jobId, {
       status: "failed",
@@ -902,6 +929,15 @@ export class LocalWorkerBrokerService {
     this.ensureEnabled();
     const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
     const ghJob = await this.ghJobRepo.findById(input.jobId);
+
+    if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
+      this.logger.warn(
+        { jobId: input.jobId, currentStatus: ghJob.status },
+        "Ignoring cancel for job already in terminal state",
+      );
+      await this.deleteLease(lease);
+      return;
+    }
 
     await this.ghJobRepo.updateStatus(input.jobId, {
       status: "cancelled",
