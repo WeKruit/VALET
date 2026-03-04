@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { users } from "./users.js";
 
 export const mailboxCredentials = pgTable(
@@ -18,5 +18,8 @@ export const mailboxCredentials = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("idx_mailbox_credentials_user_id").on(table.userId)],
+  (table) => [
+    index("idx_mailbox_credentials_user_id").on(table.userId),
+    unique("uq_mailbox_credentials_user_provider").on(table.userId, table.provider),
+  ],
 );

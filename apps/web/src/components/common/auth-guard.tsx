@@ -38,12 +38,22 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   const isOnboardingPath = location.pathname.startsWith("/onboarding");
 
+  // All hooks must be called unconditionally (above any early returns)
   const resumesQuery = api.resumes.list.useQuery({
     queryKey: ["resumes", "list", user?.id],
     queryData: {},
     enabled: !!user,
     staleTime: 1000 * 60 * 5,
   });
+
+  const profileQuery = api.users.getProfile.useQuery({
+    queryKey: ["user-profile", "auth-guard", user?.id],
+    queryData: {},
+    enabled: !!user,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // ─── Early returns (no hooks below this line) ───
 
   if (isLoading) {
     return (
@@ -85,14 +95,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
     }
     return <>{children}</>;
   }
-
-  // Check profile for server-side onboarding completion
-  const profileQuery = api.users.getProfile.useQuery({
-    queryKey: ["user-profile", "auth-guard", user?.id],
-    queryData: {},
-    enabled: !!user,
-    staleTime: 1000 * 60 * 5,
-  });
 
   // Onboarding is complete when the user has uploaded a resume, accepted the
   // copilot disclaimer, AND completed onboarding (server-side timestamp OR

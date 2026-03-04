@@ -594,9 +594,8 @@ export function OnboardingPage() {
           window.location.replace("/apply");
         },
         onError: () => {
-          // Even if the server call fails, allow the user through (localStorage fallback)
-          localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
-          window.location.replace("/apply");
+          setIsSubmitting(false);
+          toast.error("Failed to complete onboarding. Please try again.");
         },
       },
     );

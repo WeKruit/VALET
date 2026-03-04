@@ -167,6 +167,7 @@ export const userRouter = s.router(userContract, {
   },
 
   completeOnboarding: async ({ request }) => {
+    await requireAbility("update", "Settings")(request);
     const { userService } = request.diScope.cradle;
     const completedAt = await userService.completeOnboarding(request.userId);
     return {
