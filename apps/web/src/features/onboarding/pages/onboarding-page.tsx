@@ -22,6 +22,7 @@ import { DisclaimerStep } from "../components/disclaimer-step";
 import { ReadinessResultStep } from "../components/readiness-result-step";
 
 import { useResumeParse, type ParsedResumeData } from "../hooks/use-resume-parse";
+import type { ProfileConfirmPayload } from "../components/quick-review";
 import type { AutonomyLevel } from "@valet/shared/schemas";
 
 // ─── Step definitions ───
@@ -475,61 +476,16 @@ export function OnboardingPage() {
     goTo("parse-review");
   }, [resumeId]);
 
-  function handleProfileConfirm(updates: {
-    name: string;
-    email: string;
-    phone: string;
-    location: string;
-    experience: string[];
-    education: string;
-    skills: string[];
-  }) {
+  function handleProfileConfirm(updates: ProfileConfirmPayload) {
+    // Build payload using only fields the updateProfile contract accepts
     const body: Record<string, unknown> = {};
-    if (updates.name) body.name = updates.name;
-    if (updates.email) body.email = updates.email;
     if (updates.phone) body.phone = updates.phone;
     if (updates.location) body.location = updates.location;
-    if (updates.experience?.length) {
-      body.workHistory = updates.experience.map((exp) => ({
-        company: "",
-        title: exp,
-        startDate: "",
-        endDate: "",
-        description: "",
-      }));
-    }
-    if (updates.education) {
-      body.education = [
-        {
-          school: updates.education,
-          degree: "",
-          field: "",
-          startDate: "",
-          endDate: "",
-          gpa: "",
-        },
-      ];
-    }
-    if (updates.skills?.length) {
-      body.skills = updates.skills;
-    }
+    if (updates.workHistory?.length) body.workHistory = updates.workHistory;
+    if (updates.education?.length) body.education = updates.education;
+    if (updates.skills?.length) body.skills = updates.skills;
 
-    if (Object.keys(body).length > 0) {
-      updateProfile.mutate(
-        { body: body as any },
-        {
-          onSuccess: () => {
-            markVisitedStep(userId, "parse-review");
-            setProfileComplete(true);
-            if (mode === "quick_start") {
-              goTo("job-preview");
-            } else {
-              goTo("qa");
-            }
-          },
-        },
-      );
-    } else {
+    function advance() {
       markVisitedStep(userId, "parse-review");
       setProfileComplete(true);
       if (mode === "quick_start") {
@@ -537,6 +493,12 @@ export function OnboardingPage() {
       } else {
         goTo("qa");
       }
+    }
+
+    if (Object.keys(body).length > 0) {
+      updateProfile.mutate({ body: body as any }, { onSuccess: advance });
+    } else {
+      advance();
     }
   }
 

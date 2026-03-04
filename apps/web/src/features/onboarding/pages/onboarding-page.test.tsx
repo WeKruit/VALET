@@ -6,53 +6,62 @@ import { OnboardingPage } from "./onboarding-page";
 
 // ─── Hoisted stable data (prevents infinite re-renders from new-object-per-call) ───
 
-const { stableQueries, qaCallbacks, mockToast, mockParseHook } = vi.hoisted(() => {
-  const resumeList = { data: { status: 200, body: { data: [] } }, isLoading: false };
-  const profileData = {
-    data: {
-      status: 200,
-      body: {
-        name: "Test User",
-        email: "test@example.com",
-        phone: "",
-        location: "",
-        workHistory: [],
-        education: [],
-        skills: [],
+const { stableQueries, qaCallbacks, profileUpdateCallbacks, mockToast, mockParseHook } = vi.hoisted(
+  () => {
+    const resumeList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+    const profileData = {
+      data: {
+        status: 200,
+        body: {
+          name: "Test User",
+          email: "test@example.com",
+          phone: "",
+          location: "",
+          workHistory: [],
+          education: [],
+          skills: [],
+        },
       },
-    },
-    isLoading: false,
-  };
-  const prefsData = {
-    data: {
-      status: 200,
-      body: {
-        targetJobTitles: [],
-        preferredLocations: [],
-        remotePreference: "any",
-        excludedCompanies: [],
-        preferredIndustries: [],
+      isLoading: false,
+    };
+    const prefsData = {
+      data: {
+        status: 200,
+        body: {
+          targetJobTitles: [],
+          preferredLocations: [],
+          remotePreference: "any",
+          excludedCompanies: [],
+          preferredIndustries: [],
+        },
       },
-    },
-    isLoading: false,
-  };
-  const consentData = { data: { status: 200, body: { accepted: false } }, isLoading: false };
-  const credList = { data: { status: 200, body: { data: [] } }, isLoading: false };
-  const qaList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+      isLoading: false,
+    };
+    const consentData = { data: { status: 200, body: { accepted: false } }, isLoading: false };
+    const credList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+    const qaList = { data: { status: 200, body: { data: [] } }, isLoading: false };
 
-  return {
-    stableQueries: { resumeList, profileData, prefsData, consentData, credList, qaList },
-    qaCallbacks: {
-      current: [] as Array<{ onSuccess?: () => void; onError?: () => void; question: string }>,
-    },
-    mockToast: { success: vi.fn(), error: vi.fn() },
-    mockParseHook: {
-      parsedData: null as any,
-      parseStatus: "idle" as string,
-      error: null as string | null,
-    },
-  };
-});
+    return {
+      stableQueries: { resumeList, profileData, prefsData, consentData, credList, qaList },
+      qaCallbacks: {
+        current: [] as Array<{ onSuccess?: () => void; onError?: () => void; question: string }>,
+      },
+      profileUpdateCallbacks: {
+        current: [] as Array<{ onSuccess?: () => void; onError?: () => void }>,
+        /** When true, calls onSuccess immediately (default). When false, stores callbacks. */
+        autoSucceed: true,
+      },
+      mockToast: { success: vi.fn(), error: vi.fn() },
+      mockParseHook: {
+        parsedData: null as any,
+        parseStatus: "idle" as string,
+        error: null as string | null,
+        /** Tracks the resumeId passed to the hook in the last render */
+        lastResumeId: null as string | null,
+      },
+    };
+  },
+);
 
 // ─── Mock heavy runtime imports to prevent OOM ───
 
@@ -105,7 +114,10 @@ vi.mock("@valet/shared/schemas", () => ({
 // ─── Mock the resume parse hook ───
 
 vi.mock("../hooks/use-resume-parse", () => ({
-  useResumeParse: () => mockParseHook,
+  useResumeParse: (resumeId: string | null) => {
+    mockParseHook.lastResumeId = resumeId;
+    return mockParseHook;
+  },
 }));
 
 // ─── Mock all step sub-components (lightweight stubs) ───
@@ -167,13 +179,11 @@ vi.mock("../components/quick-review", () => ({
       <button
         onClick={() =>
           onConfirm({
-            name: "Test",
-            email: "test@example.com",
             phone: "555",
             location: "NY",
-            experience: [],
-            education: "",
             skills: [],
+            workHistory: [],
+            education: [],
           })
         }
       >
@@ -279,7 +289,14 @@ vi.mock("@/lib/api-client", () => ({
       updateProfile: {
         useMutation: () => ({
           mutate: (_payload: any, callOpts?: any) => {
-            if (callOpts?.onSuccess) callOpts.onSuccess({ status: 200, body: {} });
+            if (profileUpdateCallbacks.autoSucceed) {
+              if (callOpts?.onSuccess) callOpts.onSuccess({ status: 200, body: {} });
+            } else {
+              profileUpdateCallbacks.current.push({
+                onSuccess: callOpts?.onSuccess,
+                onError: callOpts?.onError,
+              });
+            }
           },
           isPending: false,
         }),
@@ -413,9 +430,12 @@ describe("OnboardingPage", () => {
     vi.clearAllMocks();
     localStorage.clear();
     qaCallbacks.current = [];
+    profileUpdateCallbacks.current = [];
+    profileUpdateCallbacks.autoSucceed = true;
     mockParseHook.parsedData = null;
     mockParseHook.parseStatus = "idle";
     mockParseHook.error = null;
+    mockParseHook.lastResumeId = null;
     // Reset resume list to empty (some tests override it)
     stableQueries.resumeList.data = { status: 200, body: { data: [] } } as any;
   });
@@ -594,7 +614,7 @@ describe("OnboardingPage", () => {
 
   // ─── Reload-while-parsing recovery (P1 fix) ───
 
-  it("restores resumeId on reload when resume is still parsing", () => {
+  it("restores resumeId from server on reload when resume is still parsing", () => {
     // Simulate: user has visited entry, has a resume with status "parsing" on the server
     localStorage.setItem("valet:onboarding:visited:test-user-id", JSON.stringify({ entry: true }));
     localStorage.setItem("valet:onboarding:mode:test-user-id", "quick_start");
@@ -617,16 +637,19 @@ describe("OnboardingPage", () => {
 
     renderOnboardingPage();
 
-    // Should land on parse-feedback, NOT be stuck idle
+    // Should land on parse-feedback
     expect(screen.getByTestId("parse-feedback-step")).toBeInTheDocument();
-    // The parse hook receives the status — if resumeId was null, status would be "idle"
-    // Since our mock returns mockParseHook.parseStatus which defaults to "idle",
-    // the key assertion is that we landed on parse-feedback at all (not stuck on resume-step)
+    // The key assertion: useResumeParse was called with the server's resumeId,
+    // NOT null. Without the fix, resumeId stays null and the hook stays idle.
+    expect(mockParseHook.lastResumeId).toBe("resume-parsing-1");
   });
 
   // ─── Failed profile save does NOT mark parse-review visited (P1 fix) ───
 
-  it("does not mark parse-review visited if profile save fails", async () => {
+  it("does not mark parse-review visited when profile save fails", async () => {
+    // Disable auto-succeed so we can control when onSuccess/onError fires
+    profileUpdateCallbacks.autoSucceed = false;
+
     const user = userEvent.setup();
     renderOnboardingPage();
 
@@ -636,12 +659,37 @@ describe("OnboardingPage", () => {
     await user.click(screen.getByRole("button", { name: /parse complete/i }));
     expect(screen.getByTestId("parse-review-step")).toBeInTheDocument();
 
-    // The default mock calls onSuccess immediately, so parse-review WILL be marked.
-    // We need to verify that in the success case it IS marked (and in failure it isn't).
-    // Click confirm — default mock calls onSuccess
+    // Click confirm — mutation fires but does NOT auto-succeed
     await user.click(screen.getByRole("button", { name: /confirm/i }));
 
-    // After success, parse-review should be marked visited
+    // The mutation was called but hasn't resolved yet
+    expect(profileUpdateCallbacks.current).toHaveLength(1);
+
+    // Simulate failure — call onError instead of onSuccess
+    act(() => {
+      profileUpdateCallbacks.current[0]!.onError?.();
+    });
+
+    // parse-review should NOT be marked visited because onSuccess never fired
+    const visited = JSON.parse(
+      localStorage.getItem("valet:onboarding:visited:test-user-id") ?? "{}",
+    );
+    expect(visited["parse-review"]).toBeUndefined();
+  });
+
+  it("marks parse-review visited only after profile save succeeds", async () => {
+    const user = userEvent.setup();
+    renderOnboardingPage();
+
+    // Navigate to parse-review
+    await user.click(screen.getByRole("button", { name: /try it now/i }));
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+    await user.click(screen.getByRole("button", { name: /parse complete/i }));
+
+    // Confirm (default mock auto-succeeds)
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+
+    // After success, parse-review IS marked visited
     const visited = JSON.parse(
       localStorage.getItem("valet:onboarding:visited:test-user-id") ?? "{}",
     );

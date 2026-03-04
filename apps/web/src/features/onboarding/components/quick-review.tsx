@@ -1,152 +1,106 @@
 import { useState } from "react";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
-import { Textarea } from "@valet/ui/components/textarea";
 import { Button } from "@valet/ui/components/button";
-import { Pencil, Plus, Trash2, Check, X, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, AlertTriangle } from "lucide-react";
 import type { ParsedResumeData } from "../hooks/use-resume-parse";
+
+/** The structured shape that matches the updateProfile contract */
+export interface ProfileConfirmPayload {
+  phone: string;
+  location: string;
+  skills: string[];
+  workHistory: Array<{
+    title: string;
+    company: string;
+    location?: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    description?: string;
+    bullets?: string[];
+    achievements?: string[];
+  }>;
+  education: Array<{
+    school: string;
+    degree: string;
+    fieldOfStudy?: string;
+    gpa?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    expectedGraduation?: string | null;
+    honors?: string | null;
+  }>;
+}
 
 interface QuickReviewProps {
   /** Parsed resume data (primary source during onboarding) */
   parsedData?: ParsedResumeData | null;
-  /** Legacy profile data (fallback when parsedData not available) */
-  profile?: {
-    name: string;
-    email: string;
-    phone: string;
-    location: string;
-    experience: string[];
-    education: string;
-    skills: string[];
-  };
   /** Overall parse confidence (0-1) — show warnings below this */
   parseConfidence?: number | null;
-  onConfirm: (updates: {
-    name: string;
-    email: string;
-    phone: string;
-    location: string;
-    experience: string[];
-    education: string;
-    skills: string[];
-  }) => void;
+  onConfirm: (updates: ProfileConfirmPayload) => void;
   isSaving?: boolean;
 }
 
-/** Transform parsedResumeData into editable field values */
-function deriveFromParsed(data: ParsedResumeData) {
-  return {
-    name: data.fullName ?? "",
-    email: data.email ?? "",
-    phone: data.phone ?? "",
-    location: data.location ?? "",
-    experience: (data.workHistory ?? []).map(
-      (w) =>
-        `${w.title} at ${w.company}${w.startDate ? ` (${w.startDate}–${w.endDate ?? "Present"})` : ""}`,
-    ),
-    education:
-      (data.education ?? []).length > 0
-        ? `${data.education![0]!.degree}${data.education![0]!.fieldOfStudy ? ` in ${data.education![0]!.fieldOfStudy}` : ""} — ${data.education![0]!.school}`
-        : "",
-    skills: data.skills ?? [],
-  };
+/** Format a work-history entry for display */
+function formatWorkEntry(w: ProfileConfirmPayload["workHistory"][number]): string {
+  const dateRange = w.startDate ? ` (${w.startDate}–${w.endDate ?? "Present"})` : "";
+  return `${w.title} at ${w.company}${dateRange}`;
+}
+
+/** Format education entries for display */
+function formatEducation(entries: ProfileConfirmPayload["education"]): string {
+  if (entries.length === 0) return "";
+  const e = entries[0]!;
+  const field = e.fieldOfStudy ? ` in ${e.fieldOfStudy}` : "";
+  return `${e.degree}${field} — ${e.school}`;
 }
 
 export function QuickReview({
   parsedData,
-  profile: legacyProfile,
   parseConfidence,
   onConfirm,
   isSaving,
 }: QuickReviewProps) {
-  // Derive initial values from parsedData (preferred) or legacy profile
-  const initial = parsedData
-    ? deriveFromParsed(parsedData)
-    : (legacyProfile ?? {
-        name: "",
-        email: "",
-        phone: "",
-        location: "",
-        experience: [],
-        education: "",
-        skills: [],
-      });
+  // Derive initial structured values from parsedData
+  const initialPhone = parsedData?.phone ?? "";
+  const initialLocation = parsedData?.location ?? "";
+  const initialWorkHistory: ProfileConfirmPayload["workHistory"] = (
+    parsedData?.workHistory ?? []
+  ).map((w) => ({ ...w }));
+  const initialEducation: ProfileConfirmPayload["education"] = (parsedData?.education ?? []).map(
+    (e) => ({ ...e }),
+  );
+  const initialSkills = parsedData?.skills ?? [];
 
-  const [name, setName] = useState(initial.name);
-  const [email, setEmail] = useState(initial.email);
-  const [phone, setPhone] = useState(initial.phone);
-  const [location, setLocation] = useState(initial.location);
+  // Editable fields (only those the contract accepts)
+  const [phone, setPhone] = useState(initialPhone);
+  const [location, setLocation] = useState(initialLocation);
 
-  // Experience editing state
-  const [experience, setExperience] = useState<string[]>(initial.experience);
-  const [editingExpIndex, setEditingExpIndex] = useState<number | null>(null);
-  const [editingExpValue, setEditingExpValue] = useState("");
+  // Work history — keep structured, display as formatted strings
+  const [workHistory, setWorkHistory] = useState(initialWorkHistory);
   const [addingExp, setAddingExp] = useState(false);
-  const [newExpValue, setNewExpValue] = useState("");
+  const [newExpTitle, setNewExpTitle] = useState("");
+  const [newExpCompany, setNewExpCompany] = useState("");
 
-  // Education editing state
-  const [education, setEducation] = useState(initial.education);
-  const [editingEdu, setEditingEdu] = useState(false);
-  const [editingEduValue, setEditingEduValue] = useState(initial.education);
+  // Education — keep structured, display as formatted string
+  const [education] = useState(initialEducation);
 
-  const [skills] = useState<string[]>(initial.skills);
+  const [skills] = useState<string[]>(initialSkills);
 
   const lowConfidence = parseConfidence != null && parseConfidence < 0.7;
 
-  // ─── Experience handlers ───
-  function startEditExp(index: number) {
-    const entry = experience[index];
-    if (entry === undefined) return;
-    setEditingExpIndex(index);
-    setEditingExpValue(entry);
-  }
-
-  function saveEditExp() {
-    if (editingExpIndex === null) return;
-    const trimmed = editingExpValue.trim();
-    if (!trimmed) return;
-    setExperience((prev) => prev.map((e, i) => (i === editingExpIndex ? trimmed : e)));
-    setEditingExpIndex(null);
-    setEditingExpValue("");
-  }
-
-  function cancelEditExp() {
-    setEditingExpIndex(null);
-    setEditingExpValue("");
-  }
-
   function addExp() {
-    const trimmed = newExpValue.trim();
-    if (!trimmed) return;
-    setExperience((prev) => [...prev, trimmed]);
-    setNewExpValue("");
+    const title = newExpTitle.trim();
+    const company = newExpCompany.trim();
+    if (!title || !company) return;
+    setWorkHistory((prev) => [...prev, { title, company }]);
+    setNewExpTitle("");
+    setNewExpCompany("");
     setAddingExp(false);
   }
 
   function removeExp(index: number) {
-    setExperience((prev) => prev.filter((_, i) => i !== index));
-    if (editingExpIndex === index) {
-      setEditingExpIndex(null);
-      setEditingExpValue("");
-    }
-  }
-
-  // ─── Education handlers ───
-  function startEditEdu() {
-    setEditingEdu(true);
-    setEditingEduValue(education);
-  }
-
-  function saveEditEdu() {
-    const trimmed = editingEduValue.trim();
-    if (!trimmed) return;
-    setEducation(trimmed);
-    setEditingEdu(false);
-  }
-
-  function cancelEditEdu() {
-    setEditingEdu(false);
-    setEditingEduValue(education);
+    setWorkHistory((prev) => prev.filter((_, i) => i !== index));
   }
 
   return (
@@ -173,23 +127,23 @@ export function QuickReview({
               Your Basics
             </h3>
             <div className="grid gap-4">
+              {/* Name — read-only (set by OAuth, not editable via profile update) */}
               <div>
                 <label className="text-sm font-medium">Name</label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your full name"
-                  className="mt-1"
-                />
+                <p className="mt-1 text-sm px-3 py-2 rounded-[var(--wk-radius-md)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-primary)]">
+                  {parsedData?.fullName || (
+                    <span className="text-[var(--wk-text-tertiary)] italic">From your account</span>
+                  )}
+                </p>
               </div>
+              {/* Email — read-only (set by OAuth) */}
               <div>
                 <label className="text-sm font-medium">Email</label>
-                <Input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="mt-1"
-                />
+                <p className="mt-1 text-sm px-3 py-2 rounded-[var(--wk-radius-md)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-primary)]">
+                  {parsedData?.email || (
+                    <span className="text-[var(--wk-text-tertiary)] italic">From your account</span>
+                  )}
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium">Phone</label>
@@ -223,7 +177,8 @@ export function QuickReview({
                 size="sm"
                 onClick={() => {
                   setAddingExp(true);
-                  setNewExpValue("");
+                  setNewExpTitle("");
+                  setNewExpCompany("");
                 }}
                 aria-label="Add experience entry"
               >
@@ -232,172 +187,89 @@ export function QuickReview({
               </Button>
             </div>
             <div className="space-y-1">
-              {experience.map((exp, i) => (
+              {workHistory.map((entry, i) => (
                 <div key={i} className="group flex items-start gap-2">
-                  {editingExpIndex === i ? (
-                    <div className="flex-1 flex items-center gap-1.5">
-                      <Textarea
-                        value={editingExpValue}
-                        onChange={(e) => setEditingExpValue(e.target.value)}
-                        className="min-h-[2rem] text-sm flex-1"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            saveEditExp();
-                          }
-                          if (e.key === "Escape") cancelEditExp();
-                        }}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={saveEditExp}
-                        aria-label="Save experience edit"
-                      >
-                        <Check className="h-3.5 w-3.5 text-[var(--wk-status-success)]" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={cancelEditExp}
-                        aria-label="Cancel experience edit"
-                      >
-                        <X className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm flex-1">{exp}</p>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => startEditExp(i)}
-                          aria-label={`Edit experience: ${exp}`}
-                        >
-                          <Pencil className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeExp(i)}
-                          aria-label={`Remove experience: ${exp}`}
-                        >
-                          <Trash2 className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
-                        </Button>
-                      </div>
-                    </>
-                  )}
+                  <p className="text-sm flex-1">{formatWorkEntry(entry)}</p>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeExp(i)}
+                      aria-label={`Remove experience: ${formatWorkEntry(entry)}`}
+                    >
+                      <Trash2 className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
+                    </Button>
+                  </div>
                 </div>
               ))}
 
-              {experience.length === 0 && !addingExp && (
+              {workHistory.length === 0 && !addingExp && (
                 <p className="text-sm text-[var(--wk-text-tertiary)]">
-                  No experience entries. Click "Add" to add one.
+                  No experience entries. Click &quot;Add&quot; to add one.
                 </p>
               )}
 
-              {/* Add new experience row */}
+              {/* Add new experience row — structured inputs */}
               {addingExp && (
-                <div className="flex items-center gap-1.5 pt-1">
-                  <Textarea
-                    value={newExpValue}
-                    onChange={(e) => setNewExpValue(e.target.value)}
-                    placeholder="e.g. Software Engineer at Acme Corp (2020-2023)"
-                    className="min-h-[2rem] text-sm flex-1"
+                <div className="space-y-2 pt-1">
+                  <Input
+                    value={newExpTitle}
+                    onChange={(e) => setNewExpTitle(e.target.value)}
+                    placeholder="Job title (e.g. Software Engineer)"
+                    className="text-sm"
                     autoFocus
+                  />
+                  <Input
+                    value={newExpCompany}
+                    onChange={(e) => setNewExpCompany(e.target.value)}
+                    placeholder="Company (e.g. Acme Corp)"
+                    className="text-sm"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
+                      if (e.key === "Enter") {
                         e.preventDefault();
                         addExp();
                       }
                       if (e.key === "Escape") {
                         setAddingExp(false);
-                        setNewExpValue("");
                       }
                     }}
                   />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={addExp}
-                    disabled={!newExpValue.trim()}
-                    aria-label="Confirm add experience"
-                  >
-                    <Check className="h-3.5 w-3.5 text-[var(--wk-status-success)]" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setAddingExp(false);
-                      setNewExpValue("");
-                    }}
-                    aria-label="Cancel add experience"
-                  >
-                    <X className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={addExp}
+                      disabled={!newExpTitle.trim() || !newExpCompany.trim()}
+                    >
+                      Add
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setAddingExp(false);
+                        setNewExpTitle("");
+                        setNewExpCompany("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Education */}
-            <div className="flex items-center justify-between pt-2">
+            {/* Education — display only (structured data preserved as-is) */}
+            <div className="pt-2">
               <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
                 Education
               </h3>
-              {!editingEdu && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={startEditEdu}
-                  aria-label="Edit education"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit
-                </Button>
-              )}
             </div>
-            {editingEdu ? (
-              <div className="flex items-center gap-1.5">
-                <Input
-                  value={editingEduValue}
-                  onChange={(e) => setEditingEduValue(e.target.value)}
-                  className="text-sm flex-1"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      saveEditEdu();
-                    }
-                    if (e.key === "Escape") cancelEditEdu();
-                  }}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={saveEditEdu}
-                  aria-label="Save education edit"
-                >
-                  <Check className="h-3.5 w-3.5 text-[var(--wk-status-success)]" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={cancelEditEdu}
-                  aria-label="Cancel education edit"
-                >
-                  <X className="h-3.5 w-3.5 text-[var(--wk-text-tertiary)]" />
-                </Button>
-              </div>
-            ) : (
-              <p className="text-sm">
-                {education || (
-                  <span className="text-[var(--wk-text-tertiary)]">No education found</span>
-                )}
-              </p>
-            )}
+            <p className="text-sm">
+              {formatEducation(education) || (
+                <span className="text-[var(--wk-text-tertiary)]">No education found</span>
+              )}
+            </p>
 
             <div className="flex flex-wrap gap-1.5 mt-2">
               {skills.slice(0, 5).map((skill) => (
@@ -429,13 +301,11 @@ export function QuickReview({
         disabled={isSaving}
         onClick={() =>
           onConfirm({
-            name,
-            email,
             phone,
             location,
-            experience,
-            education,
             skills,
+            workHistory,
+            education,
           })
         }
       >
