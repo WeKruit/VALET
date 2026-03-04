@@ -15,6 +15,8 @@ const SESSION_TTL_MS = 65 * 60 * 1000;
 const LEASE_TTL_MS = 4 * 60 * 60 * 1000;
 const CLAIM_LOCK_TTL_MS = 30_000;
 
+const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
 interface WorkerSession {
   userId: string;
   desktopWorkerId: string;
@@ -515,6 +517,19 @@ export class LocalWorkerBrokerService {
         return { leaseId: null, job: null };
       }
 
+      if (TERMINAL_STATUSES.has(ghJob.status)) {
+        this.logger.warn(
+          {
+            jobId: ghJob.id,
+            currentStatus: ghJob.status,
+            desktopWorkerId: session.desktopWorkerId,
+          },
+          "Rejecting claim for job already in terminal state",
+        );
+        await this.completeFetchedJob(boss, queueName, fetchedJob.id);
+        return { leaseId: null, job: null };
+      }
+
       const leaseId = randomUUID();
       const lease: ActiveLease = {
         jobId: ghJob.id,
@@ -524,7 +539,24 @@ export class LocalWorkerBrokerService {
         queueName,
         queuePayload,
       };
-      await this.writeLease(lease);
+
+      try {
+        await this.writeLease(lease);
+      } catch (leaseErr) {
+        this.logger.error(
+          {
+            err: leaseErr,
+            jobId: ghJob.id,
+            pgBossJobId: fetchedJob.id,
+            desktopWorkerId: session.desktopWorkerId,
+          },
+          "Redis lease write failed after pg-boss fetch; compensating with boss.fail()",
+        );
+        await boss.fail(queueName, fetchedJob.id, {
+          error: "Lease write failed, returning job to queue",
+        });
+        throw leaseErr;
+      }
 
       await this.ghJobRepo.updateStatus(ghJob.id, {
         status: "running",
@@ -593,6 +625,18 @@ export class LocalWorkerBrokerService {
       throw new LocalWorkerBrokerError(404, "JOB_NOT_FOUND", "GhostHands job not found");
     }
 
+    if (TERMINAL_STATUSES.has(ghJob.status)) {
+      this.logger.warn(
+        {
+          jobId: input.activeJobId,
+          currentStatus: ghJob.status,
+          desktopWorkerId: input.desktopWorkerId,
+        },
+        "Ignoring heartbeat for job already in terminal state",
+      );
+      return;
+    }
+
     const nextStatus = ghJob.status === "awaiting_review" ? "awaiting_review" : "running";
     await this.ghJobRepo.updateStatus(input.activeJobId, {
       status: nextStatus,
@@ -621,6 +665,17 @@ export class LocalWorkerBrokerService {
         actor: "desktop_worker",
         metadata: event,
       });
+    }
+
+    if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
+      this.logger.warn(
+        {
+          jobId: input.jobId,
+          currentStatus: ghJob.status,
+        },
+        "Skipping status update for job already in terminal state (events recorded)",
+      );
+      return;
     }
 
     await this.ghJobRepo.updateStatus(input.jobId, {
@@ -737,6 +792,11 @@ export class LocalWorkerBrokerService {
     reason: string;
   }): Promise<void> {
     this.ensureEnabled();
+
+    if (input.reason === "cancelled") {
+      return this.cancelJob(input);
+    }
+
     const { session, lease } = await this.requireLease(
       input.sessionToken,
       input.jobId,
@@ -816,5 +876,44 @@ export class LocalWorkerBrokerService {
         pgBossJobId: requeuedPgBossJobId,
       },
     });
+  }
+
+  async cancel(input: { sessionToken: string; jobId: string; leaseId: string }): Promise<void> {
+    return this.cancelJob({ ...input, reason: "cancelled" });
+  }
+
+  private async cancelJob(input: {
+    sessionToken: string;
+    jobId: string;
+    leaseId: string;
+    reason: string;
+  }): Promise<void> {
+    this.ensureEnabled();
+    const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
+    const ghJob = await this.ghJobRepo.findById(input.jobId);
+
+    await this.ghJobRepo.updateStatus(input.jobId, {
+      status: "cancelled",
+      completedAt: new Date(),
+      lastHeartbeat: new Date(),
+      statusMessage: input.reason ?? "Cancelled by user",
+    });
+
+    await this.ghJobEventRepo.insertEvent({
+      jobId: input.jobId,
+      eventType: "job_cancelled",
+      fromStatus: ghJob?.status ?? null,
+      toStatus: "cancelled",
+      message: input.reason ?? "Cancelled by user",
+      actor: "desktop_worker",
+      metadata: {
+        desktopWorkerId: lease.desktopWorkerId,
+        leaseId: lease.leaseId,
+      },
+    });
+
+    const boss = this.requireBoss();
+    await boss.cancel(lease.queueName, lease.pgBossJobId);
+    await this.deleteLease(lease);
   }
 }
