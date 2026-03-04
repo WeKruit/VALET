@@ -238,7 +238,7 @@ export function QuickReview({
                   ) : (
                     <div className="flex items-start gap-2">
                       <p className="text-sm flex-1">{formatWorkEntry(entry)}</p>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                         <Button
                           variant="ghost"
                           size="sm"

@@ -30,17 +30,17 @@ export function ResumeUpload({ onUploadComplete }: ResumeUploadProps) {
 
   const isUploading = uploadResume.isPending;
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file && isValidFile(file)) {
-        processFile(file);
-      }
-    },
-    []
-  );
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!isValidFile(file)) {
+      toast.error("Please upload a PDF or DOCX file (up to 10MB).");
+      return;
+    }
+    processFile(file);
+  }, []);
 
   function isValidFile(file: File): boolean {
     const validTypes = [
@@ -60,9 +60,12 @@ export function ResumeUpload({ onUploadComplete }: ResumeUploadProps) {
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file && isValidFile(file)) {
-      processFile(file);
+    if (!file) return;
+    if (!isValidFile(file)) {
+      toast.error("Please upload a PDF or DOCX file (up to 10MB).");
+      return;
     }
+    processFile(file);
   }
 
   if (uploadedFile && !isUploading && !uploadError) {
@@ -76,9 +79,7 @@ export function ResumeUpload({ onUploadComplete }: ResumeUploadProps) {
           </div>
           <div>
             <p className="font-medium">{uploadedFile.name}</p>
-            <p className="text-sm text-[var(--wk-text-secondary)]">
-              Resume uploaded successfully
-            </p>
+            <p className="text-sm text-[var(--wk-text-secondary)]">Resume uploaded successfully</p>
           </div>
         </CardContent>
       </Card>
@@ -89,9 +90,7 @@ export function ResumeUpload({ onUploadComplete }: ResumeUploadProps) {
     <Card className="max-w-md mx-auto">
       <CardContent className="p-8 space-y-6">
         <div className="text-center space-y-2">
-          <h2 className="font-display text-xl font-semibold">
-            Upload Your Resume
-          </h2>
+          <h2 className="font-display text-xl font-semibold">Upload Your Resume</h2>
           <p className="text-sm text-[var(--wk-text-secondary)]">
             This is all we need to get started.
           </p>
@@ -104,7 +103,7 @@ export function ResumeUpload({ onUploadComplete }: ResumeUploadProps) {
             "transition-colors duration-[var(--wk-duration-fast)]",
             isDragging
               ? "border-[var(--wk-copilot)] bg-blue-50"
-              : "border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)]"
+              : "border-[var(--wk-border-default)] hover:border-[var(--wk-border-strong)]",
           )}
           onDragOver={(e) => {
             e.preventDefault();
@@ -113,48 +112,31 @@ export function ResumeUpload({ onUploadComplete }: ResumeUploadProps) {
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
         >
-          <input
-            type="file"
-            accept=".pdf,.docx"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
+          <input type="file" accept=".pdf,.docx" onChange={handleFileSelect} className="hidden" />
           {isUploading ? (
             <>
               <FileText className="h-10 w-10 text-[var(--wk-copilot)] animate-pulse" />
-              <p className="text-sm text-[var(--wk-text-secondary)]">
-                Uploading...
-              </p>
+              <p className="text-sm text-[var(--wk-text-secondary)]">Uploading...</p>
             </>
           ) : (
             <>
               <Upload className="h-10 w-10 text-[var(--wk-text-tertiary)]" />
               <div className="text-center">
-                <p className="text-sm font-medium">
-                  Drag and drop your resume here
-                </p>
-                <p className="text-xs text-[var(--wk-text-tertiary)]">
-                  or click to browse
-                </p>
+                <p className="text-sm font-medium">Drag and drop your resume here</p>
+                <p className="text-xs text-[var(--wk-text-tertiary)]">or click to browse</p>
               </div>
-              <p className="text-xs text-[var(--wk-text-tertiary)]">
-                PDF or DOCX, max 10MB
-              </p>
+              <p className="text-xs text-[var(--wk-text-tertiary)]">PDF or DOCX, max 10MB</p>
             </>
           )}
         </label>
 
         {uploadError && (
-          <p className="text-sm text-center text-[var(--wk-status-error)]">
-            {uploadError}
-          </p>
+          <p className="text-sm text-center text-[var(--wk-status-error)]">{uploadError}</p>
         )}
 
         <div className="flex items-center gap-2 justify-center text-sm text-[var(--wk-text-secondary)]">
           <Clock className="h-4 w-4" />
-          <span>
-            You'll be applying to your first job in about 2 minutes.
-          </span>
+          <span>You'll be applying to your first job in about 2 minutes.</span>
         </div>
       </CardContent>
     </Card>

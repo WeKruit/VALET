@@ -513,13 +513,6 @@ export function OnboardingPage() {
     updateProfile.mutate({ body }, { onSuccess: advance });
   }
 
-  function handleJobPreviewContinueToFullSetup() {
-    markVisitedStep(userId, "job-preview");
-    setMode("full_setup");
-    saveMode(userId, "full_setup");
-    goTo("qa");
-  }
-
   function finishOnboarding() {
     setIsSubmitting(true);
     completeOnboarding.mutate(
@@ -629,6 +622,7 @@ export function OnboardingPage() {
   function handleQaContinue(answers: QaAnswers) {
     const entries = Object.entries(answers).filter(([, v]) => v.trim() !== "");
     if (entries.length === 0) {
+      markVisitedStep(userId, "qa");
       goTo("gmail");
       return;
     }
@@ -646,8 +640,10 @@ export function OnboardingPage() {
         toast.error("Required answers failed to save. Please try again.");
       } else if (failed > 0) {
         toast.error(`${failed} of ${total} answers failed to save.`);
+        markVisitedStep(userId, "qa");
         goTo("gmail");
       } else {
+        markVisitedStep(userId, "qa");
         goTo("gmail");
       }
     }
@@ -691,6 +687,19 @@ export function OnboardingPage() {
             | "hybrid"
             | "onsite"
             | "any",
+          minimumSalary:
+            (preferences.minimumSalary ?? "") !== ""
+              ? Number(preferences.minimumSalary)
+              : undefined,
+          experienceLevel: (preferences.experienceLevel || undefined) as
+            | "intern"
+            | "entry"
+            | "mid"
+            | "senior"
+            | "lead"
+            | "principal"
+            | "executive"
+            | undefined,
         },
       },
       {
@@ -794,6 +803,10 @@ export function OnboardingPage() {
               </span>
             ))}
           </div>
+          {/* Mobile: show current step label */}
+          <p className="sm:hidden text-center text-xs text-[var(--wk-text-secondary)] mt-1 mb-4">
+            {activeSteps[currentStepIndex]?.label ?? ""}
+          </p>
         </>
       )}
 
@@ -842,7 +855,6 @@ export function OnboardingPage() {
                 email: profileData?.status === 200 ? profileData.body.email : null,
               } as ParsedResumeData)
             }
-            onContinueToFullSetup={handleJobPreviewContinueToFullSetup}
             onFinishQuickStart={finishOnboarding}
             isSubmitting={isSubmitting}
           />
@@ -890,7 +902,7 @@ export function OnboardingPage() {
             }}
             downgrades={computeDowngrades(readinessInputs)}
             onEnterWorkbench={handleEnterWorkbench}
-            onGoBack={goTo as (step: string) => void}
+            onGoBack={goTo}
             isSubmitting={isSubmitting}
           />
         )}

@@ -4,6 +4,7 @@ import { ActiveTasks } from "../components/active-tasks";
 import { RecentApplications } from "../components/recent-applications";
 import { ApplicationTrendsChart } from "../components/application-trends-chart";
 import { PlatformBreakdownChart } from "../components/platform-breakdown-chart";
+import { CompleteSetupBanner } from "../components/complete-setup-banner";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useDashboardWebSocket } from "../hooks/use-dashboard-websocket";
 
@@ -42,6 +43,8 @@ export function DashboardPage() {
           </span>
         </div>
       </div>
+
+      <CompleteSetupBanner />
 
       <StatsCards />
 

@@ -10,13 +10,11 @@ import {
   Briefcase,
   GraduationCap,
   Wrench,
-  ArrowRight,
 } from "lucide-react";
 import type { ParsedResumeData } from "../hooks/use-resume-parse";
 
 interface JobPreviewStepProps {
   parsedData: ParsedResumeData;
-  onContinueToFullSetup: () => void;
   onFinishQuickStart: () => void;
   isSubmitting?: boolean;
 }
@@ -30,7 +28,6 @@ interface ProfileField {
 
 export function JobPreviewStep({
   parsedData,
-  onContinueToFullSetup,
   onFinishQuickStart,
   isSubmitting,
 }: JobPreviewStepProps) {
@@ -174,19 +171,6 @@ export function JobPreviewStep({
         onClick={onFinishQuickStart}
       >
         {isSubmitting ? "Finishing..." : "Go to Dashboard"}
-      </Button>
-
-      <p className="text-center text-xs text-[var(--wk-text-tertiary)]">or</p>
-
-      <Button
-        variant="ghost"
-        size="lg"
-        className="w-full"
-        disabled={isSubmitting}
-        onClick={onContinueToFullSetup}
-      >
-        Continue to Full Setup
-        <ArrowRight className="h-4 w-4 ml-2" />
       </Button>
     </div>
   );
