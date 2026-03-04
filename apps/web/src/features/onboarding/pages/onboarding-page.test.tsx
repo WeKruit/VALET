@@ -50,6 +50,8 @@ const { stableQueries, qaCallbacks, profileUpdateCallbacks, mockToast, mockParse
         current: [] as Array<{ onSuccess?: () => void; onError?: () => void }>,
         /** When true, calls onSuccess immediately (default). When false, stores callbacks. */
         autoSucceed: true,
+        /** Captures the most recent mutation payload for assertions */
+        lastPayload: null as any,
       },
       mockToast: { success: vi.fn(), error: vi.fn() },
       mockParseHook: {
@@ -288,7 +290,8 @@ vi.mock("@/lib/api-client", () => ({
       getProfile: { useQuery: () => stableQueries.profileData },
       updateProfile: {
         useMutation: () => ({
-          mutate: (_payload: any, callOpts?: any) => {
+          mutate: (payload: any, callOpts?: any) => {
+            profileUpdateCallbacks.lastPayload = payload;
             if (profileUpdateCallbacks.autoSucceed) {
               if (callOpts?.onSuccess) callOpts.onSuccess({ status: 200, body: {} });
             } else {
@@ -432,6 +435,7 @@ describe("OnboardingPage", () => {
     qaCallbacks.current = [];
     profileUpdateCallbacks.current = [];
     profileUpdateCallbacks.autoSucceed = true;
+    profileUpdateCallbacks.lastPayload = null;
     mockParseHook.parsedData = null;
     mockParseHook.parseStatus = "idle";
     mockParseHook.error = null;
@@ -764,5 +768,30 @@ describe("OnboardingPage", () => {
       localStorage.getItem("valet:onboarding:visited:test-user-id") ?? "{}",
     );
     expect(visited["parse-review"]).toBe(true);
+  });
+
+  // ─── Clear-values regression (035fcd9) ───
+
+  it("always includes all five profile fields in mutation body even when arrays are empty", async () => {
+    const user = userEvent.setup();
+    renderOnboardingPage();
+
+    // Navigate to parse-review
+    await user.click(screen.getByRole("button", { name: /try it now/i }));
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+    await user.click(screen.getByRole("button", { name: /parse complete/i }));
+    expect(screen.getByTestId("parse-review-step")).toBeInTheDocument();
+
+    // Confirm — mock QuickReview sends phone="555", location="NY", skills=[], workHistory=[], education=[]
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+
+    // The mutation must fire with all five fields present — empty arrays must not be dropped
+    expect(profileUpdateCallbacks.lastPayload).not.toBeNull();
+    const body = profileUpdateCallbacks.lastPayload.body;
+    expect(body).toHaveProperty("phone");
+    expect(body).toHaveProperty("location");
+    expect(body).toHaveProperty("skills", []);
+    expect(body).toHaveProperty("workHistory", []);
+    expect(body).toHaveProperty("education", []);
   });
 });
