@@ -6,64 +6,72 @@ import { OnboardingPage } from "./onboarding-page";
 
 // ─── Hoisted stable data (prevents infinite re-renders from new-object-per-call) ───
 
-const { stableQueries, qaCallbacks, profileUpdateCallbacks, mockToast, mockParseHook } = vi.hoisted(
-  () => {
-    const resumeList = { data: { status: 200, body: { data: [] } }, isLoading: false };
-    const profileData = {
-      data: {
-        status: 200,
-        body: {
-          name: "Test User",
-          email: "test@example.com",
-          phone: "",
-          location: "",
-          workHistory: [],
-          education: [],
-          skills: [],
-        },
+const {
+  stableQueries,
+  qaCallbacks,
+  profileUpdateCallbacks,
+  jobPrefsCallbacks,
+  mockToast,
+  mockParseHook,
+} = vi.hoisted(() => {
+  const resumeList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+  const profileData = {
+    data: {
+      status: 200,
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        phone: "",
+        location: "",
+        workHistory: [],
+        education: [],
+        skills: [],
       },
-      isLoading: false,
-    };
-    const prefsData = {
-      data: {
-        status: 200,
-        body: {
-          targetJobTitles: [],
-          preferredLocations: [],
-          remotePreference: "any",
-          excludedCompanies: [],
-          preferredIndustries: [],
-        },
+    },
+    isLoading: false,
+  };
+  const prefsData = {
+    data: {
+      status: 200,
+      body: {
+        targetJobTitles: [],
+        preferredLocations: [],
+        remotePreference: "any",
+        excludedCompanies: [],
+        preferredIndustries: [],
       },
-      isLoading: false,
-    };
-    const consentData = { data: { status: 200, body: { accepted: false } }, isLoading: false };
-    const credList = { data: { status: 200, body: { data: [] } }, isLoading: false };
-    const qaList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+    },
+    isLoading: false,
+  };
+  const consentData = { data: { status: 200, body: { accepted: false } }, isLoading: false };
+  const credList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+  const qaList = { data: { status: 200, body: { data: [] } }, isLoading: false };
 
-    return {
-      stableQueries: { resumeList, profileData, prefsData, consentData, credList, qaList },
-      qaCallbacks: {
-        current: [] as Array<{ onSuccess?: () => void; onError?: () => void; question: string }>,
-      },
-      profileUpdateCallbacks: {
-        current: [] as Array<{ onSuccess?: () => void; onError?: () => void }>,
-        /** When true, calls onSuccess immediately (default). When false, stores callbacks. */
-        autoSucceed: true,
-        /** Captures the most recent mutation payload for assertions */
-        lastPayload: null as any,
-      },
-      mockToast: { success: vi.fn(), error: vi.fn() },
-      mockParseHook: {
-        parsedData: null as any,
-        parseStatus: "idle" as string,
-        error: null as string | null,
-        /** Tracks the resumeId passed to the hook in the last render */
-        lastResumeId: null as string | null,
-      },
-    };
-  },
-);
+  return {
+    stableQueries: { resumeList, profileData, prefsData, consentData, credList, qaList },
+    qaCallbacks: {
+      current: [] as Array<{ onSuccess?: () => void; onError?: () => void; question: string }>,
+    },
+    profileUpdateCallbacks: {
+      current: [] as Array<{ onSuccess?: () => void; onError?: () => void }>,
+      /** When true, calls onSuccess immediately (default). When false, stores callbacks. */
+      autoSucceed: true,
+      /** Captures the most recent mutation payload for assertions */
+      lastPayload: null as any,
+    },
+    jobPrefsCallbacks: {
+      lastPayload: null as any,
+    },
+    mockToast: { success: vi.fn(), error: vi.fn() },
+    mockParseHook: {
+      parsedData: null as any,
+      parseStatus: "idle" as string,
+      error: null as string | null,
+      /** Tracks the resumeId passed to the hook in the last render */
+      lastResumeId: null as string | null,
+    },
+  };
+});
 
 // ─── Mock heavy runtime imports to prevent OOM ───
 
@@ -250,23 +258,29 @@ vi.mock("../components/qa-step", () => ({
   ),
 }));
 
+let prefsOnContinueRef: ((prefs: any) => void) | null = null;
 vi.mock("../components/preferences-step", () => ({
-  PreferencesStep: ({ onContinue }: any) => (
-    <div data-testid="preferences-step">
-      <button
-        onClick={() =>
-          onContinue({
-            targetTitles: ["SWE"],
-            targetLocations: ["Remote"],
-            companyExclusions: [],
-            remotePreference: "remote",
-          })
-        }
-      >
-        Continue
-      </button>
-    </div>
-  ),
+  PreferencesStep: ({ onContinue }: any) => {
+    prefsOnContinueRef = onContinue;
+    return (
+      <div data-testid="preferences-step">
+        <button
+          onClick={() =>
+            onContinue({
+              targetTitles: ["SWE"],
+              targetLocations: ["Remote"],
+              companyExclusions: [],
+              remotePreference: "remote",
+              minimumSalary: "",
+              experienceLevel: "",
+            })
+          }
+        >
+          Continue
+        </button>
+      </div>
+    );
+  },
 }));
 
 vi.mock("../components/disclaimer-step", () => ({
@@ -323,7 +337,8 @@ vi.mock("@/lib/api-client", () => ({
       getJobPreferences: { useQuery: () => stableQueries.prefsData },
       updateJobPreferences: {
         useMutation: () => ({
-          mutate: (_payload: any, callOpts?: any) => {
+          mutate: (payload: any, callOpts?: any) => {
+            jobPrefsCallbacks.lastPayload = payload;
             if (callOpts?.onSuccess) callOpts.onSuccess({ status: 200, body: {} });
           },
           isPending: false,
@@ -452,6 +467,8 @@ describe("OnboardingPage", () => {
     profileUpdateCallbacks.current = [];
     profileUpdateCallbacks.autoSucceed = true;
     profileUpdateCallbacks.lastPayload = null;
+    jobPrefsCallbacks.lastPayload = null;
+    prefsOnContinueRef = null;
     mockParseHook.parsedData = null;
     mockParseHook.parseStatus = "idle";
     mockParseHook.error = null;
@@ -939,5 +956,157 @@ describe("OnboardingPage", () => {
     expect(body).toHaveProperty("skills", []);
     expect(body).toHaveProperty("workHistory", []);
     expect(body).toHaveProperty("education", []);
+  });
+
+  // ─── Preferences: minimumSalary and experienceLevel ───
+
+  it("sends minimumSalary 0 as a number (not undefined) when user enters '0'", async () => {
+    // Use step-restore to land directly on preferences step
+    localStorage.setItem(
+      "valet:onboarding:visited:test-user-id",
+      JSON.stringify({
+        entry: true,
+        "parse-review": true,
+        qa: true,
+        gmail: true,
+        credentials: true,
+        security: true,
+      }),
+    );
+    localStorage.setItem("valet:onboarding:mode:test-user-id", "full_setup");
+
+    stableQueries.resumeList.data = {
+      status: 200,
+      body: {
+        data: [
+          {
+            id: "resume-1",
+            status: "parsed",
+            parsedData: { fullName: "Test User", email: "test@example.com" },
+            parsingConfidence: 0.95,
+            filename: "resume.pdf",
+          },
+        ],
+      },
+    } as any;
+
+    stableQueries.profileData.data = {
+      status: 200,
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        phone: "555-1234",
+        location: "New York",
+        workHistory: [],
+        education: [],
+        skills: [],
+      },
+    } as any;
+
+    stableQueries.qaList.data = {
+      status: 200,
+      body: {
+        data: [
+          { id: "qa-1", question: "workAuthorization", answer: "yes" },
+          { id: "qa-2", question: "visaSponsorship", answer: "no" },
+        ],
+      },
+    } as any;
+
+    renderOnboardingPage();
+
+    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
+
+    // Call onContinue directly with minimumSalary "0" and experienceLevel "senior"
+    act(() => {
+      prefsOnContinueRef?.({
+        targetTitles: ["SWE"],
+        targetLocations: ["Remote"],
+        companyExclusions: [],
+        remotePreference: "remote",
+        minimumSalary: "0",
+        experienceLevel: "senior",
+      });
+    });
+
+    // Assert mutation payload
+    expect(jobPrefsCallbacks.lastPayload).not.toBeNull();
+    const body = jobPrefsCallbacks.lastPayload.body;
+    expect(body.minimumSalary).toBe(0);
+    expect(body.experienceLevel).toBe("senior");
+  });
+
+  it("sends minimumSalary as undefined when preference is empty string", async () => {
+    localStorage.setItem(
+      "valet:onboarding:visited:test-user-id",
+      JSON.stringify({
+        entry: true,
+        "parse-review": true,
+        qa: true,
+        gmail: true,
+        credentials: true,
+        security: true,
+      }),
+    );
+    localStorage.setItem("valet:onboarding:mode:test-user-id", "full_setup");
+
+    stableQueries.resumeList.data = {
+      status: 200,
+      body: {
+        data: [
+          {
+            id: "resume-1",
+            status: "parsed",
+            parsedData: { fullName: "Test User", email: "test@example.com" },
+            parsingConfidence: 0.95,
+            filename: "resume.pdf",
+          },
+        ],
+      },
+    } as any;
+
+    stableQueries.profileData.data = {
+      status: 200,
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        phone: "555-1234",
+        location: "New York",
+        workHistory: [],
+        education: [],
+        skills: [],
+      },
+    } as any;
+
+    stableQueries.qaList.data = {
+      status: 200,
+      body: {
+        data: [
+          { id: "qa-1", question: "workAuthorization", answer: "yes" },
+          { id: "qa-2", question: "visaSponsorship", answer: "no" },
+        ],
+      },
+    } as any;
+
+    renderOnboardingPage();
+
+    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
+
+    // Call onContinue with empty minimumSalary and experienceLevel
+    act(() => {
+      prefsOnContinueRef?.({
+        targetTitles: ["SWE"],
+        targetLocations: ["Remote"],
+        companyExclusions: [],
+        remotePreference: "remote",
+        minimumSalary: "",
+        experienceLevel: "",
+      });
+    });
+
+    expect(jobPrefsCallbacks.lastPayload).not.toBeNull();
+    const body = jobPrefsCallbacks.lastPayload.body;
+    expect(body.minimumSalary).toBeUndefined();
+    expect(body.experienceLevel).toBeUndefined();
   });
 });
