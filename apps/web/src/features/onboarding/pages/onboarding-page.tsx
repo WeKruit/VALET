@@ -39,14 +39,14 @@ const STEPS: Array<{
   key: OnboardingStep;
   label: string;
 }> = [
-  { key: "welcome", label: "How It Works" },
-  { key: "gmail", label: "Email Setup" },
-  { key: "credentials", label: "Platform Logins" },
+  { key: "welcome", label: "Welcome" },
+  { key: "gmail", label: "Email" },
+  { key: "credentials", label: "Platforms" },
   { key: "security", label: "Security" },
   { key: "resume", label: "Resume" },
   { key: "profile", label: "Profile" },
   { key: "qa", label: "Q&A" },
-  { key: "preferences", label: "Preferences" },
+  { key: "preferences", label: "Prefs" },
   { key: "consent", label: "Consent" },
   { key: "result", label: "Ready" },
 ];
@@ -503,7 +503,7 @@ export function OnboardingPage() {
   const [qaSaving, setQaSaving] = useState(false);
   const REQUIRED_QA_KEYS = new Set(["workAuthorization", "visaSponsorship"]);
 
-  function handleQaContinue(answers: QaAnswers) {
+  async function handleQaContinue(answers: QaAnswers) {
     const entries = Object.entries(answers).filter(([, v]) => v.trim() !== "");
     if (entries.length === 0) {
       goTo("preferences");
@@ -511,47 +511,49 @@ export function OnboardingPage() {
     }
 
     setQaSaving(true);
-    let succeeded = 0;
-    let failed = 0;
-    let requiredFailed = 0;
-    const total = entries.length;
 
-    function checkDone() {
-      if (succeeded + failed !== total) return;
+    try {
+      const results = await Promise.allSettled(
+        entries.map(([question, answer]) =>
+          createQaEntry.mutateAsync({
+            body: {
+              question,
+              answer,
+              category: "custom",
+              usageMode: "always_use",
+            },
+          }),
+        ),
+      );
+
+      let failed = 0;
+      let requiredFailed = 0;
+
+      results.forEach((result, i) => {
+        const [question] = entries[i]!;
+        // ts-rest returns non-2xx responses as fulfilled with status !== 201
+        const isError =
+          result.status === "rejected" ||
+          (result.status === "fulfilled" && result.value.status !== 201);
+        if (isError) {
+          failed++;
+          if (REQUIRED_QA_KEYS.has(question)) requiredFailed++;
+        }
+      });
+
       setQaSaving(false);
+
       if (requiredFailed > 0) {
         toast.error("Required answers failed to save. Please try again.");
-        // Stay on Q&A so user can retry
       } else if (failed > 0) {
-        toast.error(`${failed} of ${total} answers failed to save.`);
+        toast.error(`${failed} of ${entries.length} answers failed to save.`);
         goTo("preferences");
       } else {
         goTo("preferences");
       }
-    }
-
-    for (const [question, answer] of entries) {
-      createQaEntry.mutate(
-        {
-          body: {
-            question,
-            answer,
-            category: "custom",
-            usageMode: "always_use",
-          },
-        },
-        {
-          onSuccess: () => {
-            succeeded++;
-            checkDone();
-          },
-          onError: () => {
-            failed++;
-            if (REQUIRED_QA_KEYS.has(question)) requiredFailed++;
-            checkDone();
-          },
-        },
-      );
+    } catch {
+      setQaSaving(false);
+      toast.error("Something went wrong saving your answers. Please try again.");
     }
   }
 
@@ -637,28 +639,39 @@ export function OnboardingPage() {
         <span className="ml-2 font-display text-lg font-semibold">WeKruit</span>
       </div>
 
-      {/* Progress bar */}
-      <div className="flex items-center justify-center gap-1 py-4 sm:py-6 px-4 overflow-x-auto">
+      {/* Progress stepper */}
+      <div className="flex items-start px-4 sm:px-8 py-4 sm:py-6 mb-2 sm:mb-6 max-w-2xl mx-auto">
         {STEPS.map((s, i) => (
-          <div key={s.key} className="flex items-center gap-1">
-            <div
-              className={`flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full transition-colors shrink-0 ${
-                i < currentStepIndex
-                  ? "bg-[var(--wk-status-success)] text-white"
-                  : i === currentStepIndex
-                    ? "bg-[var(--wk-copilot)] text-white"
-                    : "bg-[var(--wk-border-default)] text-[var(--wk-text-tertiary)]"
-              }`}
-            >
-              {i < currentStepIndex ? (
-                <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              ) : (
-                <span className="text-[10px] sm:text-xs font-medium">{i + 1}</span>
-              )}
+          <div key={s.key} className="flex flex-1 items-start">
+            <div className="flex flex-col items-center flex-1">
+              <div
+                className={`flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full transition-colors shrink-0 ${
+                  i < currentStepIndex
+                    ? "bg-[var(--wk-status-success)] text-white"
+                    : i === currentStepIndex
+                      ? "bg-[var(--wk-copilot)] text-white"
+                      : "bg-[var(--wk-border-default)] text-[var(--wk-text-tertiary)]"
+                }`}
+              >
+                {i < currentStepIndex ? (
+                  <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                ) : (
+                  <span className="text-[10px] sm:text-xs font-medium">{i + 1}</span>
+                )}
+              </div>
+              <span
+                className={`hidden sm:block mt-1.5 text-[10px] leading-tight text-center whitespace-nowrap ${
+                  i === currentStepIndex
+                    ? "font-medium text-[var(--wk-text-primary)]"
+                    : "text-[var(--wk-text-secondary)]"
+                }`}
+              >
+                {s.label}
+              </span>
             </div>
             {i < STEPS.length - 1 && (
               <div
-                className={`h-px w-3 sm:w-5 transition-colors shrink-0 ${
+                className={`h-px mt-3 sm:mt-3.5 flex-1 min-w-1 transition-colors ${
                   i < currentStepIndex
                     ? "bg-[var(--wk-status-success)]"
                     : "bg-[var(--wk-border-default)]"
@@ -666,20 +679,6 @@ export function OnboardingPage() {
               />
             )}
           </div>
-        ))}
-      </div>
-
-      {/* Step labels (hidden on mobile for space) */}
-      <div className="hidden sm:flex justify-center gap-2 text-[10px] text-[var(--wk-text-secondary)] mb-6 px-4">
-        {STEPS.map((s, i) => (
-          <span
-            key={s.key}
-            className={`w-16 text-center ${
-              i === currentStepIndex ? "font-medium text-[var(--wk-text-primary)]" : ""
-            }`}
-          >
-            {s.label}
-          </span>
         ))}
       </div>
 
