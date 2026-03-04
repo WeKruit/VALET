@@ -30,7 +30,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       if (fresh.role !== user.role) {
         setUser({
           ...user,
-          role: fresh.role as "user" | "developer" | "admin" | "superadmin",
+          role: fresh.role as "waitlist" | "beta" | "user" | "developer" | "admin" | "superadmin",
         });
       }
     }
@@ -38,12 +38,22 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   const isOnboardingPath = location.pathname.startsWith("/onboarding");
 
+  // All hooks must be called unconditionally (above any early returns)
   const resumesQuery = api.resumes.list.useQuery({
     queryKey: ["resumes", "list", user?.id],
     queryData: {},
     enabled: !!user,
     staleTime: 1000 * 60 * 5,
   });
+
+  const profileQuery = api.users.getProfile.useQuery({
+    queryKey: ["user-profile", "auth-guard", user?.id],
+    queryData: {},
+    enabled: !!user,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // ─── Early returns (no hooks below this line) ───
 
   if (isLoading) {
     return (
@@ -57,7 +67,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
-  if (consentLoading || resumesQuery.isLoading) {
+  if (consentLoading || resumesQuery.isLoading || profileQuery.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--wk-surface-page)]">
         <LoadingSpinner size="lg" />
@@ -76,9 +86,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Early access gate: waitlisted users (role === "user" or no role) can only see /early-access
+  // Early access gate: roles below "developer" can only see /early-access
   const isEarlyAccessPath = location.pathname === "/early-access";
-  const isWaitlisted = !user.role || user.role === "user";
+  const gatedRoles = new Set<string | undefined>([undefined, "user", "waitlist", "beta"]);
+  const isWaitlisted = gatedRoles.has(user.role);
   if (isWaitlisted) {
     if (!isEarlyAccessPath) {
       return <Navigate to="/early-access" replace />;
@@ -86,18 +97,24 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return <>{children}</>;
   }
 
-  // Determine onboarding completion: has at least 1 resume + copilot disclaimer accepted
+  // Onboarding is complete when the user has uploaded a resume, accepted the
+  // copilot disclaimer, AND completed onboarding (server-side timestamp OR
+  // localStorage fallback for same-device continuity).
   const hasResumes = resumesQuery.data?.status === 200 && resumesQuery.data.body.data.length > 0;
-  const onboardingComplete = hasResumes && !!copilotAccepted;
+  const serverOnboardingDone =
+    profileQuery.data?.status === 200 && !!profileQuery.data.body.onboardingCompletedAt;
+  const localOnboardingDone = !!localStorage.getItem(`valet:onboarding:completed:${user.id}`);
+  const onboardingFinished = serverOnboardingDone || localOnboardingDone;
+  const onboardingComplete = hasResumes && !!copilotAccepted && onboardingFinished;
 
   // If onboarding NOT complete and not already on /onboarding → redirect there
   if (!onboardingComplete && !isOnboardingPath) {
     return <Navigate to="/onboarding" replace />;
   }
 
-  // If onboarding IS complete and on /onboarding → redirect to /dashboard
+  // If onboarding IS complete and on /onboarding → redirect to workbench
   if (onboardingComplete && isOnboardingPath) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/apply" replace />;
   }
 
   return <>{children}</>;

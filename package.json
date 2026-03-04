@@ -6,7 +6,7 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
-    "typecheck": "turbo typecheck",
+    "typecheck": "pnpm -r run build && pnpm -r --parallel run typecheck",
     "test": "vitest run",
     "test:integration": "INTEGRATION_TEST=true vitest run apps/api/tests/integration-real/",
     "test:e2e:staging": "STAGING_E2E=true vitest run apps/api/tests/e2e-staging/",

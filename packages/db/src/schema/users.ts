@@ -47,6 +47,7 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true).notNull(),
   acceptedDisclaimerVersion: varchar("accepted_disclaimer_version", { length: 20 }),
   acceptedDisclaimerAt: timestamp("accepted_disclaimer_at", { withTimezone: true }),
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),

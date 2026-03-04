@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  submissionBehavior,
+  resumeRephraseMode,
+  tailoringSummarySchema,
+} from "./autonomy.schema.js";
 
 // ─── Enums ───
 export const taskStatus = z.enum([
@@ -76,6 +81,18 @@ export const createTaskRequest = z.object({
   reasoningModel: z.string().max(100).optional(),
   /** Separate vision model for screenshots. Empty = same as reasoning model. */
   visionModel: z.string().max(100).optional(),
+  /** Override per-task submission behavior. Absent = use user preference. */
+  submissionBehavior: submissionBehavior.optional(),
+  /** Resume rephrase strategy for this application. */
+  resumeRephraseMode: resumeRephraseMode.optional(),
+  /** UUID of a pre-tailored resume variant to use. */
+  resumeVariantId: z.string().uuid().optional(),
+  /** UUID of the job lead that spawned this task. */
+  leadId: z.string().uuid().optional(),
+  /** UUID of the platform credential to authenticate with. */
+  credentialId: z.string().uuid().optional(),
+  /** UUID of the mailbox credential for email verifications. */
+  mailboxCredentialId: z.string().uuid().optional(),
 });
 
 export const taskListQuery = z.object({
@@ -225,6 +242,16 @@ export const ghJobSchema = z.object({
 export const taskResponse = taskSchema.extend({
   interaction: taskInteractionSchema.nullable().optional(),
   ghJob: ghJobSchema.nullable().optional(),
+  /** UUID of the frozen resume snapshot used for this application. */
+  resumeSnapshotId: z.string().uuid().nullable().optional(),
+  /** Summary of resume tailoring applied before submission. */
+  tailoringSummary: tailoringSummarySchema.nullable().optional(),
+  /** Ordered list of recovery actions attempted after failure. */
+  recoveryActions: z.array(z.string()).nullable().optional(),
+  /** True if the failure is user-actionable (e.g. fix credentials). */
+  actionableFailure: z.boolean().nullable().optional(),
+  /** True if the failure is related to credential issues. */
+  credentialIssue: z.boolean().nullable().optional(),
 });
 
 export const paginationSchema = z.object({
@@ -244,6 +271,37 @@ export const taskStatsResponse = z.object({
   completed: z.number(),
   inProgress: z.number(),
   needsReview: z.number(),
+});
+
+// ─── Submission Proof Pack ───
+export const screenshotEntry = z.object({
+  url: z.string().url(),
+  label: z.string().nullable().optional(),
+  capturedAt: z.coerce.date().nullable().optional(),
+});
+
+export const timelineEntry = z.object({
+  step: z.string(),
+  status: z.enum(["completed", "skipped", "failed"]),
+  timestamp: z.coerce.date(),
+  detail: z.string().nullable().optional(),
+});
+
+export const answerEntry = z.object({
+  field: z.string(),
+  value: z.string(),
+  source: z.enum(["resume", "qa_bank", "llm", "user"]).nullable().optional(),
+});
+
+export const submissionProofResponse = z.object({
+  taskId: z.string().uuid(),
+  screenshots: z.array(screenshotEntry),
+  answers: z.array(answerEntry),
+  timeline: z.array(timelineEntry),
+  externalStatus: externalStatus.nullable().optional(),
+  confirmationData: z.record(z.unknown()).nullable().optional(),
+  resumeVariantId: z.string().uuid().nullable().optional(),
+  createdAt: z.coerce.date().nullable().optional(),
 });
 
 // ─── Inferred Types (NEVER hand-write these) ───
@@ -268,3 +326,7 @@ export type ResolveBlockerResponse = z.infer<typeof resolveBlockerResponse>;
 export type GhJob = z.infer<typeof ghJobSchema>;
 export type AdminTaskListQuery = z.infer<typeof adminTaskListQuery>;
 export type AdminTaskSyncResponse = z.infer<typeof adminTaskSyncResponse>;
+export type SubmissionProofResponse = z.infer<typeof submissionProofResponse>;
+export type ScreenshotEntry = z.infer<typeof screenshotEntry>;
+export type TimelineEntry = z.infer<typeof timelineEntry>;
+export type AnswerEntry = z.infer<typeof answerEntry>;

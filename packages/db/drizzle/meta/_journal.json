@@ -162,6 +162,20 @@
       "when": 1762077600000,
       "tag": "0022_add_auto_stop_owner_and_last_became_idle_at",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1762164000000,
+      "tag": "0023_add_ux_chain_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1762250400000,
+      "tag": "0024_add_onboarding_completed_at",
+      "breakpoints": true
     }
   ]
 }

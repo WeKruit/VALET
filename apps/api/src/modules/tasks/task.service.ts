@@ -20,6 +20,7 @@ import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.
 import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
 import { QUEUE_APPLY_JOB, type TaskQueueService } from "./task-queue.service.js";
 import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
+import type { SubmissionProofRepository } from "./submission-proof.repository.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
@@ -72,6 +73,7 @@ export class TaskService {
   private sandboxRepo: SandboxRepository;
   private userSandboxRepo: UserSandboxRepository;
   private atmFleetClient: AtmFleetClient;
+  private submissionProofRepo: SubmissionProofRepository;
 
   constructor({
     taskRepo,
@@ -87,6 +89,7 @@ export class TaskService {
     sandboxRepo,
     userSandboxRepo,
     atmFleetClient,
+    submissionProofRepo,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -101,6 +104,7 @@ export class TaskService {
     sandboxRepo: SandboxRepository;
     userSandboxRepo: UserSandboxRepository;
     atmFleetClient: AtmFleetClient;
+    submissionProofRepo: SubmissionProofRepository;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -115,6 +119,7 @@ export class TaskService {
     this.sandboxRepo = sandboxRepo;
     this.userSandboxRepo = userSandboxRepo;
     this.atmFleetClient = atmFleetClient;
+    this.submissionProofRepo = submissionProofRepo;
   }
 
   /**
@@ -218,6 +223,85 @@ export class TaskService {
     }
 
     return { ...enrichedTask, interaction, ghJob };
+  }
+
+  async getProof(taskId: string, userId: string) {
+    // Verify user owns the task
+    const task = await this.taskRepo.findById(taskId, userId);
+    if (!task) throw new TaskNotFoundError(taskId);
+
+    // Look up the proof row
+    const proof = await this.submissionProofRepo.findByTaskId(taskId, userId);
+
+    type AnswerSource = "resume" | "qa_bank" | "llm" | "user";
+    const VALID_SOURCES = new Set<string>(["resume", "qa_bank", "llm", "user"]);
+
+    // Build the response — even without a proof row, return aggregated data from the task itself
+    const screenshots: Array<{ url: string; label?: string | null; capturedAt?: Date | null }> = [];
+    const answers: Array<{ field: string; value: string; source?: AnswerSource | null }> = [];
+    const timeline: Array<{
+      step: string;
+      status: "completed" | "skipped" | "failed";
+      timestamp: Date;
+      detail?: string | null;
+    }> = [];
+
+    if (proof) {
+      // Parse structured proof data
+      if (Array.isArray(proof.screenshots)) {
+        for (const s of proof.screenshots as Array<Record<string, unknown>>) {
+          screenshots.push({
+            url: String(s.url ?? ""),
+            label: (s.label as string) ?? null,
+            capturedAt: s.capturedAt ? new Date(s.capturedAt as string) : null,
+          });
+        }
+      }
+      if (Array.isArray(proof.answers)) {
+        for (const a of proof.answers as Array<Record<string, unknown>>) {
+          const rawSource = (a.source as string) ?? null;
+          answers.push({
+            field: String(a.field ?? ""),
+            value: String(a.value ?? ""),
+            source: rawSource && VALID_SOURCES.has(rawSource) ? (rawSource as AnswerSource) : null,
+          });
+        }
+      }
+      if (Array.isArray(proof.timeline)) {
+        for (const t of proof.timeline as Array<Record<string, unknown>>) {
+          timeline.push({
+            step: String(t.step ?? ""),
+            status: (t.status as "completed" | "skipped" | "failed") ?? "completed",
+            timestamp: new Date((t.timestamp as string) ?? Date.now()),
+            detail: (t.detail as string) ?? null,
+          });
+        }
+      }
+    }
+
+    // Fallback: pull screenshots from task.screenshots (ghJobId-based)
+    if (screenshots.length === 0 && task.screenshots) {
+      const ss = task.screenshots as Record<string, unknown>;
+      for (const [key, val] of Object.entries(ss)) {
+        if (key === "ghJobId") continue;
+        if (typeof val === "string") {
+          screenshots.push({ url: val, label: key });
+        }
+      }
+    }
+
+    return {
+      taskId,
+      screenshots,
+      answers,
+      timeline,
+      externalStatus: (proof?.externalStatus ??
+        task.externalStatus ??
+        null) as ExternalStatus | null,
+      confirmationData: (proof?.confirmationData as Record<string, unknown> | null) ?? null,
+      resumeVariantId: proof?.resumeVariantId ?? null,
+      createdAt: proof?.createdAt ?? task.completedAt ?? null,
+    };
   }
 
   private async fetchGhJobData(workflowRunId: string | null, taskStatus?: TaskStatus) {

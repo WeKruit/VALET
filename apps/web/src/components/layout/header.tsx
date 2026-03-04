@@ -10,7 +10,7 @@ import { NotificationPanel } from "@/features/notifications/components/notificat
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/tasks": "Applications",
-  "/apply": "New Application",
+  "/apply": "Workbench",
   "/settings": "Settings",
 };
 
@@ -70,9 +70,7 @@ export function Header() {
         </button>
 
         {/* Page title */}
-        <h2 className="text-lg font-medium text-[var(--wk-text-secondary)]">
-          {pageTitle}
-        </h2>
+        <h2 className="text-lg font-medium text-[var(--wk-text-secondary)]">{pageTitle}</h2>
       </div>
 
       <div className="flex items-center gap-2">
@@ -89,7 +87,7 @@ export function Header() {
             className={cn(
               "flex items-center gap-2 h-9 pl-1 pr-2 rounded-[var(--wk-radius-lg)] cursor-pointer",
               "hover:bg-[var(--wk-surface-raised)] transition-colors duration-150",
-              menuOpen && "bg-[var(--wk-surface-raised)]"
+              menuOpen && "bg-[var(--wk-surface-raised)]",
             )}
           >
             <Avatar className="h-7 w-7">
@@ -101,7 +99,7 @@ export function Header() {
             <ChevronDown
               className={cn(
                 "h-3.5 w-3.5 text-[var(--wk-text-tertiary)] transition-transform duration-150",
-                menuOpen && "rotate-180"
+                menuOpen && "rotate-180",
               )}
             />
           </button>
@@ -117,15 +115,13 @@ export function Header() {
                 "border border-[var(--wk-border-default)]",
                 "shadow-[var(--wk-shadow-lg)]",
                 "z-50",
-                "animate-in fade-in-0 zoom-in-95 duration-100"
+                "animate-in fade-in-0 zoom-in-95 duration-100",
               )}
             >
               {user && (
                 <div className="px-3 py-2 border-b border-[var(--wk-border-subtle)]">
                   <p className="text-sm font-medium truncate">{user.name}</p>
-                  <p className="text-xs text-[var(--wk-text-tertiary)] truncate">
-                    {user.email}
-                  </p>
+                  <p className="text-xs text-[var(--wk-text-tertiary)] truncate">{user.email}</p>
                 </div>
               )}
               <button

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useWorkbenchStore } from "../stores/workbench.store";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
 import { Textarea } from "@valet/ui/components/textarea";
@@ -98,16 +99,19 @@ function isValidUrl(url: string): boolean {
 }
 
 export function ApplyForm() {
-  const [url, setUrl] = useState("");
+  const [searchParams] = useSearchParams();
+  const { setSelectedTaskId } = useWorkbenchStore();
+  const user = useAuth((s) => s.user);
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+
+  // Pre-fill URL from search params (e.g. /apply?url=https://...)
+  const [url, setUrl] = useState(() => searchParams.get("url") ?? "");
   const [notes, setNotes] = useState("");
   const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
   const [selectedResumeId, setSelectedResumeId] = useState<string>("");
   const [targetWorkerId, setTargetWorkerId] = useState<string>("");
   const [reasoningModel, setReasoningModel] = useState<string>("auto");
   const [visionModel, setVisionModel] = useState<string>("auto");
-  const navigate = useNavigate();
-  const user = useAuth((s) => s.user);
-  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
 
   const { data: resumesData, isLoading: resumesLoading } = api.resumes.list.useQuery({
     queryKey: ["resumes"],
@@ -133,8 +137,10 @@ export function ApplyForm() {
   const createTask = api.tasks.create.useMutation({
     onSuccess: (data) => {
       if (data.status === 201) {
-        toast.success("Application started. Redirecting to task view.");
-        navigate(`/tasks/${data.body.id}`);
+        toast.success("Application started.");
+        setSelectedTaskId(data.body.id);
+        setUrl("");
+        setNotes("");
       }
     },
     onError: () => {

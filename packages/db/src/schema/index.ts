@@ -22,3 +22,8 @@ export * from "./user-sandboxes.js";
 export * from "./relations.js";
 export * from "./early-access.js";
 export * from "./email-templates.js";
+export * from "./platform-credentials.js";
+export * from "./mailbox-credentials.js";
+export * from "./resume-variants.js";
+export * from "./job-leads.js";
+export * from "./submission-proofs.js";

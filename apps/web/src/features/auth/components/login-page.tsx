@@ -42,7 +42,9 @@ export function LoginPage() {
       email: data.user.email,
       name: data.user.name,
       avatarUrl: data.user.avatarUrl ?? undefined,
-      role: (data.user.role as "user" | "developer" | "admin" | "superadmin") ?? "user",
+      role:
+        (data.user.role as "waitlist" | "beta" | "user" | "developer" | "admin" | "superadmin") ??
+        "user",
       subscriptionTier:
         (data.user.subscriptionTier as "free" | "starter" | "pro" | "enterprise") ?? undefined,
       onboardingComplete: false,

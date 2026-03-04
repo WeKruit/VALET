@@ -20,7 +20,14 @@ function toProfileResponse(user: Record<string, unknown>) {
     email: user.email as string,
     name: user.name as string,
     avatarUrl: (user.avatarUrl as string | null) ?? null,
-    role: (user.role as string as "user" | "developer" | "admin" | "superadmin") ?? "user",
+    role:
+      (user.role as string as
+        | "waitlist"
+        | "beta"
+        | "user"
+        | "developer"
+        | "admin"
+        | "superadmin") ?? "user",
     subscriptionTier: user.subscriptionTier as string as "free" | "starter" | "pro" | "enterprise",
     createdAt: user.createdAt as Date,
     updatedAt: user.updatedAt as Date,
@@ -45,6 +52,7 @@ function toProfileResponse(user: Record<string, unknown>) {
     },
     jobPreferences: (jp as JobPreferences | undefined) ?? undefined,
     notificationPreferences: (np as NotificationPreferences | undefined) ?? undefined,
+    onboardingCompletedAt: (user.onboardingCompletedAt as Date | null) ?? null,
   };
 }
 
@@ -162,6 +170,16 @@ export const userRouter = s.router(userContract, {
       body: {
         deletedCount: ghResponse.deleted_count,
       },
+    };
+  },
+
+  completeOnboarding: async ({ request }) => {
+    await requireAbility("update", "Settings")(request);
+    const { userService } = request.diScope.cradle;
+    const completedAt = await userService.completeOnboarding(request.userId);
+    return {
+      status: 200 as const,
+      body: { onboardingCompletedAt: completedAt },
     };
   },
 });

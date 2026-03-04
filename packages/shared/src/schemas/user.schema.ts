@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { workHistoryEntry, educationEntry } from "./resume.schema.js";
+import {
+  autonomyLevel,
+  emailReadiness,
+  mailboxReadiness,
+  platformReadiness,
+} from "./autonomy.schema.js";
 
-export const userRole = z.enum(["user", "developer", "admin", "superadmin"]);
+export const userRole = z.enum(["waitlist", "beta", "user", "developer", "admin", "superadmin"]);
 
 export const subscriptionTier = z.enum(["free", "starter", "pro", "enterprise"]);
 
@@ -80,6 +86,12 @@ export const userProfileResponse = userSchema.extend({
   preferences: userPreferences,
   jobPreferences: jobPreferences.optional(),
   notificationPreferences: notificationPreferences.optional(),
+  autonomyLevel: autonomyLevel.optional(),
+  autonomyBlockingReasons: z.array(z.string()).optional(),
+  emailReadiness: emailReadiness.optional(),
+  mailboxReadiness: mailboxReadiness.optional(),
+  platformReadiness: platformReadiness.optional(),
+  onboardingCompletedAt: z.coerce.date().nullable().optional(),
 });
 
 // ─── Inferred Types ───
