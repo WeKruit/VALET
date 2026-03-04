@@ -497,13 +497,14 @@ export function OnboardingPage() {
   }, [resumeId]);
 
   function handleProfileConfirm(updates: ProfileConfirmPayload) {
-    // Build payload using only fields the updateProfile contract accepts
-    const body: Record<string, unknown> = {};
-    if (updates.phone) body.phone = updates.phone;
-    if (updates.location) body.location = updates.location;
-    if (updates.workHistory?.length) body.workHistory = updates.workHistory;
-    if (updates.education?.length) body.education = updates.education;
-    if (updates.skills?.length) body.skills = updates.skills;
+    // Always include all fields so clearing values (empty string, empty array) is persisted
+    const body = {
+      phone: updates.phone,
+      location: updates.location,
+      workHistory: updates.workHistory,
+      education: updates.education,
+      skills: updates.skills,
+    };
 
     function advance() {
       markVisitedStep(userId, "parse-review");
@@ -515,11 +516,7 @@ export function OnboardingPage() {
       }
     }
 
-    if (Object.keys(body).length > 0) {
-      updateProfile.mutate({ body: body as any }, { onSuccess: advance });
-    } else {
-      advance();
-    }
+    updateProfile.mutate({ body: body as any }, { onSuccess: advance });
   }
 
   function handleJobPreviewContinueToFullSetup() {
