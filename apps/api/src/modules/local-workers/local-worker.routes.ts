@@ -37,7 +37,7 @@ const jobParamsSchema = z.object({
 
 const eventsBodySchema = z.object({
   leaseId: nonEmptyString,
-  events: z.array(z.record(z.string(), z.unknown())),
+  events: z.array(z.record(z.string(), z.unknown())).max(100),
 });
 
 const awaitingReviewBodySchema = z.object({

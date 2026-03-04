@@ -33,7 +33,7 @@ const PUBLIC_EXACT_PATHS = [
 
 const PUBLIC_PREFIX_PATHS = ["/api/v1/ws", "/docs"];
 
-/** Routes that handle their own JWT auth (e.g. via query-param token). */
+/** Routes that bypass JWT auth and authenticate with X-Local-Worker-Session tokens instead. */
 const SELF_AUTH_PATTERNS = [
   /^\/api\/v1\/tasks\/[^/]+\/events\/stream$/,
   /^\/api\/v1\/local-workers\/claim$/,
