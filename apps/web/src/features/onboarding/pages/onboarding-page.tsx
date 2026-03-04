@@ -249,28 +249,30 @@ export function OnboardingPage() {
     },
   });
 
-  // Sync server state into local state — prefer in-flight resume over older parsed ones
+  // Sync server state into local state — key off newest resume (API returns newest-first)
   useEffect(() => {
     if (resumesQuery.data?.status === 200) {
       const resumes = resumesQuery.data.body.data;
       setHasResume(resumes.length > 0);
 
-      // If any resume is still being parsed, it's the most recent upload — prefer it
-      const inFlight = resumes.find((r) => r.status === "parsing" || r.status === "uploading");
-      if (inFlight) {
+      const newest = resumes[0];
+      if (!newest) return;
+
+      // Only restore data from the newest resume — never silently fall back to older ones
+      if (newest.status === "parsing" || newest.status === "uploading") {
         if (!resumeId) {
-          setResumeId(inFlight.id);
+          setResumeId(newest.id);
         }
-        return; // Don't restore old parsed data while a new parse is in progress
+        return;
       }
 
-      // No in-flight resume — restore from parsed one
-      const parsed = resumes.find((r) => r.status === "parsed" && r.parsedData);
-      if (parsed && !parsedDataState) {
-        setParsedDataState(parsed.parsedData as ParsedResumeData);
-        setResumeId(parsed.id);
-        setParseConfidence(parsed.parsingConfidence ?? null);
+      if (newest.status === "parsed" && newest.parsedData && !parsedDataState) {
+        setParsedDataState(newest.parsedData as ParsedResumeData);
+        setResumeId(newest.id);
+        setParseConfidence(newest.parsingConfidence ?? null);
       }
+
+      // If newest is parse_failed, don't restore anything — step-restore will route to feedback/retry
     }
   }, [resumesQuery.data]);
 
@@ -330,15 +332,15 @@ export function OnboardingPage() {
       setMode(savedModeValue);
     }
 
-    // Derive completion from server data
+    // Derive completion from server data — key off newest resume (API returns newest-first)
     const serverResumes = resumesQuery.data?.status === 200 ? resumesQuery.data.body.data : [];
     const serverHasResume = serverResumes.length > 0;
-    const serverHasInFlightResume = serverResumes.some(
-      (r) => r.status === "parsing" || r.status === "uploading",
-    );
-    // If any resume is still in-flight, treat parsed as incomplete (user uploaded a newer one)
-    const serverHasParsedResume =
-      !serverHasInFlightResume && serverResumes.some((r) => r.status === "parsed" && r.parsedData);
+    const newestResume = serverResumes[0];
+    const newestResumeInFlight =
+      newestResume?.status === "parsing" || newestResume?.status === "uploading";
+    const newestResumeFailed = newestResume?.status === "parse_failed";
+    // Only treat as "has parsed resume" when the newest resume itself is parsed
+    const serverHasParsedResume = newestResume?.status === "parsed" && !!newestResume.parsedData;
     const serverProfileComplete =
       profileData?.status === 200 &&
       !!profileData.body.name &&
@@ -368,21 +370,24 @@ export function OnboardingPage() {
       return;
     }
 
-    if (serverHasInFlightResume) {
-      // Most recent resume is still being parsed — restore its ID and go to feedback
-      const inFlight = serverResumes.find(
-        (r) => r.status === "parsing" || r.status === "uploading",
-      );
-      if (inFlight) {
-        setResumeId(inFlight.id);
-        setUploadedFilename(inFlight.filename ?? "Resume");
-      }
+    if (newestResumeInFlight) {
+      // Newest resume is still being parsed — show feedback with its ID
+      setResumeId(newestResume!.id);
+      setUploadedFilename(newestResume!.filename ?? "Resume");
+      setStep("parse-feedback");
+      return;
+    }
+
+    if (newestResumeFailed) {
+      // Newest resume failed — show feedback so user sees the error and can retry
+      setResumeId(newestResume!.id);
+      setUploadedFilename(newestResume!.filename ?? "Resume");
       setStep("parse-feedback");
       return;
     }
 
     if (!serverHasParsedResume) {
-      // All resumes failed — go back to resume upload
+      // No parsed resume at all — go back to upload
       setStep("resume");
       return;
     }

@@ -678,7 +678,7 @@ describe("OnboardingPage", () => {
   });
 
   it("prefers in-flight resume over older parsed resume on reload", () => {
-    // Simulate: user has an older parsed resume AND a newer one still parsing
+    // API returns newest-first: newer parsing resume is at index 0
     localStorage.setItem("valet:onboarding:visited:test-user-id", JSON.stringify({ entry: true }));
     localStorage.setItem("valet:onboarding:mode:test-user-id", "quick_start");
 
@@ -687,18 +687,18 @@ describe("OnboardingPage", () => {
       body: {
         data: [
           {
-            id: "resume-old-parsed",
-            status: "parsed",
-            parsedData: { fullName: "Old Data", email: "old@test.com" },
-            parsingConfidence: 0.95,
-            filename: "old-resume.pdf",
-          },
-          {
             id: "resume-new-parsing",
             status: "parsing",
             parsedData: null,
             parsingConfidence: null,
             filename: "new-resume.pdf",
+          },
+          {
+            id: "resume-old-parsed",
+            status: "parsed",
+            parsedData: { fullName: "Old Data", email: "old@test.com" },
+            parsingConfidence: 0.95,
+            filename: "old-resume.pdf",
           },
         ],
       },
@@ -708,8 +708,43 @@ describe("OnboardingPage", () => {
 
     // Should land on parse-feedback (not parse-review or job-preview)
     expect(screen.getByTestId("parse-feedback-step")).toBeInTheDocument();
-    // Should be tracking the in-flight resume, not the old parsed one
+    // Should be tracking the newest (in-flight) resume, not the old parsed one
     expect(mockParseHook.lastResumeId).toBe("resume-new-parsing");
+  });
+
+  it("surfaces failure when newest resume is parse_failed despite older parsed resume existing", () => {
+    // API returns newest-first: failed resume at index 0, older parsed at index 1
+    localStorage.setItem("valet:onboarding:visited:test-user-id", JSON.stringify({ entry: true }));
+    localStorage.setItem("valet:onboarding:mode:test-user-id", "quick_start");
+
+    stableQueries.resumeList.data = {
+      status: 200,
+      body: {
+        data: [
+          {
+            id: "resume-failed",
+            status: "parse_failed",
+            parsedData: null,
+            parsingConfidence: null,
+            filename: "failed-resume.pdf",
+          },
+          {
+            id: "resume-old-parsed",
+            status: "parsed",
+            parsedData: { fullName: "Old Data", email: "old@test.com" },
+            parsingConfidence: 0.95,
+            filename: "old-resume.pdf",
+          },
+        ],
+      },
+    } as any;
+
+    renderOnboardingPage();
+
+    // Should land on parse-feedback so the user sees the failure and can retry
+    // — NOT silently restore the older parsed resume
+    expect(screen.getByTestId("parse-feedback-step")).toBeInTheDocument();
+    expect(mockParseHook.lastResumeId).toBe("resume-failed");
   });
 
   it("marks parse-review visited only after profile save succeeds", async () => {
