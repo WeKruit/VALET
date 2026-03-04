@@ -72,7 +72,7 @@ export function QaStep({ onContinue, isSaving, initialAnswers }: QaStepProps) {
       </div>
 
       <Card>
-        <CardContent className="p-6 space-y-5">
+        <CardContent className="p-6 space-y-6">
           {/* Required questions */}
           <div className="space-y-4">
             <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">

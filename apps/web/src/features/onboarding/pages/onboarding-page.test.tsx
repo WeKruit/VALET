@@ -209,8 +209,9 @@ vi.mock("../components/quick-review", () => ({
 }));
 
 vi.mock("../components/job-preview-step", () => ({
-  JobPreviewStep: ({ onContinueToFullSetup }: any) => (
+  JobPreviewStep: ({ onContinueToFullSetup, onFinishQuickStart }: any) => (
     <div data-testid="job-preview-step">
+      <button onClick={onFinishQuickStart}>Start Using VALET</button>
       <button onClick={onContinueToFullSetup}>Continue to Full Setup</button>
     </div>
   ),
@@ -781,6 +782,66 @@ describe("OnboardingPage", () => {
       localStorage.getItem("valet:onboarding:visited:test-user-id") ?? "{}",
     );
     expect(visited["parse-review"]).toBe(true);
+  });
+
+  // ─── Clear-values regression (035fcd9) ───
+
+  // ─── Quick Start finish ───
+
+  it("Quick Start finishes onboarding from job preview", async () => {
+    const user = userEvent.setup();
+    await navigateToJobPreview(user);
+
+    // Click "Start Using VALET"
+    await user.click(screen.getByRole("button", { name: /start using valet/i }));
+
+    // Should have called completeOnboarding (via redirect to /apply)
+    // The mock auto-succeeds, so localStorage should be set
+    expect(localStorage.getItem("valet:onboarding:completed:test-user-id")).toBe("true");
+  });
+
+  it("Quick Start reload after visiting job-preview stays on job-preview", () => {
+    // Set up localStorage: quick_start mode, visited entry + parse-review + job-preview
+    localStorage.setItem(
+      "valet:onboarding:visited:test-user-id",
+      JSON.stringify({ entry: true, "parse-review": true, "job-preview": true }),
+    );
+    localStorage.setItem("valet:onboarding:mode:test-user-id", "quick_start");
+
+    // Set up server state: has parsed resume + complete profile
+    stableQueries.resumeList.data = {
+      status: 200,
+      body: {
+        data: [
+          {
+            id: "resume-parsed-1",
+            status: "parsed",
+            parsedData: { fullName: "Test User", email: "test@example.com" },
+            parsingConfidence: 0.95,
+            filename: "resume.pdf",
+          },
+        ],
+      },
+    } as any;
+
+    // Profile is complete (name, email, phone, location all present)
+    stableQueries.profileData.data = {
+      status: 200,
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        phone: "555-1234",
+        location: "New York",
+        workHistory: [],
+        education: [],
+        skills: [],
+      },
+    } as any;
+
+    renderOnboardingPage();
+
+    // Should stay on job-preview, NOT advance to qa or full-setup steps
+    expect(screen.getByTestId("job-preview-step")).toBeInTheDocument();
   });
 
   // ─── Clear-values regression (035fcd9) ───

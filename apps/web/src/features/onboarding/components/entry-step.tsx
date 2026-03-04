@@ -10,9 +10,9 @@ interface EntryStepProps {
 
 export function EntryStep({ onSelect }: EntryStepProps) {
   return (
-    <div className="max-w-lg mx-auto space-y-8">
+    <div className="max-w-lg mx-auto space-y-6">
       <div className="text-center space-y-3">
-        <h2 className="font-display text-2xl font-semibold">VALET applies to jobs for you</h2>
+        <h2 className="font-display text-xl font-semibold">VALET applies to jobs for you</h2>
         <p className="text-sm text-[var(--wk-text-secondary)] max-w-md mx-auto">
           Upload your resume and see what VALET can do. Full account setup takes about 5 minutes.
         </p>

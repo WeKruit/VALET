@@ -117,7 +117,7 @@ export function PreferencesStep({
     !isSaving;
 
   return (
-    <div className="max-w-lg mx-auto space-y-6">
+    <div className="max-w-xl mx-auto px-4 space-y-6">
       <div className="text-center space-y-2">
         <h2 className="font-display text-xl font-semibold">Tell VALET what to look for</h2>
         <p className="text-sm text-[var(--wk-text-secondary)]">
@@ -126,7 +126,7 @@ export function PreferencesStep({
       </div>
 
       <Card>
-        <CardContent className="p-6 space-y-5">
+        <CardContent className="p-6 space-y-6">
           <TagInput
             label="Target job titles"
             placeholder='e.g. "Software Engineer"'
@@ -199,10 +199,10 @@ export function PreferencesStep({
                 <SelectValue placeholder="No preference" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="remote_only">Remote only</SelectItem>
-                <SelectItem value="hybrid_ok">Hybrid OK</SelectItem>
-                <SelectItem value="onsite_ok">On-site OK</SelectItem>
-                <SelectItem value="no_preference">No preference</SelectItem>
+                <SelectItem value="remote">Remote only</SelectItem>
+                <SelectItem value="hybrid">Hybrid OK</SelectItem>
+                <SelectItem value="onsite">On-site OK</SelectItem>
+                <SelectItem value="any">No preference</SelectItem>
               </SelectContent>
             </Select>
           </div>
