@@ -8,8 +8,7 @@ export default {
     globals: true,
     environment: "jsdom",
     passWithNoTests: true,
-    // Web integration tests need component/routing fixes — exclude until fixed
-    exclude: ["**/node_modules/**", "**/dist/**", "src/features/**/*.test.{ts,tsx}"],
+    exclude: ["**/node_modules/**", "**/dist/**"],
     alias: {
       "@/": path.resolve(__dirname, "src") + "/",
       "@valet/ui/components/": path.resolve(__dirname, "../../packages/ui/src/components") + "/",

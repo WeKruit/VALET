@@ -498,6 +498,8 @@ export function OnboardingPage() {
 
   const createQaEntry = api.qaBank.create.useMutation();
 
+  const [qaSaving, setQaSaving] = useState(false);
+
   function handleQaContinue(answers: QaAnswers) {
     const entries = Object.entries(answers).filter(([, v]) => v.trim() !== "");
     if (entries.length === 0) {
@@ -505,6 +507,7 @@ export function OnboardingPage() {
       return;
     }
 
+    setQaSaving(true);
     let succeeded = 0;
     let failed = 0;
     const total = entries.length;
@@ -523,17 +526,19 @@ export function OnboardingPage() {
           onSuccess: () => {
             succeeded++;
             if (succeeded + failed === total) {
+              setQaSaving(false);
               if (failed > 0) {
-                toast.error(`${failed} of ${total} answers failed to save. Please try again.`);
-              } else {
-                goTo("preferences");
+                toast.error(`${failed} of ${total} answers failed to save.`);
               }
+              goTo("preferences");
             }
           },
           onError: () => {
             failed++;
             if (succeeded + failed === total) {
-              toast.error(`${failed} of ${total} answers failed to save. Please try again.`);
+              setQaSaving(false);
+              toast.error(`${failed} of ${total} answers failed to save.`);
+              goTo("preferences");
             }
           },
         },
@@ -723,7 +728,7 @@ export function OnboardingPage() {
           />
         )}
 
-        {step === "qa" && <QaStep onContinue={handleQaContinue} />}
+        {step === "qa" && <QaStep onContinue={handleQaContinue} isSaving={qaSaving} />}
 
         {step === "preferences" && <PreferencesStep onContinue={handlePreferencesContinue} />}
 
