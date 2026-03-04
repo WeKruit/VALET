@@ -27,17 +27,10 @@ export function defineAbilitiesFor(role: string): AppAbility {
       // CASL enforces the same boundary on the backend.
       break;
     case "beta":
-      can("read", "Task");
-      can("create", "Task");
-      can("read", "Resume");
-      can("manage", "Resume");
-      can("read", "QaBank");
-      can("read", "Dashboard");
-      can("read", "JobLead");
-      can("create", "JobLead");
-      break;
     case "waitlist":
-      // No permissions — redirected to /early-access
+      // Early-access gated — no API permissions.
+      // AuthGuard redirects to /early-access on the frontend;
+      // CASL enforces the same boundary on the backend.
       break;
     default:
       // Unknown roles get no permissions
