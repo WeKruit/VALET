@@ -78,6 +78,9 @@ vi.mock("lucide-react", () => ({
   RotateCw: (props: any) => <span {...props} />,
   AlertTriangle: (props: any) => <span {...props} />,
   User: (props: any) => <span {...props} />,
+  Mail: (props: any) => <span {...props} />,
+  Phone: (props: any) => <span {...props} />,
+  MapPin: (props: any) => <span {...props} />,
   Briefcase: (props: any) => <span {...props} />,
   GraduationCap: (props: any) => <span {...props} />,
   Wrench: (props: any) => <span {...props} />,
@@ -211,7 +214,7 @@ vi.mock("../components/quick-review", () => ({
 vi.mock("../components/job-preview-step", () => ({
   JobPreviewStep: ({ onContinueToFullSetup, onFinishQuickStart }: any) => (
     <div data-testid="job-preview-step">
-      <button onClick={onFinishQuickStart}>Start Using VALET</button>
+      <button onClick={onFinishQuickStart}>Go to Dashboard</button>
       <button onClick={onContinueToFullSetup}>Continue to Full Setup</button>
     </div>
   ),
@@ -454,8 +457,20 @@ describe("OnboardingPage", () => {
     mockParseHook.parseStatus = "idle";
     mockParseHook.error = null;
     mockParseHook.lastResumeId = null;
-    // Reset resume list to empty (some tests override it)
+    // Reset query data to defaults (some tests override these)
     stableQueries.resumeList.data = { status: 200, body: { data: [] } } as any;
+    stableQueries.profileData.data = {
+      status: 200,
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        phone: "",
+        location: "",
+        workHistory: [],
+        education: [],
+        skills: [],
+      },
+    } as any;
   });
 
   // ─── Shell rendering ───
@@ -784,16 +799,14 @@ describe("OnboardingPage", () => {
     expect(visited["parse-review"]).toBe(true);
   });
 
-  // ─── Clear-values regression (035fcd9) ───
-
   // ─── Quick Start finish ───
 
   it("Quick Start finishes onboarding from job preview", async () => {
     const user = userEvent.setup();
     await navigateToJobPreview(user);
 
-    // Click "Start Using VALET"
-    await user.click(screen.getByRole("button", { name: /start using valet/i }));
+    // Click "Go to Dashboard"
+    await user.click(screen.getByRole("button", { name: /go to dashboard/i }));
 
     // Should have called completeOnboarding (via redirect to /apply)
     // The mock auto-succeeds, so localStorage should be set

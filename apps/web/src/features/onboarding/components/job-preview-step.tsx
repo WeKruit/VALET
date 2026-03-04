@@ -4,6 +4,9 @@ import {
   Check,
   AlertTriangle,
   User,
+  Mail,
+  Phone,
+  MapPin,
   Briefcase,
   GraduationCap,
   Wrench,
@@ -41,19 +44,19 @@ export function JobPreviewStep({
     {
       label: "Email",
       value: parsedData.email,
-      icon: User,
+      icon: Mail,
       filled: !!parsedData.email,
     },
     {
       label: "Phone",
       value: parsedData.phone,
-      icon: User,
+      icon: Phone,
       filled: !!parsedData.phone,
     },
     {
       label: "Location",
       value: parsedData.location,
-      icon: User,
+      icon: MapPin,
       filled: !!parsedData.location,
     },
     {
@@ -170,7 +173,7 @@ export function JobPreviewStep({
         disabled={isSubmitting}
         onClick={onFinishQuickStart}
       >
-        {isSubmitting ? "Finishing..." : "Start Using VALET"}
+        {isSubmitting ? "Finishing..." : "Go to Dashboard"}
       </Button>
 
       <p className="text-center text-xs text-[var(--wk-text-tertiary)]">or</p>

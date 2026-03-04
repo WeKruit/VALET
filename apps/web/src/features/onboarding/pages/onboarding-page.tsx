@@ -510,7 +510,7 @@ export function OnboardingPage() {
       }
     }
 
-    updateProfile.mutate({ body: body as any }, { onSuccess: advance });
+    updateProfile.mutate({ body }, { onSuccess: advance });
   }
 
   function handleJobPreviewContinueToFullSetup() {
@@ -520,8 +520,7 @@ export function OnboardingPage() {
     goTo("qa");
   }
 
-  function handleQuickStartFinish() {
-    markVisitedStep(userId, "job-preview");
+  function finishOnboarding() {
     setIsSubmitting(true);
     completeOnboarding.mutate(
       { body: {} },
@@ -536,6 +535,10 @@ export function OnboardingPage() {
         },
       },
     );
+  }
+
+  function handleQuickStartFinish() {
+    finishOnboarding();
   }
 
   const createMailbox = api.credentials.createMailboxCredential.useMutation();
@@ -721,20 +724,7 @@ export function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleEnterWorkbench() {
-    setIsSubmitting(true);
-    completeOnboarding.mutate(
-      { body: {} },
-      {
-        onSuccess: () => {
-          localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
-          window.location.replace("/apply");
-        },
-        onError: () => {
-          setIsSubmitting(false);
-          toast.error("Failed to complete onboarding. Please try again.");
-        },
-      },
-    );
+    finishOnboarding();
   }
 
   // ─── Loading state ───
