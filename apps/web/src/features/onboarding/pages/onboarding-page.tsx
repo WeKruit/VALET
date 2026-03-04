@@ -356,7 +356,17 @@ export function OnboardingPage() {
     }
 
     if (!serverHasParsedResume) {
-      // Resume exists but not parsed — show parse feedback
+      // Resume exists but not parsed — restore resumeId so useResumeParse can listen/poll
+      const unparsedResume =
+        resumesQuery.data?.status === 200
+          ? resumesQuery.data.body.data.find(
+              (r) => r.status === "parsing" || r.status === "uploading",
+            )
+          : undefined;
+      if (unparsedResume) {
+        setResumeId(unparsedResume.id);
+        setUploadedFilename(unparsedResume.filename ?? "Resume");
+      }
       setStep("parse-feedback");
       return;
     }
@@ -504,13 +514,12 @@ export function OnboardingPage() {
       body.skills = updates.skills;
     }
 
-    markVisitedStep(userId, "parse-review");
-
     if (Object.keys(body).length > 0) {
       updateProfile.mutate(
         { body: body as any },
         {
           onSuccess: () => {
+            markVisitedStep(userId, "parse-review");
             setProfileComplete(true);
             if (mode === "quick_start") {
               goTo("job-preview");
@@ -521,6 +530,7 @@ export function OnboardingPage() {
         },
       );
     } else {
+      markVisitedStep(userId, "parse-review");
       setProfileComplete(true);
       if (mode === "quick_start") {
         goTo("job-preview");

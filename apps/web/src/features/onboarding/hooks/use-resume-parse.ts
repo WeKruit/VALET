@@ -149,9 +149,11 @@ export function useResumeParse(resumeId: string | null): UseResumeParseReturn {
         }
       };
 
-      // Grace period: if no WS event arrives, start polling as fallback
+      // Grace period: if no WS event arrives (whether WS is connected or not),
+      // start polling as a safety net. Covers the race where the parse event
+      // was published before the socket opened.
       graceTimerRef.current = setTimeout(() => {
-        if (!settled.current && !wsConnected.current) {
+        if (!settled.current) {
           startPolling();
         }
       }, WS_GRACE_PERIOD_MS);
