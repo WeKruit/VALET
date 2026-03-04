@@ -54,7 +54,10 @@ export class LocalWorkerBrokerError extends Error {
   }
 }
 
-function assertMultiExecSuccess(results: Array<[Error | null, unknown]> | null, label: string): void {
+function assertMultiExecSuccess(
+  results: Array<[Error | null, unknown]> | null,
+  label: string,
+): void {
   if (!results) throw new Error(`${label}: multi/exec returned null (aborted)`);
   for (const [err] of results) {
     if (err) throw new Error(`${label}: ${err.message}`);
@@ -109,7 +112,7 @@ export class LocalWorkerBrokerService {
     const secret = process.env.GH_SERVICE_SECRET;
     if (!secret) return base;
     const sep = base.includes("?") ? "&" : "?";
-    return `${base}${sep}token=${secret}`;
+    return `${base}${sep}token=${encodeURIComponent(secret)}`;
   }
 
   private sessionKey(desktopWorkerId: string): string {
