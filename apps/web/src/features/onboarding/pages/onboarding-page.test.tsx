@@ -1,4 +1,4 @@
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -6,7 +6,7 @@ import { OnboardingPage } from "./onboarding-page";
 
 // ─── Hoisted stable data (prevents infinite re-renders from new-object-per-call) ───
 
-const { stableQueries, qaCallbacks, mockToast } = vi.hoisted(() => {
+const { stableQueries, mockMutateAsync, mockToast } = vi.hoisted(() => {
   const resumeList = { data: { status: 200, body: { data: [] } }, isLoading: false };
   const profileData = {
     data: {
@@ -42,8 +42,8 @@ const { stableQueries, qaCallbacks, mockToast } = vi.hoisted(() => {
 
   return {
     stableQueries: { resumeList, profileData, prefsData, consentData, credList, qaList },
-    qaCallbacks: {
-      current: [] as Array<{ onSuccess?: () => void; onError?: () => void; question: string }>,
+    mockMutateAsync: {
+      fn: ((_payload: any) => new Promise(() => {})) as (payload: any) => Promise<any>,
     },
     mockToast: { success: vi.fn(), error: vi.fn() },
   };
@@ -243,13 +243,8 @@ vi.mock("@/lib/api-client", () => ({
       list: { useQuery: () => stableQueries.qaList },
       create: {
         useMutation: () => ({
-          mutate: (payload: any, callOpts?: any) => {
-            qaCallbacks.current.push({
-              question: payload.body.question,
-              onSuccess: callOpts?.onSuccess,
-              onError: callOpts?.onError,
-            });
-          },
+          mutateAsync: (payload: any) => mockMutateAsync.fn(payload),
+          mutate: vi.fn(),
           isPending: false,
         }),
       },
@@ -327,7 +322,8 @@ describe("OnboardingPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    qaCallbacks.current = [];
+    // Default: promises that never resolve (for isSaving / double-click tests)
+    mockMutateAsync.fn = () => new Promise(() => {});
   });
 
   // ─── Shell rendering ───
@@ -341,14 +337,14 @@ describe("OnboardingPage", () => {
   it("renders all 10 step labels in the progress bar", () => {
     renderOnboardingPage();
     for (const label of [
-      "How It Works",
-      "Email Setup",
-      "Platform Logins",
+      "Welcome",
+      "Email",
+      "Platforms",
       "Security",
       "Resume",
       "Profile",
       "Q&A",
-      "Preferences",
+      "Prefs",
       "Consent",
       "Ready",
     ]) {
@@ -382,82 +378,68 @@ describe("OnboardingPage", () => {
     expect(screen.getByRole("button", { name: /back/i })).toBeInTheDocument();
   });
 
-  // ─── Q&A mutation behavior ───
+  // ─── Q&A mutation behavior (uses mutateAsync + Promise.allSettled) ───
 
   it("passes isSaving=true to QaStep while mutations are in flight", async () => {
     const user = userEvent.setup();
     await navigateToQaStep(user);
 
-    // Before clicking, isSaving should be false
     expect(screen.getByTestId("qa-saving").textContent).toBe("false");
 
-    // Click continue — fires mutations (captured in qaCallbacks.current)
+    // Click continue — fires mutateAsync calls that never resolve
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Mutations are in flight, isSaving should be true
+    // Promises are pending → isSaving stays true
     expect(screen.getByTestId("qa-saving").textContent).toBe("true");
   });
 
   it("advances to preferences when all Q&A mutations succeed", async () => {
     const user = userEvent.setup();
+    mockMutateAsync.fn = () => Promise.resolve({ status: 201, body: {} });
     await navigateToQaStep(user);
 
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Resolve all mutations successfully
-    act(() => {
-      for (const cb of qaCallbacks.current) {
-        cb.onSuccess?.();
-      }
+    await waitFor(() => {
+      expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
     });
-
-    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
   });
 
   it("stays on Q&A when a required answer fails", async () => {
     const user = userEvent.setup();
+    mockMutateAsync.fn = (payload: any) => {
+      if (payload.body.question === "workAuthorization") {
+        return Promise.reject(new Error("fail"));
+      }
+      return Promise.resolve({ status: 201, body: {} });
+    };
     await navigateToQaStep(user);
 
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Fail the workAuthorization mutation, succeed the rest
-    act(() => {
-      for (const cb of qaCallbacks.current) {
-        if (cb.question === "workAuthorization") {
-          cb.onError?.();
-        } else {
-          cb.onSuccess?.();
-        }
-      }
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith(
+        "Required answers failed to save. Please try again.",
+      );
     });
-
-    // Should still be on Q&A step
     expect(screen.getByTestId("qa-step")).toBeInTheDocument();
-    expect(mockToast.error).toHaveBeenCalledWith(
-      "Required answers failed to save. Please try again.",
-    );
   });
 
   it("advances to preferences when only optional answers fail", async () => {
     const user = userEvent.setup();
+    mockMutateAsync.fn = (payload: any) => {
+      if (payload.body.question === "referralSource") {
+        return Promise.reject(new Error("fail"));
+      }
+      return Promise.resolve({ status: 201, body: {} });
+    };
     await navigateToQaStep(user);
 
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Fail an optional mutation, succeed required ones
-    act(() => {
-      for (const cb of qaCallbacks.current) {
-        if (cb.question === "referralSource") {
-          cb.onError?.();
-        } else {
-          cb.onSuccess?.();
-        }
-      }
+    await waitFor(() => {
+      expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
     });
-
-    // Should advance because required answers succeeded
-    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
-    // But still shows error toast for the failed optional
     expect(mockToast.error).toHaveBeenCalled();
   });
 
@@ -470,7 +452,7 @@ describe("OnboardingPage", () => {
 
     await user.click(continueBtn);
 
-    // Button should now be disabled
+    // Promises pending → button stays disabled
     expect(continueBtn).toBeDisabled();
   });
 });
