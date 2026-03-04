@@ -274,8 +274,10 @@ export function OnboardingPage() {
       !!profileData.body.email &&
       !!profileData.body.phone &&
       !!profileData.body.location;
+    const qaEntries = qaListQuery.data?.status === 200 ? qaListQuery.data.body.data : [];
     const serverQaComplete =
-      qaListQuery.data?.status === 200 && qaListQuery.data.body.data.length > 0;
+      qaEntries.some((e) => e.question === "workAuthorization") &&
+      qaEntries.some((e) => e.question === "visaSponsorship");
     const serverPrefsComplete =
       jobPrefsQuery.data?.status === 200 &&
       ((jobPrefsQuery.data.body.targetJobTitles?.length ?? 0) > 0 ||
@@ -499,6 +501,7 @@ export function OnboardingPage() {
   const createQaEntry = api.qaBank.create.useMutation();
 
   const [qaSaving, setQaSaving] = useState(false);
+  const REQUIRED_QA_KEYS = new Set(["workAuthorization", "visaSponsorship"]);
 
   function handleQaContinue(answers: QaAnswers) {
     const entries = Object.entries(answers).filter(([, v]) => v.trim() !== "");
@@ -510,7 +513,22 @@ export function OnboardingPage() {
     setQaSaving(true);
     let succeeded = 0;
     let failed = 0;
+    let requiredFailed = 0;
     const total = entries.length;
+
+    function checkDone() {
+      if (succeeded + failed !== total) return;
+      setQaSaving(false);
+      if (requiredFailed > 0) {
+        toast.error("Required answers failed to save. Please try again.");
+        // Stay on Q&A so user can retry
+      } else if (failed > 0) {
+        toast.error(`${failed} of ${total} answers failed to save.`);
+        goTo("preferences");
+      } else {
+        goTo("preferences");
+      }
+    }
 
     for (const [question, answer] of entries) {
       createQaEntry.mutate(
@@ -525,21 +543,12 @@ export function OnboardingPage() {
         {
           onSuccess: () => {
             succeeded++;
-            if (succeeded + failed === total) {
-              setQaSaving(false);
-              if (failed > 0) {
-                toast.error(`${failed} of ${total} answers failed to save.`);
-              }
-              goTo("preferences");
-            }
+            checkDone();
           },
           onError: () => {
             failed++;
-            if (succeeded + failed === total) {
-              setQaSaving(false);
-              toast.error(`${failed} of ${total} answers failed to save.`);
-              goTo("preferences");
-            }
+            if (REQUIRED_QA_KEYS.has(question)) requiredFailed++;
+            checkDone();
           },
         },
       );

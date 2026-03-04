@@ -8,7 +8,8 @@ export default {
     globals: true,
     environment: "jsdom",
     passWithNoTests: true,
-    exclude: ["**/node_modules/**", "**/dist/**"],
+    setupFiles: ["src/test-setup.ts"],
+    exclude: ["**/node_modules/**", "**/dist/**", "tests/e2e/**"],
     alias: {
       "@/": path.resolve(__dirname, "src") + "/",
       "@valet/ui/components/": path.resolve(__dirname, "../../packages/ui/src/components") + "/",
