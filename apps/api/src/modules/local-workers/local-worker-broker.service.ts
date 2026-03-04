@@ -550,10 +550,21 @@ export class LocalWorkerBrokerService {
             pgBossJobId: fetchedJob.id,
             desktopWorkerId: session.desktopWorkerId,
           },
-          "Redis lease write failed after pg-boss fetch; compensating with boss.fail()",
+          "Redis lease write failed after pg-boss fetch; compensating with boss.complete() and marking GH job failed",
         );
-        await boss.fail(queueName, fetchedJob.id, {
-          error: "Lease write failed, returning job to queue",
+        // Use complete() not fail() — retryLimit:0 means fail() is terminal and
+        // leaves the pg-boss job in a failed state. complete() removes it cleanly.
+        await boss.complete(queueName, fetchedJob.id);
+        // Also mark the GH job row as failed so it doesn't stay stuck in "queued"
+        await this.ghJobRepo.updateStatus(ghJob.id, {
+          status: "failed",
+          completedAt: new Date(),
+          errorCode: "LEASE_WRITE_FAILED",
+          errorDetails: {
+            message: "Lease write failed after dispatch",
+            originalError: leaseErr instanceof Error ? leaseErr.message : String(leaseErr),
+          },
+          statusMessage: "Lease write failed after dispatch",
         });
         throw leaseErr;
       }

@@ -63,6 +63,10 @@ const releaseBodySchema = z.object({
   reason: nonEmptyString,
 });
 
+const cancelBodySchema = z.object({
+  leaseId: nonEmptyString,
+});
+
 function workerSessionToken(request: FastifyRequest): string {
   const token = request.headers["x-local-worker-session"];
   return Array.isArray(token) ? (token[0] ?? "") : (token ?? "");
@@ -305,6 +309,29 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
         return reply.status(200).send({ ok: true });
       } catch (error) {
         return sendBrokerError(reply, error, "Failed to release local worker job");
+      }
+    },
+  );
+
+  fastify.post(
+    "/api/v1/local-workers/jobs/:jobId/cancel",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { localWorkerBrokerService } = request.diScope.cradle;
+        const params = parseOrThrow(jobParamsSchema, request.params);
+        const body = parseOrThrow(cancelBodySchema, request.body);
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
+        await localWorkerBrokerService.cancel({
+          sessionToken: token,
+          jobId: params.jobId,
+          leaseId: body.leaseId,
+        });
+        return reply.status(200).send({ cancelled: true });
+      } catch (error) {
+        return sendBrokerError(reply, error, "Failed to cancel local worker job");
       }
     },
   );
