@@ -67,7 +67,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
-  if (consentLoading || resumesQuery.isLoading) {
+  if (consentLoading || resumesQuery.isLoading || profileQuery.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--wk-surface-page)]">
         <LoadingSpinner size="lg" />

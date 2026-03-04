@@ -6,7 +6,7 @@ DELETE FROM "mailbox_credentials" a
   USING "mailbox_credentials" b
   WHERE a.user_id = b.user_id
     AND a.provider = b.provider
-    AND a.created_at < b.created_at;
+    AND (a.created_at < b.created_at OR (a.created_at = b.created_at AND a.id < b.id));
 
 -- Add unique constraint to prevent future duplicates
 ALTER TABLE "mailbox_credentials"
