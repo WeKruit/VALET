@@ -5,14 +5,22 @@ import type * as ReactRouterDom from "react-router-dom";
 import { MemoryRouter } from "react-router-dom";
 import { ApplyForm } from "./apply-form";
 
-const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof ReactRouterDom>("react-router-dom");
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-  };
+  return { ...actual };
 });
+
+const mockSetSelectedTaskId = vi.fn();
+vi.mock("../stores/workbench.store", () => ({
+  useWorkbenchStore: () => ({
+    selectedTaskId: null,
+    setSelectedTaskId: mockSetSelectedTaskId,
+    sidecarPanel: "preview",
+    setSidecarPanel: vi.fn(),
+    railFilter: "active",
+    setRailFilter: vi.fn(),
+  }),
+}));
 
 const mockMutate = vi.fn();
 let mockIsPending = false;
@@ -210,7 +218,7 @@ describe("ApplyForm", () => {
     });
   });
 
-  it("navigates to task detail on successful creation", async () => {
+  it("selects the new task in the workbench on successful creation", async () => {
     const user = userEvent.setup();
     renderApplyForm();
 
@@ -221,7 +229,18 @@ describe("ApplyForm", () => {
 
     await user.click(screen.getByRole("button", { name: "Start Application" }));
 
-    expect(mockNavigate).toHaveBeenCalledWith("/tasks/task-123");
+    // Workbench store receives the new task id
+    expect(mockSetSelectedTaskId).toHaveBeenCalledWith("task-123");
+
+    // Success toast fired
+    const { toast } = await import("sonner");
+    expect(toast.success).toHaveBeenCalledWith("Application started.");
+
+    // URL input cleared
+    const input = screen.getByPlaceholderText(
+      "https://www.linkedin.com/jobs/view/...",
+    ) as HTMLInputElement;
+    expect(input.value).toBe("");
   });
 
   // --- Sample Links ---

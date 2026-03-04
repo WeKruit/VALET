@@ -1,93 +1,254 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type * as ReactRouterDom from "react-router-dom";
 import { MemoryRouter } from "react-router-dom";
 import { OnboardingPage } from "./onboarding-page";
 
-const mockNavigate = vi.fn();
-vi.mock("react-router-dom", async () => {
-  const actual =
-    await vi.importActual<typeof ReactRouterDom>("react-router-dom");
+// ─── Hoisted stable data (prevents infinite re-renders from new-object-per-call) ───
+
+const { stableQueries, qaCallbacks, mockToast } = vi.hoisted(() => {
+  const resumeList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+  const profileData = {
+    data: {
+      status: 200,
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        phone: "",
+        location: "",
+        workHistory: [],
+        education: [],
+        skills: [],
+      },
+    },
+    isLoading: false,
+  };
+  const prefsData = {
+    data: {
+      status: 200,
+      body: {
+        targetJobTitles: [],
+        preferredLocations: [],
+        remotePreference: "any",
+        excludedCompanies: [],
+        preferredIndustries: [],
+      },
+    },
+    isLoading: false,
+  };
+  const consentData = { data: { status: 200, body: { accepted: false } }, isLoading: false };
+  const credList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+  const qaList = { data: { status: 200, body: { data: [] } }, isLoading: false };
+
   return {
-    ...actual,
-    useNavigate: () => mockNavigate,
+    stableQueries: { resumeList, profileData, prefsData, consentData, credList, qaList },
+    qaCallbacks: {
+      current: [] as Array<{ onSuccess?: () => void; onError?: () => void; question: string }>,
+    },
+    mockToast: { success: vi.fn(), error: vi.fn() },
   };
 });
 
-// Mock api client for resume upload + user profile
-const mockUploadMutate = vi.fn();
-const mockUpdateProfileMutate = vi.fn();
+// ─── Mock heavy runtime imports to prevent OOM ───
 
-// Store the latest useMutation opts so onSuccess uses the latest closure
-let latestUploadOpts: any = null;
+vi.mock("lucide-react", () => ({
+  CheckCircle: (props: any) => <span data-testid="check-icon" {...props} />,
+  ArrowLeft: (props: any) => <span data-testid="arrow-icon" {...props} />,
+}));
+
+vi.mock("@/components/common/loading-spinner", () => ({
+  LoadingSpinner: () => <div data-testid="loading-spinner" />,
+}));
+
+vi.mock("@valet/ui/components/button", () => ({
+  Button: ({ children, disabled, onClick, ...rest }: any) => (
+    <button disabled={disabled} onClick={onClick} {...rest}>
+      {children}
+    </button>
+  ),
+}));
+
+vi.mock("@valet/shared/schemas", () => ({
+  autonomyLevelSchema: { enum: ["full", "assisted", "copilot_only"] },
+}));
+
+// ─── Mock all step sub-components (lightweight stubs) ───
+
+vi.mock("../components/welcome-step", () => ({
+  WelcomeStep: ({ onContinue }: any) => (
+    <div data-testid="welcome-step">
+      <button onClick={onContinue}>Let&apos;s Get Set Up</button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/gmail-step", () => ({
+  GmailStep: ({ onSkip }: any) => (
+    <div data-testid="gmail-step">
+      <button onClick={onSkip}>Skip</button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/credentials-step", () => ({
+  CredentialsStep: ({ onContinue }: any) => (
+    <div data-testid="credentials-step">
+      <button onClick={onContinue}>Continue</button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/security-step", () => ({
+  SecurityStep: ({ onContinue }: any) => (
+    <div data-testid="security-step">
+      <button onClick={onContinue}>Continue</button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/resume-upload", () => ({
+  ResumeUpload: ({ onUploadComplete }: any) => (
+    <div data-testid="resume-step">
+      <button onClick={() => onUploadComplete(new File([], "r.pdf"), "resume-1")}>Upload</button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/quick-review", () => ({
+  QuickReview: ({ onConfirm }: any) => (
+    <div data-testid="profile-step">
+      <button
+        onClick={() => onConfirm({ phone: "555", location: "NY", experience: [], education: "" })}
+      >
+        Confirm
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/qa-step", () => ({
+  QaStep: ({ onContinue, isSaving }: any) => (
+    <div data-testid="qa-step">
+      <span data-testid="qa-saving">{String(!!isSaving)}</span>
+      <button
+        disabled={isSaving}
+        onClick={() =>
+          onContinue({
+            workAuthorization: "yes",
+            visaSponsorship: "no",
+            salaryMin: "",
+            salaryMax: "",
+            willingToRelocate: "",
+            driversLicense: "",
+            felonyConviction: "",
+            linkedinUrl: "",
+            portfolioUrl: "",
+            referralSource: "Online job board",
+            eeoRace: "decline",
+            eeoGender: "decline",
+            eeoVeteran: "decline",
+            eeoDisability: "decline",
+          })
+        }
+      >
+        Continue
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/preferences-step", () => ({
+  PreferencesStep: ({ onContinue }: any) => (
+    <div data-testid="preferences-step">
+      <button
+        onClick={() =>
+          onContinue({
+            targetTitles: ["SWE"],
+            targetLocations: ["Remote"],
+            companyExclusions: [],
+            remotePreference: "remote",
+          })
+        }
+      >
+        Continue
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/disclaimer-step", () => ({
+  DisclaimerStep: ({ onAccepted }: any) => (
+    <div data-testid="consent-step">
+      <button onClick={onAccepted}>Accept</button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/readiness-result-step", () => ({
+  ReadinessResultStep: ({ onEnterWorkbench, autonomyLevel }: any) => (
+    <div data-testid="result-step">
+      <span data-testid="autonomy-level">{autonomyLevel}</span>
+      <button onClick={onEnterWorkbench}>Enter Workbench</button>
+    </div>
+  ),
+}));
+
+// ─── Mock api client (stable refs from hoisted data) ───
 
 vi.mock("@/lib/api-client", () => ({
   api: {
     resumes: {
-      upload: {
-        useMutation: (opts?: any) => {
-          // Update the ref on each render so onSuccess has fresh closure
-          latestUploadOpts = opts;
-          return {
-            mutate: (payload: any) => {
-              mockUploadMutate(payload);
-              // Fire onSuccess asynchronously using latest opts
-              // so React can flush state and re-render with fresh closure
-              setTimeout(() => {
-                if (latestUploadOpts?.onSuccess) {
-                  latestUploadOpts.onSuccess({ status: 202, body: { id: "resume-1", status: "parsing" } });
-                }
-              }, 0);
-            },
-            isPending: false,
-          };
-        },
-      },
+      list: { useQuery: () => stableQueries.resumeList },
+      upload: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     users: {
-      getProfile: {
-        useQuery: () => ({
-          data: {
-            status: 200,
-            body: {
-              name: "Test User",
-              email: "test@example.com",
-              phone: "",
-              location: "",
-              workHistory: [],
-              education: [],
-              skills: [],
-            },
+      getProfile: { useQuery: () => stableQueries.profileData },
+      updateProfile: {
+        useMutation: () => ({
+          mutate: (_payload: any, callOpts?: any) => {
+            if (callOpts?.onSuccess) callOpts.onSuccess({ status: 200, body: {} });
           },
-          isLoading: false,
+          isPending: false,
         }),
       },
-      updateProfile: {
-        useMutation: (_opts?: any) => ({
-          mutate: (payload: any, callOpts?: any) => {
-            mockUpdateProfileMutate(payload);
-            if (callOpts?.onSuccess) {
-              callOpts.onSuccess({ status: 200, body: {} });
-            }
+      getJobPreferences: { useQuery: () => stableQueries.prefsData },
+      updateJobPreferences: {
+        useMutation: () => ({
+          mutate: (_payload: any, callOpts?: any) => {
+            if (callOpts?.onSuccess) callOpts.onSuccess({ status: 200, body: {} });
+          },
+          isPending: false,
+        }),
+      },
+      completeOnboarding: {
+        useMutation: () => ({
+          mutate: (_payload: any, callOpts?: any) => {
+            if (callOpts?.onSuccess) callOpts.onSuccess({ status: 200, body: {} });
           },
           isPending: false,
         }),
       },
     },
     consent: {
-      check: {
-        useQuery: () => ({
-          data: { status: 200, body: { accepted: false } },
-          isLoading: false,
-        }),
-      },
+      check: { useQuery: () => stableQueries.consentData },
+      create: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
+    credentials: {
+      listMailboxCredentials: { useQuery: () => stableQueries.credList },
+      listPlatformCredentials: { useQuery: () => stableQueries.credList },
+      createMailboxCredential: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      createPlatformCredential: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
+    qaBank: {
+      list: { useQuery: () => stableQueries.qaList },
       create: {
-        useMutation: (_opts?: any) => ({
-          mutate: (_payload: any, callOpts?: any) => {
-            if (callOpts?.onSuccess) {
-              callOpts.onSuccess({ status: 201, body: {} });
-            }
+        useMutation: () => ({
+          mutate: (payload: any, callOpts?: any) => {
+            qaCallbacks.current.push({
+              question: payload.body.question,
+              onSuccess: callOpts?.onSuccess,
+              onError: callOpts?.onError,
+            });
           },
           isPending: false,
         }),
@@ -96,20 +257,20 @@ vi.mock("@/lib/api-client", () => ({
   },
 }));
 
-// Mock cn utility
+vi.mock("@/features/auth/hooks/use-auth", () => ({
+  useAuth: () => ({
+    user: { id: "test-user-id", email: "test@example.com", name: "Test User", role: "developer" },
+    isLoading: false,
+    setUser: vi.fn(),
+  }),
+}));
+
 vi.mock("@/lib/utils", () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(" "),
 }));
 
-// Mock sonner
-vi.mock("sonner", () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+vi.mock("sonner", () => ({ toast: mockToast }));
 
-// Mock useConsent hook
 vi.mock("@/features/consent/hooks/use-consent", () => ({
   useConsent: () => ({
     tosAccepted: false,
@@ -123,9 +284,8 @@ vi.mock("@/features/consent/hooks/use-consent", () => ({
   }),
 }));
 
-// Mock consent text
 vi.mock("@/content/legal/consent-text", () => ({
-  LAYER_1_REGISTRATION: { type: "tos", version: "1.0", title: "Terms of Service", preamble: "", risks: [] },
+  LAYER_1_REGISTRATION: { type: "tos", version: "1.0", title: "Terms", preamble: "", risks: [] },
   LAYER_2_COPILOT_DISCLAIMER: {
     type: "copilot_disclaimer",
     version: "1.0",
@@ -139,156 +299,178 @@ function renderOnboardingPage() {
   return render(
     <MemoryRouter>
       <OnboardingPage />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
+}
+
+/** Navigate from welcome through profile to reach the Q&A step */
+async function navigateToQaStep(user: ReturnType<typeof userEvent.setup>) {
+  renderOnboardingPage();
+
+  // welcome → gmail
+  await user.click(screen.getByRole("button", { name: /get set up/i }));
+  // gmail → credentials
+  await user.click(screen.getByRole("button", { name: /skip/i }));
+  // credentials → security
+  await user.click(screen.getByRole("button", { name: /continue/i }));
+  // security → resume
+  await user.click(screen.getByRole("button", { name: /continue/i }));
+  // resume → profile
+  await user.click(screen.getByRole("button", { name: /upload/i }));
+  // profile → qa
+  await user.click(screen.getByRole("button", { name: /confirm/i }));
+
+  expect(screen.getByTestId("qa-step")).toBeInTheDocument();
 }
 
 describe("OnboardingPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    qaCallbacks.current = [];
   });
 
-  // --- Header ---
+  // ─── Shell rendering ───
 
-  it("renders the WeKruit logo and name", () => {
+  it("renders the WeKruit header", () => {
     renderOnboardingPage();
     expect(screen.getByText("V")).toBeInTheDocument();
     expect(screen.getByText("WeKruit")).toBeInTheDocument();
   });
 
-  // --- Progress Dots ---
-
-  it("renders 3 progress step labels", () => {
+  it("renders all 10 step labels in the progress bar", () => {
     renderOnboardingPage();
-    expect(screen.getByText("Upload Resume")).toBeInTheDocument();
-    expect(screen.getByText("Review Details")).toBeInTheDocument();
-    expect(screen.getByText("Get Started")).toBeInTheDocument();
+    for (const label of [
+      "How It Works",
+      "Email Setup",
+      "Platform Logins",
+      "Security",
+      "Resume",
+      "Profile",
+      "Q&A",
+      "Preferences",
+      "Consent",
+      "Ready",
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
   });
 
-  // --- Step 1: Upload ---
+  // ─── Step navigation ───
 
-  it("starts on the upload step", () => {
+  it("starts on the welcome step for a new user", () => {
     renderOnboardingPage();
-    expect(screen.getByText("Upload Your Resume")).toBeInTheDocument();
-    expect(screen.getByText("This is all we need to get started.")).toBeInTheDocument();
+    expect(screen.getByTestId("welcome-step")).toBeInTheDocument();
   });
 
-  it("renders drag-and-drop instructions", () => {
+  it("does not show a back button on the welcome step", () => {
     renderOnboardingPage();
-    expect(
-      screen.getByText("Drag and drop your resume here")
-    ).toBeInTheDocument();
-    expect(screen.getByText("or click to browse")).toBeInTheDocument();
-    expect(screen.getByText("PDF or DOCX, max 10MB")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /back/i })).not.toBeInTheDocument();
   });
 
-  it("renders the speed promise text", () => {
-    renderOnboardingPage();
-    expect(
-      screen.getByText(
-        "You'll be applying to your first job in about 2 minutes."
-      )
-    ).toBeInTheDocument();
-  });
-
-  it("renders a hidden file input accepting pdf and docx", () => {
-    renderOnboardingPage();
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
-    expect(fileInput).toBeInTheDocument();
-    expect(fileInput.accept).toBe(".pdf,.docx");
-    expect(fileInput.className).toContain("hidden");
-  });
-
-  // --- Step Transition ---
-
-  it("transitions to review step after file upload", async () => {
+  it("advances from welcome to gmail step", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
-
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
-
-    const file = new File(["resume content"], "resume.pdf", {
-      type: "application/pdf",
-    });
-
-    await user.upload(fileInput, file);
-
-    // After upload completes (async mock), should show review step content
-    await waitFor(() => {
-      expect(screen.getByText("Does this look right?")).toBeInTheDocument();
-    });
+    await user.click(screen.getByRole("button", { name: /get set up/i }));
+    expect(screen.getByTestId("gmail-step")).toBeInTheDocument();
   });
 
-  // --- Step 2: Review ---
-
-  it("shows review content after transitioning", async () => {
+  it("shows a back button after the welcome step", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
-
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
-
-    const file = new File(["resume content"], "resume.pdf", {
-      type: "application/pdf",
-    });
-
-    await user.upload(fileInput, file);
-
-    await waitFor(() => {
-      expect(screen.getByText(/Looks Good/)).toBeInTheDocument();
-    });
+    await user.click(screen.getByRole("button", { name: /get set up/i }));
+    expect(screen.getByRole("button", { name: /back/i })).toBeInTheDocument();
   });
 
-  it("transitions to disclaimer step on confirm from review step", async () => {
+  // ─── Q&A mutation behavior ───
+
+  it("passes isSaving=true to QaStep while mutations are in flight", async () => {
     const user = userEvent.setup();
-    renderOnboardingPage();
+    await navigateToQaStep(user);
 
-    // Upload file to get to review
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
-    const file = new File(["resume content"], "resume.pdf", {
-      type: "application/pdf",
-    });
-    await user.upload(fileInput, file);
+    // Before clicking, isSaving should be false
+    expect(screen.getByTestId("qa-saving").textContent).toBe("false");
 
-    // Wait for review step to appear
-    await waitFor(() => {
-      expect(screen.getByText(/Looks Good/)).toBeInTheDocument();
-    });
+    // Click continue — fires mutations (captured in qaCallbacks.current)
+    await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Click confirm on review step
-    const confirmButton = screen.getByRole("button", {
-      name: /Looks Good/,
-    });
-    await user.click(confirmButton);
-
-    // Should show the disclaimer step
-    expect(screen.getByText("Before We Begin")).toBeInTheDocument();
+    // Mutations are in flight, isSaving should be true
+    expect(screen.getByTestId("qa-saving").textContent).toBe("true");
   });
 
-  // --- File Validation ---
-
-  it("does not transition for invalid file types", async () => {
+  it("advances to preferences when all Q&A mutations succeed", async () => {
     const user = userEvent.setup();
-    renderOnboardingPage();
+    await navigateToQaStep(user);
 
-    const fileInput = document.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
+    await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    const invalidFile = new File(["content"], "resume.txt", {
-      type: "text/plain",
+    // Resolve all mutations successfully
+    act(() => {
+      for (const cb of qaCallbacks.current) {
+        cb.onSuccess?.();
+      }
     });
 
-    await user.upload(fileInput, invalidFile);
+    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
+  });
 
-    // Should still be on upload step
-    expect(screen.getByText("Upload Your Resume")).toBeInTheDocument();
+  it("stays on Q&A when a required answer fails", async () => {
+    const user = userEvent.setup();
+    await navigateToQaStep(user);
+
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    // Fail the workAuthorization mutation, succeed the rest
+    act(() => {
+      for (const cb of qaCallbacks.current) {
+        if (cb.question === "workAuthorization") {
+          cb.onError?.();
+        } else {
+          cb.onSuccess?.();
+        }
+      }
+    });
+
+    // Should still be on Q&A step
+    expect(screen.getByTestId("qa-step")).toBeInTheDocument();
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Required answers failed to save. Please try again.",
+    );
+  });
+
+  it("advances to preferences when only optional answers fail", async () => {
+    const user = userEvent.setup();
+    await navigateToQaStep(user);
+
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    // Fail an optional mutation, succeed required ones
+    act(() => {
+      for (const cb of qaCallbacks.current) {
+        if (cb.question === "referralSource") {
+          cb.onError?.();
+        } else {
+          cb.onSuccess?.();
+        }
+      }
+    });
+
+    // Should advance because required answers succeeded
+    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
+    // But still shows error toast for the failed optional
+    expect(mockToast.error).toHaveBeenCalled();
+  });
+
+  it("disables the continue button during Q&A save to prevent double-click", async () => {
+    const user = userEvent.setup();
+    await navigateToQaStep(user);
+
+    const continueBtn = screen.getByRole("button", { name: /continue/i });
+    expect(continueBtn).toBeEnabled();
+
+    await user.click(continueBtn);
+
+    // Button should now be disabled
+    expect(continueBtn).toBeDisabled();
   });
 });
