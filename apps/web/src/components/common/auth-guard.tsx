@@ -86,12 +86,22 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return <>{children}</>;
   }
 
+  // Check profile for server-side onboarding completion
+  const profileQuery = api.users.getProfile.useQuery({
+    queryKey: ["user-profile", "auth-guard", user?.id],
+    queryData: {},
+    enabled: !!user,
+    staleTime: 1000 * 60 * 5,
+  });
+
   // Onboarding is complete when the user has uploaded a resume, accepted the
-  // copilot disclaimer, AND clicked "Enter Workbench" on the readiness result
-  // screen (which sets the localStorage flag). This keeps the result step
-  // visible across refreshes until the user explicitly finishes onboarding.
+  // copilot disclaimer, AND completed onboarding (server-side timestamp OR
+  // localStorage fallback for same-device continuity).
   const hasResumes = resumesQuery.data?.status === 200 && resumesQuery.data.body.data.length > 0;
-  const onboardingFinished = !!localStorage.getItem(`valet:onboarding:completed:${user.id}`);
+  const serverOnboardingDone =
+    profileQuery.data?.status === 200 && !!profileQuery.data.body.onboardingCompletedAt;
+  const localOnboardingDone = !!localStorage.getItem(`valet:onboarding:completed:${user.id}`);
+  const onboardingFinished = serverOnboardingDone || localOnboardingDone;
   const onboardingComplete = hasResumes && !!copilotAccepted && onboardingFinished;
 
   // If onboarding NOT complete and not already on /onboarding → redirect there

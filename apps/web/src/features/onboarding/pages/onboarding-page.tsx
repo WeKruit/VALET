@@ -234,21 +234,18 @@ export function OnboardingPage() {
 
   useEffect(() => {
     if (mailboxCredsQuery.data?.status === 200) {
-      const mailboxes = mailboxCredsQuery.data.body.data;
-      if (mailboxes.length > 0) {
-        setMailboxConnected(true);
-        // If any active mailbox has 2FA enabled, mark it
-        setMailboxTwoFactorEnabled(mailboxes.some((m) => m.twoFactorEnabled));
-      }
+      const activeMailboxes = mailboxCredsQuery.data.body.data.filter((m) => m.status === "active");
+      setMailboxConnected(activeMailboxes.length > 0);
+      setMailboxTwoFactorEnabled(activeMailboxes.some((m) => m.twoFactorEnabled));
     }
   }, [mailboxCredsQuery.data]);
 
   useEffect(() => {
     if (platformCredsQuery.data?.status === 200) {
-      const platforms = platformCredsQuery.data.body.data;
-      if (platforms.length > 0) {
-        setSavedPlatforms(platforms.map((p) => p.platform));
-      }
+      const activePlatforms = platformCredsQuery.data.body.data.filter(
+        (p) => p.status === "active",
+      );
+      setSavedPlatforms(activePlatforms.map((p) => p.platform));
     }
   }, [platformCredsQuery.data]);
 
@@ -566,10 +563,7 @@ export function OnboardingPage() {
           goTo("consent");
         },
         onError: () => {
-          // Allow forward progress even if save fails
-          setPreferencesComplete(true);
-          goTo("consent");
-          toast.error("Preferences may not have saved. You can update them in Settings.");
+          toast.error("Failed to save preferences. Please try again.");
         },
       },
     );
@@ -586,12 +580,26 @@ export function OnboardingPage() {
     mailboxTwoFactorEnabled,
   };
 
+  const completeOnboarding = api.users.completeOnboarding.useMutation();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   function handleEnterWorkbench() {
-    // Mark that the user has viewed the readiness result and explicitly
-    // entered the workbench. The auth-guard checks this flag so the result
-    // step remains visible across refreshes until the user clicks through.
-    localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
-    window.location.replace("/apply");
+    setIsSubmitting(true);
+    completeOnboarding.mutate(
+      { body: {} },
+      {
+        onSuccess: () => {
+          // Also set localStorage as a fast-path for the auth-guard on this device
+          localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
+          window.location.replace("/apply");
+        },
+        onError: () => {
+          // Even if the server call fails, allow the user through (localStorage fallback)
+          localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
+          window.location.replace("/apply");
+        },
+      },
+    );
   }
 
   // ─── Loading state ───
@@ -736,7 +744,7 @@ export function OnboardingPage() {
             downgrades={computeDowngrades(readinessInputs)}
             onEnterWorkbench={handleEnterWorkbench}
             onGoBack={goTo as (step: string) => void}
-            isSubmitting={false}
+            isSubmitting={isSubmitting}
           />
         )}
       </div>

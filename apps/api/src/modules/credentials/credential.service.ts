@@ -162,6 +162,20 @@ export class CredentialService {
       twoFactorEnabled?: boolean;
     },
   ) {
+    // Upsert: if a mailbox for this user+provider already exists, update it
+    const existing = await this.credentialRepo.findMailboxByUserAndProvider(userId, data.provider);
+    if (existing) {
+      const updated = await this.credentialRepo.updateMailbox(existing.id, {
+        emailAddress: data.emailAddress,
+        encryptedSecret: encrypt(data.secret),
+        accessMode: data.accessMode,
+        twoFactorEnabled: data.twoFactorEnabled ?? false,
+        status: "active",
+      });
+      this.logger.info({ userId, provider: data.provider }, "Mailbox credential updated (upsert)");
+      return toMailboxResponse(updated as unknown as Record<string, unknown>);
+    }
+
     const row = await this.credentialRepo.createMailbox({
       userId,
       provider: data.provider,
@@ -217,16 +231,21 @@ export class CredentialService {
       };
     });
 
-    const hasMailbox = mailboxCreds.length > 0;
-    const mailboxStatus = hasMailbox ? (mailboxCreds[0]?.status ?? "unknown") : "missing";
+    const activeMailbox = mailboxCreds.find((m) => m.status === "active");
+    const hasActiveMailbox = activeMailbox != null;
+    const mailboxStatus = hasActiveMailbox
+      ? "active"
+      : mailboxCreds.length > 0
+        ? (mailboxCreds[0]?.status ?? "inactive")
+        : "missing";
 
     const overallReady =
-      platforms.some((p) => p.hasCredential && p.status === "active") && hasMailbox;
+      platforms.some((p) => p.hasCredential && p.status === "active") && hasActiveMailbox;
 
     return {
       platforms,
       mailbox: {
-        hasCredential: hasMailbox,
+        hasCredential: hasActiveMailbox,
         status: mailboxStatus,
       },
       overallReady,

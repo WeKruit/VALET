@@ -91,6 +91,7 @@ export const userProfileResponse = userSchema.extend({
   emailReadiness: emailReadiness.optional(),
   mailboxReadiness: mailboxReadiness.optional(),
   platformReadiness: platformReadiness.optional(),
+  onboardingCompletedAt: z.coerce.date().nullable().optional(),
 });
 
 // ─── Inferred Types ───

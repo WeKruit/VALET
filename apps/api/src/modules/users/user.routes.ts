@@ -45,6 +45,7 @@ function toProfileResponse(user: Record<string, unknown>) {
     },
     jobPreferences: (jp as JobPreferences | undefined) ?? undefined,
     notificationPreferences: (np as NotificationPreferences | undefined) ?? undefined,
+    onboardingCompletedAt: (user.onboardingCompletedAt as Date | null) ?? null,
   };
 }
 
@@ -162,6 +163,15 @@ export const userRouter = s.router(userContract, {
       body: {
         deletedCount: ghResponse.deleted_count,
       },
+    };
+  },
+
+  completeOnboarding: async ({ request }) => {
+    const { userService } = request.diScope.cradle;
+    const completedAt = await userService.completeOnboarding(request.userId);
+    return {
+      status: 200 as const,
+      body: { onboardingCompletedAt: completedAt },
     };
   },
 });

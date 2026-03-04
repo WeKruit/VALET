@@ -1,5 +1,6 @@
 import type { JobLeadRepository } from "./job-lead.repository.js";
 import type { TaskService } from "../tasks/task.service.js";
+import type { ResumeRepository } from "../resumes/resume.repository.js";
 import { AppError } from "../../common/errors.js";
 import type { Platform, JobLeadStatus, JobLeadSource, JobLead } from "@valet/shared/schemas";
 
@@ -94,16 +95,20 @@ function extractMetadataFromUrl(url: string): { title: string; company: string }
 export class JobLeadService {
   private jobLeadRepo: JobLeadRepository;
   private taskService: TaskService;
+  private resumeRepo: ResumeRepository;
 
   constructor({
     jobLeadRepo,
     taskService,
+    resumeRepo,
   }: {
     jobLeadRepo: JobLeadRepository;
     taskService: TaskService;
+    resumeRepo: ResumeRepository;
   }) {
     this.jobLeadRepo = jobLeadRepo;
     this.taskService = taskService;
+    this.resumeRepo = resumeRepo;
   }
 
   async list(
@@ -208,12 +213,24 @@ export class JobLeadService {
       throw AppError.conflict("This job lead has already been queued or applied");
     }
 
+    // Resolve resumeId: use provided, or fall back to user's most recent resume
+    let resumeId = opts.resumeId;
+    if (!resumeId) {
+      const userResumes = await this.resumeRepo.findByUserId(userId);
+      if (userResumes.length === 0) {
+        throw AppError.badRequest(
+          "No resume found. Upload a resume before queuing a job for application.",
+        );
+      }
+      resumeId = userResumes[0]!.id;
+    }
+
     // Create a task via the existing task service
     const task = await this.taskService.create(
       {
         jobUrl: lead.jobUrl,
         mode: "copilot",
-        resumeId: opts.resumeId ?? "",
+        resumeId,
       },
       userId,
     );

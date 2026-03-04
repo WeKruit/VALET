@@ -73,6 +73,15 @@ export class CredentialRepository {
     return rows[0] ?? null;
   }
 
+  async findMailboxByUserAndProvider(userId: string, provider: string) {
+    const rows = await this.db
+      .select()
+      .from(mailboxCredentials)
+      .where(and(eq(mailboxCredentials.userId, userId), eq(mailboxCredentials.provider, provider)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async listMailboxByUser(userId: string) {
     return this.db
       .select()
