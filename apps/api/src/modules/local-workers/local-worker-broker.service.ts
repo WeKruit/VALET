@@ -13,6 +13,7 @@ import {
 
 const SESSION_TTL_MS = 65 * 60 * 1000;
 const LEASE_TTL_MS = 4 * 60 * 60 * 1000;
+const CLAIM_LOCK_TTL_MS = 30_000;
 
 interface WorkerSession {
   userId: string;
@@ -115,6 +116,10 @@ export class LocalWorkerBrokerService {
 
   private workerLeaseKey(desktopWorkerId: string): string {
     return `gh:local-worker:worker-lease:${desktopWorkerId}`;
+  }
+
+  private workerClaimLockKey(desktopWorkerId: string): string {
+    return `gh:local-worker:claim-lock:${desktopWorkerId}`;
   }
 
   private async readJson<T>(key: string): Promise<T | null> {
@@ -228,6 +233,32 @@ export class LocalWorkerBrokerService {
 
   private async deleteLease(lease: ActiveLease): Promise<void> {
     await this.redis.del(this.leaseKey(lease.jobId), this.workerLeaseKey(lease.desktopWorkerId));
+  }
+
+  private async acquireClaimLock(desktopWorkerId: string): Promise<string | null> {
+    const token = randomUUID();
+    const result = await this.redis.set(
+      this.workerClaimLockKey(desktopWorkerId),
+      token,
+      "PX",
+      CLAIM_LOCK_TTL_MS,
+      "NX",
+    );
+    return result === "OK" ? token : null;
+  }
+
+  private async releaseClaimLock(desktopWorkerId: string, token: string): Promise<void> {
+    await this.redis.eval(
+      `
+        if redis.call("GET", KEYS[1]) == ARGV[1] then
+          return redis.call("DEL", KEYS[1])
+        end
+        return 0
+      `,
+      1,
+      this.workerClaimLockKey(desktopWorkerId),
+      token,
+    );
   }
 
   private async requireLease(
@@ -423,91 +454,106 @@ export class LocalWorkerBrokerService {
     const session = await this.requireSessionByToken(input.sessionToken, input.desktopWorkerId);
     await this.refreshSession(session);
 
-    const existingLease = await this.readWorkerLease(session.desktopWorkerId);
-    if (existingLease) {
+    const claimLockToken = await this.acquireClaimLock(session.desktopWorkerId);
+    if (!claimLockToken) {
       this.logger.warn(
         {
           desktopWorkerId: session.desktopWorkerId,
-          activeJobId: existingLease.jobId,
         },
-        "Worker attempted to claim while already holding a lease",
+        "Worker attempted a concurrent claim while another claim was already in progress",
       );
       return { leaseId: null, job: null };
     }
 
-    const boss = this.requireBoss();
-    const queueName = this.queueName(session.desktopWorkerId);
-    await boss.createQueue(queueName);
+    try {
+      const existingLease = await this.readWorkerLease(session.desktopWorkerId);
+      if (existingLease) {
+        this.logger.warn(
+          {
+            desktopWorkerId: session.desktopWorkerId,
+            activeJobId: existingLease.jobId,
+          },
+          "Worker attempted to claim while already holding a lease",
+        );
+        return { leaseId: null, job: null };
+      }
 
-    const fetched = await boss.fetch<GhApplyJobPayload>(queueName, { batchSize: 1 });
-    const fetchedJob: Job<GhApplyJobPayload> | undefined = fetched[0];
-    if (!fetchedJob) {
-      return { leaseId: null, job: null };
-    }
+      const boss = this.requireBoss();
+      const queueName = this.queueName(session.desktopWorkerId);
+      await boss.createQueue(queueName);
 
-    const queuePayload = fetchedJob.data ?? ({} as GhApplyJobPayload);
-    if (!queuePayload.ghJobId) {
-      await this.completeFetchedJob(boss, queueName, fetchedJob.id);
-      return { leaseId: null, job: null };
-    }
+      const fetched = await boss.fetch<GhApplyJobPayload>(queueName, { batchSize: 1 });
+      const fetchedJob: Job<GhApplyJobPayload> | undefined = fetched[0];
+      if (!fetchedJob) {
+        return { leaseId: null, job: null };
+      }
 
-    const ghJob = await this.ghJobRepo.findById(queuePayload.ghJobId);
-    if (!ghJob || ghJob.userId !== session.userId) {
-      await this.completeFetchedJob(boss, queueName, fetchedJob.id);
-      return { leaseId: null, job: null };
-    }
+      const queuePayload = fetchedJob.data ?? ({} as GhApplyJobPayload);
+      if (!queuePayload.ghJobId) {
+        await this.completeFetchedJob(boss, queueName, fetchedJob.id);
+        return { leaseId: null, job: null };
+      }
 
-    const leaseId = randomUUID();
-    const lease: ActiveLease = {
-      jobId: ghJob.id,
-      leaseId,
-      desktopWorkerId: session.desktopWorkerId,
-      pgBossJobId: fetchedJob.id,
-      queueName,
-      queuePayload,
-    };
-    await this.writeLease(lease);
+      const ghJob = await this.ghJobRepo.findById(queuePayload.ghJobId);
+      if (!ghJob || ghJob.userId !== session.userId) {
+        await this.completeFetchedJob(boss, queueName, fetchedJob.id);
+        return { leaseId: null, job: null };
+      }
 
-    await this.ghJobRepo.updateStatus(ghJob.id, {
-      status: "running",
-      startedAt: ghJob.startedAt ?? new Date(),
-      lastHeartbeat: new Date(),
-      workerId: session.desktopWorkerId,
-      targetWorkerId: session.desktopWorkerId,
-      statusMessage: "Claimed by desktop local worker",
-      metadata: {
-        ...(ghJob.metadata ?? {}),
-        active_lease_id: leaseId,
-      },
-    });
-
-    await this.ghJobEventRepo.insertEvent({
-      jobId: ghJob.id,
-      eventType: "job_claimed",
-      fromStatus: ghJob.status,
-      toStatus: "running",
-      message: "Claimed by desktop local worker",
-      actor: "valet",
-      metadata: {
-        desktopWorkerId: session.desktopWorkerId,
-        leaseId,
-      },
-    });
-
-    const inputData = ghJob.inputData ?? {};
-    return {
-      leaseId,
-      job: {
+      const leaseId = randomUUID();
+      const lease: ActiveLease = {
         jobId: ghJob.id,
         leaseId,
-        targetUrl: ghJob.targetUrl,
-        jobType: ghJob.jobType ?? "apply",
-        executionMode: ghJob.executionMode ?? "mastra",
-        profile: (inputData.user_data as Record<string, unknown>) ?? {},
-        resumePath: (inputData.desktop_resume_path as string) ?? undefined,
-        metadata: ghJob.metadata ?? {},
-      },
-    };
+        desktopWorkerId: session.desktopWorkerId,
+        pgBossJobId: fetchedJob.id,
+        queueName,
+        queuePayload,
+      };
+      await this.writeLease(lease);
+
+      await this.ghJobRepo.updateStatus(ghJob.id, {
+        status: "running",
+        startedAt: ghJob.startedAt ?? new Date(),
+        lastHeartbeat: new Date(),
+        workerId: session.desktopWorkerId,
+        targetWorkerId: session.desktopWorkerId,
+        statusMessage: "Claimed by desktop local worker",
+        metadata: {
+          ...(ghJob.metadata ?? {}),
+          active_lease_id: leaseId,
+        },
+      });
+
+      await this.ghJobEventRepo.insertEvent({
+        jobId: ghJob.id,
+        eventType: "job_claimed",
+        fromStatus: ghJob.status,
+        toStatus: "running",
+        message: "Claimed by desktop local worker",
+        actor: "valet",
+        metadata: {
+          desktopWorkerId: session.desktopWorkerId,
+          leaseId,
+        },
+      });
+
+      const inputData = ghJob.inputData ?? {};
+      return {
+        leaseId,
+        job: {
+          jobId: ghJob.id,
+          leaseId,
+          targetUrl: ghJob.targetUrl,
+          jobType: ghJob.jobType ?? "apply",
+          executionMode: ghJob.executionMode ?? "mastra",
+          profile: (inputData.user_data as Record<string, unknown>) ?? {},
+          resumePath: (inputData.desktop_resume_path as string) ?? undefined,
+          metadata: ghJob.metadata ?? {},
+        },
+      };
+    } finally {
+      await this.releaseClaimLock(session.desktopWorkerId, claimLockToken);
+    }
   }
 
   async heartbeat(input: {
