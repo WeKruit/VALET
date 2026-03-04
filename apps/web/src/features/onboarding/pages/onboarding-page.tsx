@@ -249,13 +249,22 @@ export function OnboardingPage() {
     },
   });
 
-  // Sync server state into local state
+  // Sync server state into local state — prefer in-flight resume over older parsed ones
   useEffect(() => {
     if (resumesQuery.data?.status === 200) {
       const resumes = resumesQuery.data.body.data;
       setHasResume(resumes.length > 0);
 
-      // If a resume is already parsed, restore its data
+      // If any resume is still being parsed, it's the most recent upload — prefer it
+      const inFlight = resumes.find((r) => r.status === "parsing" || r.status === "uploading");
+      if (inFlight) {
+        if (!resumeId) {
+          setResumeId(inFlight.id);
+        }
+        return; // Don't restore old parsed data while a new parse is in progress
+      }
+
+      // No in-flight resume — restore from parsed one
       const parsed = resumes.find((r) => r.status === "parsed" && r.parsedData);
       if (parsed && !parsedDataState) {
         setParsedDataState(parsed.parsedData as ParsedResumeData);
@@ -322,11 +331,14 @@ export function OnboardingPage() {
     }
 
     // Derive completion from server data
-    const serverHasResume =
-      resumesQuery.data?.status === 200 && resumesQuery.data.body.data.length > 0;
+    const serverResumes = resumesQuery.data?.status === 200 ? resumesQuery.data.body.data : [];
+    const serverHasResume = serverResumes.length > 0;
+    const serverHasInFlightResume = serverResumes.some(
+      (r) => r.status === "parsing" || r.status === "uploading",
+    );
+    // If any resume is still in-flight, treat parsed as incomplete (user uploaded a newer one)
     const serverHasParsedResume =
-      resumesQuery.data?.status === 200 &&
-      resumesQuery.data.body.data.some((r) => r.status === "parsed" && r.parsedData);
+      !serverHasInFlightResume && serverResumes.some((r) => r.status === "parsed" && r.parsedData);
     const serverProfileComplete =
       profileData?.status === 200 &&
       !!profileData.body.name &&
@@ -356,19 +368,22 @@ export function OnboardingPage() {
       return;
     }
 
-    if (!serverHasParsedResume) {
-      // Resume exists but not parsed — restore resumeId so useResumeParse can listen/poll
-      const unparsedResume =
-        resumesQuery.data?.status === 200
-          ? resumesQuery.data.body.data.find(
-              (r) => r.status === "parsing" || r.status === "uploading",
-            )
-          : undefined;
-      if (unparsedResume) {
-        setResumeId(unparsedResume.id);
-        setUploadedFilename(unparsedResume.filename ?? "Resume");
+    if (serverHasInFlightResume) {
+      // Most recent resume is still being parsed — restore its ID and go to feedback
+      const inFlight = serverResumes.find(
+        (r) => r.status === "parsing" || r.status === "uploading",
+      );
+      if (inFlight) {
+        setResumeId(inFlight.id);
+        setUploadedFilename(inFlight.filename ?? "Resume");
       }
       setStep("parse-feedback");
+      return;
+    }
+
+    if (!serverHasParsedResume) {
+      // All resumes failed — go back to resume upload
+      setStep("resume");
       return;
     }
 

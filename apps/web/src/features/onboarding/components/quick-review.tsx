@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
 import { Button } from "@valet/ui/components/button";
-import { Plus, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, X, Pencil, Check, AlertTriangle } from "lucide-react";
 import type { ParsedResumeData } from "../hooks/use-resume-parse";
 
 /** The structured shape that matches the updateProfile contract */
@@ -47,14 +47,6 @@ function formatWorkEntry(w: ProfileConfirmPayload["workHistory"][number]): strin
   return `${w.title} at ${w.company}${dateRange}`;
 }
 
-/** Format education entries for display */
-function formatEducation(entries: ProfileConfirmPayload["education"]): string {
-  if (entries.length === 0) return "";
-  const e = entries[0]!;
-  const field = e.fieldOfStudy ? ` in ${e.fieldOfStudy}` : "";
-  return `${e.degree}${field} — ${e.school}`;
-}
-
 export function QuickReview({
   parsedData,
   parseConfidence,
@@ -72,20 +64,24 @@ export function QuickReview({
   );
   const initialSkills = parsedData?.skills ?? [];
 
-  // Editable fields (only those the contract accepts)
+  // Editable fields
   const [phone, setPhone] = useState(initialPhone);
   const [location, setLocation] = useState(initialLocation);
 
-  // Work history — keep structured, display as formatted strings
+  // Work history — keep structured
   const [workHistory, setWorkHistory] = useState(initialWorkHistory);
   const [addingExp, setAddingExp] = useState(false);
   const [newExpTitle, setNewExpTitle] = useState("");
   const [newExpCompany, setNewExpCompany] = useState("");
+  const [editingExpIndex, setEditingExpIndex] = useState<number | null>(null);
 
-  // Education — keep structured, display as formatted string
-  const [education] = useState(initialEducation);
+  // Education — editable
+  const [education, setEducation] = useState(initialEducation);
 
-  const [skills] = useState<string[]>(initialSkills);
+  // Skills — removable + addable
+  const [skills, setSkills] = useState<string[]>(initialSkills);
+  const [addingSkill, setAddingSkill] = useState(false);
+  const [newSkill, setNewSkill] = useState("");
 
   const lowConfidence = parseConfidence != null && parseConfidence < 0.7;
 
@@ -101,6 +97,31 @@ export function QuickReview({
 
   function removeExp(index: number) {
     setWorkHistory((prev) => prev.filter((_, i) => i !== index));
+    if (editingExpIndex === index) setEditingExpIndex(null);
+  }
+
+  function updateExp(index: number, field: "title" | "company", value: string) {
+    setWorkHistory((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry)),
+    );
+  }
+
+  function updateEducation(index: number, field: string, value: string) {
+    setEducation((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry)),
+    );
+  }
+
+  function removeSkill(skill: string) {
+    setSkills((prev) => prev.filter((s) => s !== skill));
+  }
+
+  function addSkillEntry() {
+    const trimmed = newSkill.trim();
+    if (!trimmed || skills.includes(trimmed)) return;
+    setSkills((prev) => [...prev, trimmed]);
+    setNewSkill("");
+    setAddingSkill(false);
   }
 
   return (
@@ -170,7 +191,7 @@ export function QuickReview({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-                Your Experience
+                Experience
               </h3>
               <Button
                 variant="ghost"
@@ -188,18 +209,55 @@ export function QuickReview({
             </div>
             <div className="space-y-1">
               {workHistory.map((entry, i) => (
-                <div key={i} className="group flex items-start gap-2">
-                  <p className="text-sm flex-1">{formatWorkEntry(entry)}</p>
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeExp(i)}
-                      aria-label={`Remove experience: ${formatWorkEntry(entry)}`}
-                    >
-                      <Trash2 className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
-                    </Button>
-                  </div>
+                <div key={i} className="group">
+                  {editingExpIndex === i ? (
+                    <div className="space-y-2 py-1">
+                      <Input
+                        value={entry.title}
+                        onChange={(e) => updateExp(i, "title", e.target.value)}
+                        placeholder="Job title"
+                        className="text-sm"
+                        autoFocus
+                      />
+                      <Input
+                        value={entry.company}
+                        onChange={(e) => updateExp(i, "company", e.target.value)}
+                        placeholder="Company"
+                        className="text-sm"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === "Escape") {
+                            setEditingExpIndex(null);
+                          }
+                        }}
+                      />
+                      <Button variant="ghost" size="sm" onClick={() => setEditingExpIndex(null)}>
+                        <Check className="h-3 w-3 mr-1" />
+                        Done
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <p className="text-sm flex-1">{formatWorkEntry(entry)}</p>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingExpIndex(i)}
+                          aria-label={`Edit experience: ${formatWorkEntry(entry)}`}
+                        >
+                          <Pencil className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeExp(i)}
+                          aria-label={`Remove experience: ${formatWorkEntry(entry)}`}
+                        >
+                          <Trash2 className="h-3 w-3 text-[var(--wk-text-tertiary)]" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -209,7 +267,7 @@ export function QuickReview({
                 </p>
               )}
 
-              {/* Add new experience row — structured inputs */}
+              {/* Add new experience row */}
               {addingExp && (
                 <div className="space-y-2 pt-1">
                   <Input
@@ -258,32 +316,102 @@ export function QuickReview({
                 </div>
               )}
             </div>
+          </div>
 
-            {/* Education — display only (structured data preserved as-is) */}
-            <div className="pt-2">
-              <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
-                Education
-              </h3>
-            </div>
-            <p className="text-sm">
-              {formatEducation(education) || (
-                <span className="text-[var(--wk-text-tertiary)]">No education found</span>
-              )}
-            </p>
+          {/* Education — editable */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+              Education
+            </h3>
+            {education.length > 0 ? (
+              education.map((entry, i) => (
+                <div key={i} className="grid gap-2">
+                  <Input
+                    value={entry.school}
+                    onChange={(e) => updateEducation(i, "school", e.target.value)}
+                    placeholder="School"
+                    className="text-sm"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      value={entry.degree}
+                      onChange={(e) => updateEducation(i, "degree", e.target.value)}
+                      placeholder="Degree"
+                      className="text-sm"
+                    />
+                    <Input
+                      value={entry.fieldOfStudy ?? ""}
+                      onChange={(e) => updateEducation(i, "fieldOfStudy", e.target.value)}
+                      placeholder="Field of study"
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-[var(--wk-text-tertiary)]">No education found</p>
+            )}
+          </div>
 
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {skills.slice(0, 5).map((skill) => (
+          {/* Skills — removable + addable */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--wk-text-secondary)]">
+              Skills
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {skills.map((skill) => (
                 <span
                   key={skill}
-                  className="inline-flex px-2 py-0.5 text-xs rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-secondary)]"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-secondary)]"
                 >
                   {skill}
+                  <button
+                    type="button"
+                    onClick={() => removeSkill(skill)}
+                    className="hover:text-[var(--wk-text-primary)] transition-colors"
+                    aria-label={`Remove skill: ${skill}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </span>
               ))}
-              {skills.length > 5 && (
-                <span className="inline-flex px-2 py-0.5 text-xs rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-tertiary)]">
-                  +{skills.length - 5} more
-                </span>
+              {!addingSkill ? (
+                <button
+                  type="button"
+                  onClick={() => setAddingSkill(true)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-[var(--wk-radius-full)] border border-dashed border-[var(--wk-border-default)] text-[var(--wk-text-tertiary)] hover:text-[var(--wk-text-secondary)] transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add
+                </button>
+              ) : (
+                <Input
+                  value={newSkill}
+                  onChange={(e) => setNewSkill(e.target.value)}
+                  placeholder="New skill"
+                  className="text-xs w-32 h-6 px-2"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addSkillEntry();
+                    }
+                    if (e.key === "Escape") {
+                      setAddingSkill(false);
+                      setNewSkill("");
+                    }
+                  }}
+                  onBlur={() => {
+                    if (newSkill.trim()) {
+                      addSkillEntry();
+                    } else {
+                      setAddingSkill(false);
+                    }
+                  }}
+                />
+              )}
+              {skills.length === 0 && !addingSkill && (
+                <p className="text-sm text-[var(--wk-text-tertiary)]">No skills found</p>
               )}
             </div>
           </div>

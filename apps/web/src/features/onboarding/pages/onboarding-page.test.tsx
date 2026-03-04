@@ -677,6 +677,41 @@ describe("OnboardingPage", () => {
     expect(visited["parse-review"]).toBeUndefined();
   });
 
+  it("prefers in-flight resume over older parsed resume on reload", () => {
+    // Simulate: user has an older parsed resume AND a newer one still parsing
+    localStorage.setItem("valet:onboarding:visited:test-user-id", JSON.stringify({ entry: true }));
+    localStorage.setItem("valet:onboarding:mode:test-user-id", "quick_start");
+
+    stableQueries.resumeList.data = {
+      status: 200,
+      body: {
+        data: [
+          {
+            id: "resume-old-parsed",
+            status: "parsed",
+            parsedData: { fullName: "Old Data", email: "old@test.com" },
+            parsingConfidence: 0.95,
+            filename: "old-resume.pdf",
+          },
+          {
+            id: "resume-new-parsing",
+            status: "parsing",
+            parsedData: null,
+            parsingConfidence: null,
+            filename: "new-resume.pdf",
+          },
+        ],
+      },
+    } as any;
+
+    renderOnboardingPage();
+
+    // Should land on parse-feedback (not parse-review or job-preview)
+    expect(screen.getByTestId("parse-feedback-step")).toBeInTheDocument();
+    // Should be tracking the in-flight resume, not the old parsed one
+    expect(mockParseHook.lastResumeId).toBe("resume-new-parsing");
+  });
+
   it("marks parse-review visited only after profile save succeeds", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
