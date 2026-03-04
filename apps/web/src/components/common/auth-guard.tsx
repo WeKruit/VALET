@@ -30,7 +30,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       if (fresh.role !== user.role) {
         setUser({
           ...user,
-          role: fresh.role as "user" | "developer" | "admin" | "superadmin",
+          role: fresh.role as "waitlist" | "beta" | "user" | "developer" | "admin" | "superadmin",
         });
       }
     }
@@ -86,9 +86,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Early access gate: waitlisted users (role === "user" or no role) can only see /early-access
+  // Early access gate: roles below "developer" can only see /early-access
   const isEarlyAccessPath = location.pathname === "/early-access";
-  const isWaitlisted = !user.role || user.role === "user";
+  const gatedRoles = new Set<string | undefined>([undefined, "user", "waitlist", "beta"]);
+  const isWaitlisted = gatedRoles.has(user.role);
   if (isWaitlisted) {
     if (!isEarlyAccessPath) {
       return <Navigate to="/early-access" replace />;

@@ -22,12 +22,9 @@ export function defineAbilitiesFor(role: string): AppAbility {
       can("manage", "JobLead");
       break;
     case "user":
-      can("manage", "Task");
-      can("manage", "Resume");
-      can("manage", "QaBank");
-      can("manage", "Dashboard");
-      can("manage", "Settings");
-      can("manage", "JobLead");
+      // Default signup role — waitlisted, no API permissions.
+      // AuthGuard redirects to /early-access on the frontend;
+      // CASL enforces the same boundary on the backend.
       break;
     case "beta":
       can("read", "Task");

@@ -7,7 +7,7 @@ import {
   platformReadiness,
 } from "./autonomy.schema.js";
 
-export const userRole = z.enum(["user", "developer", "admin", "superadmin"]);
+export const userRole = z.enum(["waitlist", "beta", "user", "developer", "admin", "superadmin"]);
 
 export const subscriptionTier = z.enum(["free", "starter", "pro", "enterprise"]);
 

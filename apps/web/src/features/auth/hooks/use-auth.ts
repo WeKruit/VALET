@@ -7,7 +7,7 @@ interface User {
   email: string;
   name: string;
   avatarUrl?: string | null;
-  role?: "user" | "developer" | "admin" | "superadmin";
+  role?: "waitlist" | "beta" | "user" | "developer" | "admin" | "superadmin";
   subscriptionTier?: "free" | "starter" | "pro" | "enterprise";
   onboardingComplete?: boolean;
   copilotAppsCompleted?: number;
