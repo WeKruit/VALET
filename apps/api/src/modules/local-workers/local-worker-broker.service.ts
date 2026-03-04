@@ -54,6 +54,13 @@ export class LocalWorkerBrokerError extends Error {
   }
 }
 
+function assertMultiExecSuccess(results: Array<[Error | null, unknown]> | null, label: string): void {
+  if (!results) throw new Error(`${label}: multi/exec returned null (aborted)`);
+  for (const [err] of results) {
+    if (err) throw new Error(`${label}: ${err.message}`);
+  }
+}
+
 export class LocalWorkerBrokerService {
   private readonly logger: FastifyBaseLogger;
   private readonly pgBossService: PgBossService;
@@ -96,10 +103,13 @@ export class LocalWorkerBrokerService {
   }
 
   private buildCallbackUrl(): string {
-    return (
+    const base =
       process.env.GHOSTHANDS_CALLBACK_URL ??
-      `${process.env.API_URL ?? "http://localhost:8000"}/api/v1/webhooks/ghosthands`
-    );
+      `${process.env.API_URL ?? "http://localhost:8000"}/api/v1/webhooks/ghosthands`;
+    const secret = process.env.GH_SERVICE_SECRET;
+    if (!secret) return base;
+    const sep = base.includes("?") ? "&" : "?";
+    return `${base}${sep}token=${secret}`;
   }
 
   private sessionKey(desktopWorkerId: string): string {
@@ -135,11 +145,12 @@ export class LocalWorkerBrokerService {
 
   private async writeSession(session: WorkerSession): Promise<void> {
     const ttlMs = Math.max(session.expiresAt - Date.now(), 1_000);
-    await this.redis
+    const results = await this.redis
       .multi()
       .set(this.sessionKey(session.desktopWorkerId), JSON.stringify(session), "PX", ttlMs)
       .set(this.sessionTokenKey(session.sessionToken), session.desktopWorkerId, "PX", ttlMs)
       .exec();
+    assertMultiExecSuccess(results, "writeSession");
   }
 
   private async readSessionByWorkerId(desktopWorkerId: string): Promise<WorkerSession | null> {
@@ -209,11 +220,12 @@ export class LocalWorkerBrokerService {
   }
 
   private async writeLease(lease: ActiveLease): Promise<void> {
-    await this.redis
+    const results = await this.redis
       .multi()
       .set(this.leaseKey(lease.jobId), JSON.stringify(lease), "PX", LEASE_TTL_MS)
       .set(this.workerLeaseKey(lease.desktopWorkerId), lease.jobId, "PX", LEASE_TTL_MS)
       .exec();
+    assertMultiExecSuccess(results, "writeLease");
   }
 
   private async readLease(jobId: string): Promise<ActiveLease | null> {
