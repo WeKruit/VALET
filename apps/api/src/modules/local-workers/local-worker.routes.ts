@@ -1,8 +1,95 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
+import { LocalWorkerBrokerError } from "./local-worker-broker.service.js";
 
-function sessionToken(request: FastifyRequest): string {
+const nonEmptyString = z.string().trim().min(1);
+
+const registerBodySchema = z.object({
+  desktopWorkerId: nonEmptyString,
+  deviceId: nonEmptyString,
+  appVersion: nonEmptyString,
+});
+
+const submitBodySchema = z.object({
+  desktopWorkerId: nonEmptyString,
+  targetUrl: nonEmptyString,
+  profile: z.record(z.string(), z.unknown()),
+  resumePath: z.string().trim().min(1).optional(),
+  uiLabel: z.string().trim().min(1).optional(),
+});
+
+const claimBodySchema = z.object({
+  desktopWorkerId: nonEmptyString,
+});
+
+const heartbeatParamsSchema = z.object({
+  desktopWorkerId: nonEmptyString,
+});
+
+const heartbeatBodySchema = z.object({
+  activeJobId: z.string().trim().min(1).optional(),
+  leaseId: z.string().trim().min(1).optional(),
+});
+
+const jobParamsSchema = z.object({
+  jobId: nonEmptyString,
+});
+
+const eventsBodySchema = z.object({
+  leaseId: nonEmptyString,
+  events: z.array(z.record(z.string(), z.unknown())),
+});
+
+const awaitingReviewBodySchema = z.object({
+  leaseId: nonEmptyString,
+  summary: z.string().trim().min(1).optional(),
+});
+
+const completeBodySchema = z.object({
+  leaseId: nonEmptyString,
+  result: z.record(z.string(), z.unknown()).optional(),
+  summary: z.string().trim().min(1).optional(),
+});
+
+const failBodySchema = z.object({
+  leaseId: nonEmptyString,
+  error: nonEmptyString,
+  code: z.string().trim().min(1).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+});
+
+const releaseBodySchema = z.object({
+  leaseId: nonEmptyString,
+  reason: nonEmptyString,
+});
+
+function workerSessionToken(request: FastifyRequest): string {
   const token = request.headers["x-local-worker-session"];
   return Array.isArray(token) ? (token[0] ?? "") : (token ?? "");
+}
+
+function parseOrThrow<T>(schema: z.ZodSchema<T>, input: unknown): T {
+  return schema.parse(input);
+}
+
+function sendBrokerError(reply: FastifyReply, error: unknown, fallback: string) {
+  if (error instanceof LocalWorkerBrokerError) {
+    return reply.status(error.statusCode).send({
+      error: error.message,
+      code: error.code,
+    });
+  }
+
+  if (error instanceof z.ZodError) {
+    return reply.status(400).send({
+      error: "Invalid request payload",
+      details: error.flatten(),
+    });
+  }
+
+  return reply.status(503).send({
+    error: error instanceof Error ? error.message : fallback,
+  });
 }
 
 export async function localWorkerRoutes(fastify: FastifyInstance) {
@@ -15,19 +102,16 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
 
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const body = parseOrThrow(registerBodySchema, request.body);
         const result = await localWorkerBrokerService.registerWorker({
           userId: request.userId,
-          desktopWorkerId:
-            typeof body.desktopWorkerId === "string" ? body.desktopWorkerId : "desktop-worker",
-          deviceId: typeof body.deviceId === "string" ? body.deviceId : "desktop-device",
-          appVersion: typeof body.appVersion === "string" ? body.appVersion : "unknown",
+          desktopWorkerId: body.desktopWorkerId,
+          deviceId: body.deviceId,
+          appVersion: body.appVersion,
         });
         return reply.status(200).send(result);
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Failed to register local worker",
-        });
+        return sendBrokerError(reply, error, "Failed to register local worker");
       }
     },
   );
@@ -41,20 +125,18 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
 
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const body = parseOrThrow(submitBodySchema, request.body);
         const result = await localWorkerBrokerService.submitSmartApply({
           userId: request.userId,
-          desktopWorkerId: String(body.desktopWorkerId ?? ""),
-          targetUrl: String(body.targetUrl ?? ""),
-          profile: (body.profile as Record<string, unknown>) ?? {},
-          resumePath: typeof body.resumePath === "string" ? body.resumePath : undefined,
-          uiLabel: typeof body.uiLabel === "string" ? body.uiLabel : "smart_apply",
+          desktopWorkerId: body.desktopWorkerId,
+          targetUrl: body.targetUrl,
+          profile: body.profile,
+          resumePath: body.resumePath,
+          uiLabel: body.uiLabel ?? "smart_apply",
         });
         return reply.status(200).send(result);
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Failed to submit local worker job",
-        });
+        return sendBrokerError(reply, error, "Failed to submit local worker job");
       }
     },
   );
@@ -62,23 +144,20 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/claim",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!request.userId) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
-
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const body = parseOrThrow(claimBodySchema, request.body);
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
         const result = await localWorkerBrokerService.claim({
-          userId: request.userId,
-          desktopWorkerId: String(body.desktopWorkerId ?? ""),
-          sessionToken: sessionToken(request),
+          desktopWorkerId: body.desktopWorkerId,
+          sessionToken: token,
         });
         return reply.status(200).send(result);
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Failed to claim local worker job",
-        });
+        return sendBrokerError(reply, error, "Failed to claim local worker job");
       }
     },
   );
@@ -86,25 +165,23 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/:desktopWorkerId/heartbeat",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!request.userId) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
-
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const { desktopWorkerId } = request.params as { desktopWorkerId: string };
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const params = parseOrThrow(heartbeatParamsSchema, request.params);
+        const body = parseOrThrow(heartbeatBodySchema, request.body ?? {});
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
         await localWorkerBrokerService.heartbeat({
-          userId: request.userId,
-          desktopWorkerId,
-          sessionToken: sessionToken(request),
-          activeJobId: typeof body.activeJobId === "string" ? body.activeJobId : undefined,
+          desktopWorkerId: params.desktopWorkerId,
+          sessionToken: token,
+          activeJobId: body.activeJobId,
+          leaseId: body.leaseId,
         });
         return reply.status(200).send({ ok: true });
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Heartbeat failed",
-        });
+        return sendBrokerError(reply, error, "Heartbeat failed");
       }
     },
   );
@@ -112,25 +189,47 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/events",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!request.userId) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
-
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const { jobId } = request.params as { jobId: string };
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const params = parseOrThrow(jobParamsSchema, request.params);
+        const body = parseOrThrow(eventsBodySchema, request.body);
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
         await localWorkerBrokerService.recordEvents({
-          userId: request.userId,
-          sessionToken: sessionToken(request),
-          jobId,
-          events: Array.isArray(body.events) ? (body.events as Array<Record<string, unknown>>) : [],
+          sessionToken: token,
+          jobId: params.jobId,
+          leaseId: body.leaseId,
+          events: body.events,
         });
         return reply.status(200).send({ ok: true });
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Failed to record local worker events",
+        return sendBrokerError(reply, error, "Failed to record local worker events");
+      }
+    },
+  );
+
+  fastify.post(
+    "/api/v1/local-workers/jobs/:jobId/awaiting-review",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { localWorkerBrokerService } = request.diScope.cradle;
+        const params = parseOrThrow(jobParamsSchema, request.params);
+        const body = parseOrThrow(awaitingReviewBodySchema, request.body);
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
+        await localWorkerBrokerService.moveToAwaitingReview({
+          sessionToken: token,
+          jobId: params.jobId,
+          leaseId: body.leaseId,
+          summary: body.summary,
         });
+        return reply.status(200).send({ ok: true });
+      } catch (error) {
+        return sendBrokerError(reply, error, "Failed to move job to awaiting review");
       }
     },
   );
@@ -138,26 +237,24 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/complete",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!request.userId) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
-
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const { jobId } = request.params as { jobId: string };
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const params = parseOrThrow(jobParamsSchema, request.params);
+        const body = parseOrThrow(completeBodySchema, request.body);
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
         await localWorkerBrokerService.complete({
-          userId: request.userId,
-          sessionToken: sessionToken(request),
-          jobId,
-          result: (body.result as Record<string, unknown>) ?? undefined,
-          summary: typeof body.summary === "string" ? body.summary : undefined,
+          sessionToken: token,
+          jobId: params.jobId,
+          leaseId: body.leaseId,
+          result: body.result,
+          summary: body.summary,
         });
         return reply.status(200).send({ ok: true });
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Failed to complete local worker job",
-        });
+        return sendBrokerError(reply, error, "Failed to complete local worker job");
       }
     },
   );
@@ -165,27 +262,25 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/fail",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!request.userId) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
-
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const { jobId } = request.params as { jobId: string };
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const params = parseOrThrow(jobParamsSchema, request.params);
+        const body = parseOrThrow(failBodySchema, request.body);
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
         await localWorkerBrokerService.fail({
-          userId: request.userId,
-          sessionToken: sessionToken(request),
-          jobId,
-          error: String(body.error ?? "Local worker job failed"),
-          code: typeof body.code === "string" ? body.code : undefined,
-          details: (body.details as Record<string, unknown>) ?? undefined,
+          sessionToken: token,
+          jobId: params.jobId,
+          leaseId: body.leaseId,
+          error: body.error,
+          code: body.code,
+          details: body.details,
         });
         return reply.status(200).send({ ok: true });
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Failed to fail local worker job",
-        });
+        return sendBrokerError(reply, error, "Failed to fail local worker job");
       }
     },
   );
@@ -193,25 +288,23 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/release",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!request.userId) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
-
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
-        const { jobId } = request.params as { jobId: string };
-        const body = (request.body as Record<string, unknown>) ?? {};
+        const params = parseOrThrow(jobParamsSchema, request.params);
+        const body = parseOrThrow(releaseBodySchema, request.body);
+        const token = workerSessionToken(request);
+        if (!token) {
+          return reply.status(401).send({ error: "Missing worker session token" });
+        }
         await localWorkerBrokerService.release({
-          userId: request.userId,
-          sessionToken: sessionToken(request),
-          jobId,
-          reason: typeof body.reason === "string" ? body.reason : "Released by desktop worker",
+          sessionToken: token,
+          jobId: params.jobId,
+          leaseId: body.leaseId,
+          reason: body.reason,
         });
         return reply.status(200).send({ ok: true });
       } catch (error) {
-        return reply.status(503).send({
-          error: error instanceof Error ? error.message : "Failed to release local worker job",
-        });
+        return sendBrokerError(reply, error, "Failed to release local worker job");
       }
     },
   );
