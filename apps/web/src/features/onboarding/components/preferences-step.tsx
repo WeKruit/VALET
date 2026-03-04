@@ -117,7 +117,7 @@ export function PreferencesStep({
     !isSaving;
 
   return (
-    <div className="max-w-xl mx-auto px-4 space-y-6">
+    <div className="max-w-xl mx-auto space-y-6">
       <div className="text-center space-y-2">
         <h2 className="font-display text-xl font-semibold">Tell VALET what to look for</h2>
         <p className="text-sm text-[var(--wk-text-secondary)]">

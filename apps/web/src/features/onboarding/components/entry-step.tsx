@@ -18,7 +18,11 @@ export function EntryStep({ onSelect }: EntryStepProps) {
       </div>
 
       <div className="space-y-3">
-        <button type="button" className="w-full text-left" onClick={() => onSelect("quick_start")}>
+        <button
+          type="button"
+          className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-copilot)] rounded-[var(--wk-radius-2xl)]"
+          onClick={() => onSelect("quick_start")}
+        >
           <Card className="transition-shadow hover:shadow-md border-2 border-[var(--wk-copilot)]">
             <CardContent className="p-6 flex items-start gap-4">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--wk-radius-lg)] bg-blue-50">
@@ -35,7 +39,11 @@ export function EntryStep({ onSelect }: EntryStepProps) {
           </Card>
         </button>
 
-        <button type="button" className="w-full text-left" onClick={() => onSelect("full_setup")}>
+        <button
+          type="button"
+          className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-copilot)] rounded-[var(--wk-radius-2xl)]"
+          onClick={() => onSelect("full_setup")}
+        >
           <Card className="transition-shadow hover:shadow-md">
             <CardContent className="p-6 flex items-start gap-4">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--wk-radius-lg)] bg-gray-100">

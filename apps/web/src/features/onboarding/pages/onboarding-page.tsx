@@ -537,10 +537,6 @@ export function OnboardingPage() {
     );
   }
 
-  function handleQuickStartFinish() {
-    finishOnboarding();
-  }
-
   const createMailbox = api.credentials.createMailboxCredential.useMutation();
 
   function handleGmailConnect(email: string, appPassword: string) {
@@ -847,7 +843,7 @@ export function OnboardingPage() {
               } as ParsedResumeData)
             }
             onContinueToFullSetup={handleJobPreviewContinueToFullSetup}
-            onFinishQuickStart={handleQuickStartFinish}
+            onFinishQuickStart={finishOnboarding}
             isSubmitting={isSubmitting}
           />
         )}
