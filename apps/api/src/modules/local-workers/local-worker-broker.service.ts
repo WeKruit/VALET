@@ -596,6 +596,7 @@ export class LocalWorkerBrokerService {
           },
         });
       } catch (postLeaseErr) {
+        const errMsg = postLeaseErr instanceof Error ? postLeaseErr.message : String(postLeaseErr);
         this.logger.error(
           {
             err: postLeaseErr,
@@ -603,11 +604,16 @@ export class LocalWorkerBrokerService {
             pgBossJobId: fetchedJob.id,
             desktopWorkerId: session.desktopWorkerId,
           },
-          "Post-lease operation failed in claim(); rolling back lease and pg-boss job",
+          "Post-lease operation failed in claim(); rolling back lease, pg-boss job, and GH row",
         );
         await this.deleteLease(lease);
-        await boss.fail(queueName, fetchedJob.id, {
-          error: postLeaseErr instanceof Error ? postLeaseErr.message : String(postLeaseErr),
+        await boss.fail(queueName, fetchedJob.id, { error: errMsg });
+        await this.ghJobRepo.updateStatus(ghJob.id, {
+          status: "failed",
+          completedAt: new Date(),
+          errorCode: "CLAIM_ROLLBACK",
+          errorDetails: { message: errMsg },
+          statusMessage: `Claim rollback: ${errMsg}`,
         });
         throw postLeaseErr;
       }
@@ -776,26 +782,28 @@ export class LocalWorkerBrokerService {
     const boss = this.requireBoss();
     await boss.complete(lease.queueName, lease.pgBossJobId);
 
-    await this.ghJobRepo.updateStatus(input.jobId, {
-      status: "completed",
-      completedAt: new Date(),
-      lastHeartbeat: new Date(),
-      resultData: input.result ?? null,
-      resultSummary: input.summary ?? "Completed by desktop local worker",
-      statusMessage: "Completed by desktop local worker",
-    });
+    try {
+      await this.ghJobRepo.updateStatus(input.jobId, {
+        status: "completed",
+        completedAt: new Date(),
+        lastHeartbeat: new Date(),
+        resultData: input.result ?? null,
+        resultSummary: input.summary ?? "Completed by desktop local worker",
+        statusMessage: "Completed by desktop local worker",
+      });
 
-    await this.ghJobEventRepo.insertEvent({
-      jobId: input.jobId,
-      eventType: "job_completed",
-      fromStatus: ghJob?.status ?? null,
-      toStatus: "completed",
-      message: input.summary ?? "Completed by desktop local worker",
-      actor: "desktop_worker",
-      metadata: input.result ?? null,
-    });
-
-    await this.deleteLease(lease);
+      await this.ghJobEventRepo.insertEvent({
+        jobId: input.jobId,
+        eventType: "job_completed",
+        fromStatus: ghJob?.status ?? null,
+        toStatus: "completed",
+        message: input.summary ?? "Completed by desktop local worker",
+        actor: "desktop_worker",
+        metadata: input.result ?? null,
+      });
+    } finally {
+      await this.deleteLease(lease);
+    }
     return {};
   }
 
@@ -825,26 +833,28 @@ export class LocalWorkerBrokerService {
     const boss = this.requireBoss();
     await boss.fail(lease.queueName, lease.pgBossJobId, { error: input.error });
 
-    await this.ghJobRepo.updateStatus(input.jobId, {
-      status: "failed",
-      completedAt: new Date(),
-      lastHeartbeat: new Date(),
-      errorCode: input.code ?? "LOCAL_WORKER_FAILED",
-      errorDetails: input.details ?? { message: input.error },
-      statusMessage: input.error,
-    });
+    try {
+      await this.ghJobRepo.updateStatus(input.jobId, {
+        status: "failed",
+        completedAt: new Date(),
+        lastHeartbeat: new Date(),
+        errorCode: input.code ?? "LOCAL_WORKER_FAILED",
+        errorDetails: input.details ?? { message: input.error },
+        statusMessage: input.error,
+      });
 
-    await this.ghJobEventRepo.insertEvent({
-      jobId: input.jobId,
-      eventType: "job_failed",
-      fromStatus: ghJob?.status ?? null,
-      toStatus: "failed",
-      message: input.error,
-      actor: "desktop_worker",
-      metadata: input.details ?? null,
-    });
-
-    await this.deleteLease(lease);
+      await this.ghJobEventRepo.insertEvent({
+        jobId: input.jobId,
+        eventType: "job_failed",
+        fromStatus: ghJob?.status ?? null,
+        toStatus: "failed",
+        message: input.error,
+        actor: "desktop_worker",
+        metadata: input.details ?? null,
+      });
+    } finally {
+      await this.deleteLease(lease);
+    }
     return {};
   }
 
@@ -969,26 +979,28 @@ export class LocalWorkerBrokerService {
     const boss = this.requireBoss();
     await boss.cancel(lease.queueName, lease.pgBossJobId);
 
-    await this.ghJobRepo.updateStatus(input.jobId, {
-      status: "cancelled",
-      completedAt: new Date(),
-      lastHeartbeat: new Date(),
-      statusMessage: input.reason ?? "Cancelled by user",
-    });
+    try {
+      await this.ghJobRepo.updateStatus(input.jobId, {
+        status: "cancelled",
+        completedAt: new Date(),
+        lastHeartbeat: new Date(),
+        statusMessage: input.reason ?? "Cancelled by user",
+      });
 
-    await this.ghJobEventRepo.insertEvent({
-      jobId: input.jobId,
-      eventType: "job_cancelled",
-      fromStatus: ghJob?.status ?? null,
-      toStatus: "cancelled",
-      message: input.reason ?? "Cancelled by user",
-      actor: "desktop_worker",
-      metadata: {
-        desktopWorkerId: lease.desktopWorkerId,
-        leaseId: lease.leaseId,
-      },
-    });
-
-    await this.deleteLease(lease);
+      await this.ghJobEventRepo.insertEvent({
+        jobId: input.jobId,
+        eventType: "job_cancelled",
+        fromStatus: ghJob?.status ?? null,
+        toStatus: "cancelled",
+        message: input.reason ?? "Cancelled by user",
+        actor: "desktop_worker",
+        metadata: {
+          desktopWorkerId: lease.desktopWorkerId,
+          leaseId: lease.leaseId,
+        },
+      });
+    } finally {
+      await this.deleteLease(lease);
+    }
   }
 }
