@@ -3,44 +3,95 @@ import { Card, CardContent } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
 import { Textarea } from "@valet/ui/components/textarea";
 import { Button } from "@valet/ui/components/button";
-import { Pencil, Plus, Trash2, Check, X } from "lucide-react";
-
-interface ParsedProfile {
-  name: string;
-  email: string;
-  phone: string;
-  location: string;
-  experience: string[];
-  education: string;
-  skills: string[];
-}
+import { Pencil, Plus, Trash2, Check, X, AlertTriangle } from "lucide-react";
+import type { ParsedResumeData } from "../hooks/use-resume-parse";
 
 interface QuickReviewProps {
-  profile: ParsedProfile;
-  onConfirm: (updates: {
+  /** Parsed resume data (primary source during onboarding) */
+  parsedData?: ParsedResumeData | null;
+  /** Legacy profile data (fallback when parsedData not available) */
+  profile?: {
+    name: string;
+    email: string;
     phone: string;
     location: string;
     experience: string[];
     education: string;
+    skills: string[];
+  };
+  /** Overall parse confidence (0-1) — show warnings below this */
+  parseConfidence?: number | null;
+  onConfirm: (updates: {
+    name: string;
+    email: string;
+    phone: string;
+    location: string;
+    experience: string[];
+    education: string;
+    skills: string[];
   }) => void;
   isSaving?: boolean;
 }
 
-export function QuickReview({ profile, onConfirm, isSaving }: QuickReviewProps) {
-  const [phone, setPhone] = useState(profile.phone);
-  const [location, setLocation] = useState(profile.location);
+/** Transform parsedResumeData into editable field values */
+function deriveFromParsed(data: ParsedResumeData) {
+  return {
+    name: data.fullName ?? "",
+    email: data.email ?? "",
+    phone: data.phone ?? "",
+    location: data.location ?? "",
+    experience: (data.workHistory ?? []).map(
+      (w) =>
+        `${w.title} at ${w.company}${w.startDate ? ` (${w.startDate}–${w.endDate ?? "Present"})` : ""}`,
+    ),
+    education:
+      (data.education ?? []).length > 0
+        ? `${data.education![0]!.degree}${data.education![0]!.fieldOfStudy ? ` in ${data.education![0]!.fieldOfStudy}` : ""} — ${data.education![0]!.school}`
+        : "",
+    skills: data.skills ?? [],
+  };
+}
+
+export function QuickReview({
+  parsedData,
+  profile: legacyProfile,
+  parseConfidence,
+  onConfirm,
+  isSaving,
+}: QuickReviewProps) {
+  // Derive initial values from parsedData (preferred) or legacy profile
+  const initial = parsedData
+    ? deriveFromParsed(parsedData)
+    : (legacyProfile ?? {
+        name: "",
+        email: "",
+        phone: "",
+        location: "",
+        experience: [],
+        education: "",
+        skills: [],
+      });
+
+  const [name, setName] = useState(initial.name);
+  const [email, setEmail] = useState(initial.email);
+  const [phone, setPhone] = useState(initial.phone);
+  const [location, setLocation] = useState(initial.location);
 
   // Experience editing state
-  const [experience, setExperience] = useState<string[]>(profile.experience);
+  const [experience, setExperience] = useState<string[]>(initial.experience);
   const [editingExpIndex, setEditingExpIndex] = useState<number | null>(null);
   const [editingExpValue, setEditingExpValue] = useState("");
   const [addingExp, setAddingExp] = useState(false);
   const [newExpValue, setNewExpValue] = useState("");
 
   // Education editing state
-  const [education, setEducation] = useState(profile.education);
+  const [education, setEducation] = useState(initial.education);
   const [editingEdu, setEditingEdu] = useState(false);
-  const [editingEduValue, setEditingEduValue] = useState(profile.education);
+  const [editingEduValue, setEditingEduValue] = useState(initial.education);
+
+  const [skills] = useState<string[]>(initial.skills);
+
+  const lowConfidence = parseConfidence != null && parseConfidence < 0.7;
 
   // ─── Experience handlers ───
   function startEditExp(index: number) {
@@ -101,14 +152,18 @@ export function QuickReview({ profile, onConfirm, isSaving }: QuickReviewProps) 
   return (
     <div className="max-w-lg mx-auto space-y-6">
       <div className="text-center space-y-2">
-        <h2 className="font-display text-xl font-semibold">
-          Does this look right?
-        </h2>
+        <h2 className="font-display text-xl font-semibold">Does this look right?</h2>
         <p className="text-sm text-[var(--wk-text-secondary)]">
-          We'll use this to fill your applications. You can edit phone and
-          location if needed.
+          We extracted this from your resume. Edit anything that needs fixing.
         </p>
       </div>
+
+      {lowConfidence && (
+        <div className="flex items-start gap-2 p-3 rounded-[var(--wk-radius-md)] bg-amber-50 border border-amber-200 text-sm text-amber-800">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <p>Some fields had low extraction confidence. Please review carefully.</p>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-6 space-y-6">
@@ -120,11 +175,21 @@ export function QuickReview({ profile, onConfirm, isSaving }: QuickReviewProps) 
             <div className="grid gap-4">
               <div>
                 <label className="text-sm font-medium">Name</label>
-                <Input value={profile.name} readOnly className="mt-1 bg-[var(--wk-surface-sunken)]" />
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  className="mt-1"
+                />
               </div>
               <div>
                 <label className="text-sm font-medium">Email</label>
-                <Input value={profile.email} readOnly className="mt-1 bg-[var(--wk-surface-sunken)]" />
+                <Input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  className="mt-1"
+                />
               </div>
               <div>
                 <label className="text-sm font-medium">Phone</label>
@@ -327,11 +392,15 @@ export function QuickReview({ profile, onConfirm, isSaving }: QuickReviewProps) 
                 </Button>
               </div>
             ) : (
-              <p className="text-sm">{education}</p>
+              <p className="text-sm">
+                {education || (
+                  <span className="text-[var(--wk-text-tertiary)]">No education found</span>
+                )}
+              </p>
             )}
 
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {profile.skills.slice(0, 5).map((skill) => (
+              {skills.slice(0, 5).map((skill) => (
                 <span
                   key={skill}
                   className="inline-flex px-2 py-0.5 text-xs rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-secondary)]"
@@ -339,9 +408,9 @@ export function QuickReview({ profile, onConfirm, isSaving }: QuickReviewProps) 
                   {skill}
                 </span>
               ))}
-              {profile.skills.length > 5 && (
+              {skills.length > 5 && (
                 <span className="inline-flex px-2 py-0.5 text-xs rounded-[var(--wk-radius-full)] bg-[var(--wk-surface-sunken)] text-[var(--wk-text-tertiary)]">
-                  +{profile.skills.length - 5} more
+                  +{skills.length - 5} more
                 </span>
               )}
             </div>
@@ -358,9 +427,19 @@ export function QuickReview({ profile, onConfirm, isSaving }: QuickReviewProps) 
         size="lg"
         className="w-full"
         disabled={isSaving}
-        onClick={() => onConfirm({ phone, location, experience, education })}
+        onClick={() =>
+          onConfirm({
+            name,
+            email,
+            phone,
+            location,
+            experience,
+            education,
+            skills,
+          })
+        }
       >
-        {isSaving ? "Saving..." : "Looks Good \u2014 Let's Go"}
+        {isSaving ? "Saving..." : "Looks Good \u2014 Continue"}
       </Button>
     </div>
   );

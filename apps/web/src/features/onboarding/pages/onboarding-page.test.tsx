@@ -6,7 +6,7 @@ import { OnboardingPage } from "./onboarding-page";
 
 // ─── Hoisted stable data (prevents infinite re-renders from new-object-per-call) ───
 
-const { stableQueries, qaCallbacks, mockToast } = vi.hoisted(() => {
+const { stableQueries, qaCallbacks, mockToast, mockParseHook } = vi.hoisted(() => {
   const resumeList = { data: { status: 200, body: { data: [] } }, isLoading: false };
   const profileData = {
     data: {
@@ -46,6 +46,11 @@ const { stableQueries, qaCallbacks, mockToast } = vi.hoisted(() => {
       current: [] as Array<{ onSuccess?: () => void; onError?: () => void; question: string }>,
     },
     mockToast: { success: vi.fn(), error: vi.fn() },
+    mockParseHook: {
+      parsedData: null as any,
+      parseStatus: "idle" as string,
+      error: null as string | null,
+    },
   };
 });
 
@@ -54,6 +59,18 @@ const { stableQueries, qaCallbacks, mockToast } = vi.hoisted(() => {
 vi.mock("lucide-react", () => ({
   CheckCircle: (props: any) => <span data-testid="check-icon" {...props} />,
   ArrowLeft: (props: any) => <span data-testid="arrow-icon" {...props} />,
+  Zap: (props: any) => <span {...props} />,
+  Settings: (props: any) => <span {...props} />,
+  Check: (props: any) => <span {...props} />,
+  FileText: (props: any) => <span {...props} />,
+  AlertCircle: (props: any) => <span {...props} />,
+  RotateCw: (props: any) => <span {...props} />,
+  AlertTriangle: (props: any) => <span {...props} />,
+  User: (props: any) => <span {...props} />,
+  Briefcase: (props: any) => <span {...props} />,
+  GraduationCap: (props: any) => <span {...props} />,
+  Wrench: (props: any) => <span {...props} />,
+  ArrowRight: (props: any) => <span {...props} />,
 }));
 
 vi.mock("@/components/common/loading-spinner", () => ({
@@ -68,16 +85,36 @@ vi.mock("@valet/ui/components/button", () => ({
   ),
 }));
 
+vi.mock("@valet/ui/components/card", () => ({
+  Card: ({ children, onClick, ...rest }: any) => (
+    <div onClick={onClick} {...rest}>
+      {children}
+    </div>
+  ),
+  CardContent: ({ children, ...rest }: any) => <div {...rest}>{children}</div>,
+}));
+
+vi.mock("@valet/ui/components/skeleton", () => ({
+  Skeleton: (props: any) => <div data-testid="skeleton" {...props} />,
+}));
+
 vi.mock("@valet/shared/schemas", () => ({
   autonomyLevelSchema: { enum: ["full", "assisted", "copilot_only"] },
 }));
 
+// ─── Mock the resume parse hook ───
+
+vi.mock("../hooks/use-resume-parse", () => ({
+  useResumeParse: () => mockParseHook,
+}));
+
 // ─── Mock all step sub-components (lightweight stubs) ───
 
-vi.mock("../components/welcome-step", () => ({
-  WelcomeStep: ({ onContinue }: any) => (
-    <div data-testid="welcome-step">
-      <button onClick={onContinue}>Let&apos;s Get Set Up</button>
+vi.mock("../components/entry-step", () => ({
+  EntryStep: ({ onSelect }: any) => (
+    <div data-testid="entry-step">
+      <button onClick={() => onSelect("quick_start")}>Try It Now</button>
+      <button onClick={() => onSelect("full_setup")}>Full Setup</button>
     </div>
   ),
 }));
@@ -114,14 +151,42 @@ vi.mock("../components/resume-upload", () => ({
   ),
 }));
 
+vi.mock("../components/parse-feedback", () => ({
+  ParseFeedback: ({ onParseComplete, onRetry, parseStatus }: any) => (
+    <div data-testid="parse-feedback-step">
+      <span data-testid="parse-status">{parseStatus}</span>
+      <button onClick={onParseComplete}>Parse Complete</button>
+      <button onClick={onRetry}>Retry</button>
+    </div>
+  ),
+}));
+
 vi.mock("../components/quick-review", () => ({
   QuickReview: ({ onConfirm }: any) => (
-    <div data-testid="profile-step">
+    <div data-testid="parse-review-step">
       <button
-        onClick={() => onConfirm({ phone: "555", location: "NY", experience: [], education: "" })}
+        onClick={() =>
+          onConfirm({
+            name: "Test",
+            email: "test@example.com",
+            phone: "555",
+            location: "NY",
+            experience: [],
+            education: "",
+            skills: [],
+          })
+        }
       >
         Confirm
       </button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/job-preview-step", () => ({
+  JobPreviewStep: ({ onContinueToFullSetup }: any) => (
+    <div data-testid="job-preview-step">
+      <button onClick={onContinueToFullSetup}>Continue to Full Setup</button>
     </div>
   ),
 }));
@@ -200,6 +265,14 @@ vi.mock("@/lib/api-client", () => ({
     resumes: {
       list: { useQuery: () => stableQueries.resumeList },
       upload: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      getById: {
+        useQuery: () => ({
+          data: null,
+          isLoading: false,
+          refetch: vi.fn().mockResolvedValue({ data: null }),
+          enabled: false,
+        }),
+      },
     },
     users: {
       getProfile: { useQuery: () => stableQueries.profileData },
@@ -303,21 +376,33 @@ function renderOnboardingPage() {
   );
 }
 
-/** Navigate from welcome through profile to reach the Q&A step */
+/** Navigate Quick Start: entry → resume → parse-feedback → parse-review → job-preview */
+async function navigateToJobPreview(user: ReturnType<typeof userEvent.setup>) {
+  renderOnboardingPage();
+
+  // entry: select Quick Start
+  await user.click(screen.getByRole("button", { name: /try it now/i }));
+  // resume: upload
+  await user.click(screen.getByRole("button", { name: /upload/i }));
+  // parse-feedback: simulate parse complete
+  await user.click(screen.getByRole("button", { name: /parse complete/i }));
+  // parse-review: confirm
+  await user.click(screen.getByRole("button", { name: /confirm/i }));
+
+  expect(screen.getByTestId("job-preview-step")).toBeInTheDocument();
+}
+
+/** Navigate Full Setup to Q&A: entry → resume → parse-feedback → parse-review → qa */
 async function navigateToQaStep(user: ReturnType<typeof userEvent.setup>) {
   renderOnboardingPage();
 
-  // welcome → gmail
-  await user.click(screen.getByRole("button", { name: /get set up/i }));
-  // gmail → credentials
-  await user.click(screen.getByRole("button", { name: /skip/i }));
-  // credentials → security
-  await user.click(screen.getByRole("button", { name: /continue/i }));
-  // security → resume
-  await user.click(screen.getByRole("button", { name: /continue/i }));
-  // resume → profile
+  // entry: select Full Setup
+  await user.click(screen.getByRole("button", { name: /full setup/i }));
+  // resume: upload
   await user.click(screen.getByRole("button", { name: /upload/i }));
-  // profile → qa
+  // parse-feedback: simulate parse complete
+  await user.click(screen.getByRole("button", { name: /parse complete/i }));
+  // parse-review: confirm
   await user.click(screen.getByRole("button", { name: /confirm/i }));
 
   expect(screen.getByTestId("qa-step")).toBeInTheDocument();
@@ -328,6 +413,9 @@ describe("OnboardingPage", () => {
     vi.clearAllMocks();
     localStorage.clear();
     qaCallbacks.current = [];
+    mockParseHook.parsedData = null;
+    mockParseHook.parseStatus = "idle";
+    mockParseHook.error = null;
   });
 
   // ─── Shell rendering ───
@@ -338,48 +426,77 @@ describe("OnboardingPage", () => {
     expect(screen.getByText("WeKruit")).toBeInTheDocument();
   });
 
-  it("renders all 10 step labels in the progress bar", () => {
+  it("does not show progress bar on entry step", () => {
     renderOnboardingPage();
-    for (const label of [
-      "How It Works",
-      "Email Setup",
-      "Platform Logins",
-      "Security",
-      "Resume",
-      "Profile",
-      "Q&A",
-      "Preferences",
-      "Consent",
-      "Ready",
-    ]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
-    }
+    // Entry step should not show step labels
+    expect(screen.queryByText("Resume")).not.toBeInTheDocument();
   });
 
-  // ─── Step navigation ───
+  // ─── Entry step and mode selection ───
 
-  it("starts on the welcome step for a new user", () => {
+  it("starts on the entry step for a new user", () => {
     renderOnboardingPage();
-    expect(screen.getByTestId("welcome-step")).toBeInTheDocument();
+    expect(screen.getByTestId("entry-step")).toBeInTheDocument();
   });
 
-  it("does not show a back button on the welcome step", () => {
+  it("does not show a back button on the entry step", () => {
     renderOnboardingPage();
     expect(screen.queryByRole("button", { name: /back/i })).not.toBeInTheDocument();
   });
 
-  it("advances from welcome to gmail step", async () => {
+  it("advances to resume step when Quick Start is selected", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
-    await user.click(screen.getByRole("button", { name: /get set up/i }));
-    expect(screen.getByTestId("gmail-step")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /try it now/i }));
+    expect(screen.getByTestId("resume-step")).toBeInTheDocument();
   });
 
-  it("shows a back button after the welcome step", async () => {
+  it("advances to resume step when Full Setup is selected", async () => {
     const user = userEvent.setup();
     renderOnboardingPage();
-    await user.click(screen.getByRole("button", { name: /get set up/i }));
-    expect(screen.getByRole("button", { name: /back/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /full setup/i }));
+    expect(screen.getByTestId("resume-step")).toBeInTheDocument();
+  });
+
+  // ─── Quick Start flow ───
+
+  it("advances from resume upload to parse feedback", async () => {
+    const user = userEvent.setup();
+    renderOnboardingPage();
+    await user.click(screen.getByRole("button", { name: /try it now/i }));
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+    expect(screen.getByTestId("parse-feedback-step")).toBeInTheDocument();
+  });
+
+  it("advances from parse feedback to parse review", async () => {
+    const user = userEvent.setup();
+    renderOnboardingPage();
+    await user.click(screen.getByRole("button", { name: /try it now/i }));
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+    await user.click(screen.getByRole("button", { name: /parse complete/i }));
+    expect(screen.getByTestId("parse-review-step")).toBeInTheDocument();
+  });
+
+  it("Quick Start shows job preview after parse review", async () => {
+    const user = userEvent.setup();
+    await navigateToJobPreview(user);
+    expect(screen.getByTestId("job-preview-step")).toBeInTheDocument();
+  });
+
+  it("Quick Start bridges to Full Setup from job preview", async () => {
+    const user = userEvent.setup();
+    await navigateToJobPreview(user);
+    await user.click(screen.getByRole("button", { name: /continue to full setup/i }));
+    // Should advance to Q&A (first Full Setup step after shared steps)
+    expect(screen.getByTestId("qa-step")).toBeInTheDocument();
+  });
+
+  // ─── Full Setup flow ───
+
+  it("Full Setup goes to Q&A after parse review", async () => {
+    const user = userEvent.setup();
+    await navigateToQaStep(user);
+    expect(screen.getByTestId("qa-step")).toBeInTheDocument();
   });
 
   // ─── Q&A mutation behavior ───
@@ -388,30 +505,24 @@ describe("OnboardingPage", () => {
     const user = userEvent.setup();
     await navigateToQaStep(user);
 
-    // Before clicking, isSaving should be false
     expect(screen.getByTestId("qa-saving").textContent).toBe("false");
-
-    // Click continue — fires mutations (captured in qaCallbacks.current)
     await user.click(screen.getByRole("button", { name: /continue/i }));
-
-    // Mutations are in flight, isSaving should be true
     expect(screen.getByTestId("qa-saving").textContent).toBe("true");
   });
 
-  it("advances to preferences when all Q&A mutations succeed", async () => {
+  it("advances to gmail when all Q&A mutations succeed", async () => {
     const user = userEvent.setup();
     await navigateToQaStep(user);
 
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Resolve all mutations successfully
     act(() => {
       for (const cb of qaCallbacks.current) {
         cb.onSuccess?.();
       }
     });
 
-    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
+    expect(screen.getByTestId("gmail-step")).toBeInTheDocument();
   });
 
   it("stays on Q&A when a required answer fails", async () => {
@@ -420,7 +531,6 @@ describe("OnboardingPage", () => {
 
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Fail the workAuthorization mutation, succeed the rest
     act(() => {
       for (const cb of qaCallbacks.current) {
         if (cb.question === "workAuthorization") {
@@ -431,20 +541,18 @@ describe("OnboardingPage", () => {
       }
     });
 
-    // Should still be on Q&A step
     expect(screen.getByTestId("qa-step")).toBeInTheDocument();
     expect(mockToast.error).toHaveBeenCalledWith(
       "Required answers failed to save. Please try again.",
     );
   });
 
-  it("advances to preferences when only optional answers fail", async () => {
+  it("advances to gmail when only optional answers fail", async () => {
     const user = userEvent.setup();
     await navigateToQaStep(user);
 
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Fail an optional mutation, succeed required ones
     act(() => {
       for (const cb of qaCallbacks.current) {
         if (cb.question === "referralSource") {
@@ -455,9 +563,7 @@ describe("OnboardingPage", () => {
       }
     });
 
-    // Should advance because required answers succeeded
-    expect(screen.getByTestId("preferences-step")).toBeInTheDocument();
-    // But still shows error toast for the failed optional
+    expect(screen.getByTestId("gmail-step")).toBeInTheDocument();
     expect(mockToast.error).toHaveBeenCalled();
   });
 
@@ -469,8 +575,18 @@ describe("OnboardingPage", () => {
     expect(continueBtn).toBeEnabled();
 
     await user.click(continueBtn);
-
-    // Button should now be disabled
     expect(continueBtn).toBeDisabled();
+  });
+
+  // ─── Parse retry ───
+
+  it("returns to resume upload on parse retry", async () => {
+    const user = userEvent.setup();
+    renderOnboardingPage();
+    await user.click(screen.getByRole("button", { name: /try it now/i }));
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+    expect(screen.getByTestId("parse-feedback-step")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+    expect(screen.getByTestId("resume-step")).toBeInTheDocument();
   });
 });

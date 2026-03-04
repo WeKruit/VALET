@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { CheckCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@valet/ui/components/button";
 import { toast } from "sonner";
@@ -8,44 +8,60 @@ import { useConsent } from "@/features/consent/hooks/use-consent";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 
 // Step components
-import { WelcomeStep } from "../components/welcome-step";
+import { EntryStep, type OnboardingMode } from "../components/entry-step";
+import { ResumeUpload } from "../components/resume-upload";
+import { ParseFeedback } from "../components/parse-feedback";
+import { QuickReview } from "../components/quick-review";
+import { JobPreviewStep } from "../components/job-preview-step";
 import { GmailStep } from "../components/gmail-step";
 import { CredentialsStep } from "../components/credentials-step";
 import { SecurityStep } from "../components/security-step";
-import { ResumeUpload } from "../components/resume-upload";
-import { QuickReview } from "../components/quick-review";
 import { QaStep, type QaAnswers } from "../components/qa-step";
 import { PreferencesStep, type JobPreferences } from "../components/preferences-step";
 import { DisclaimerStep } from "../components/disclaimer-step";
 import { ReadinessResultStep } from "../components/readiness-result-step";
 
+import { useResumeParse, type ParsedResumeData } from "../hooks/use-resume-parse";
 import type { AutonomyLevel } from "@valet/shared/schemas";
 
 // ─── Step definitions ───
 
 type OnboardingStep =
-  | "welcome"
+  | "entry"
+  | "resume"
+  | "parse-feedback"
+  | "parse-review"
+  | "job-preview"
+  | "qa"
   | "gmail"
   | "credentials"
   | "security"
-  | "resume"
-  | "profile"
-  | "qa"
   | "preferences"
   | "consent"
   | "result";
 
-const STEPS: Array<{
+interface StepDef {
   key: OnboardingStep;
   label: string;
-}> = [
-  { key: "welcome", label: "How It Works" },
-  { key: "gmail", label: "Email Setup" },
-  { key: "credentials", label: "Platform Logins" },
-  { key: "security", label: "Security" },
+}
+
+const QUICK_START_STEPS: StepDef[] = [
+  { key: "entry", label: "Start" },
   { key: "resume", label: "Resume" },
-  { key: "profile", label: "Profile" },
+  { key: "parse-feedback", label: "Analyzing" },
+  { key: "parse-review", label: "Review" },
+  { key: "job-preview", label: "Preview" },
+];
+
+const FULL_SETUP_STEPS: StepDef[] = [
+  { key: "entry", label: "Start" },
+  { key: "resume", label: "Resume" },
+  { key: "parse-feedback", label: "Analyzing" },
+  { key: "parse-review", label: "Review" },
   { key: "qa", label: "Q&A" },
+  { key: "gmail", label: "Email" },
+  { key: "credentials", label: "Logins" },
+  { key: "security", label: "Security" },
   { key: "preferences", label: "Preferences" },
   { key: "consent", label: "Consent" },
   { key: "result", label: "Ready" },
@@ -72,6 +88,24 @@ function markVisitedStep(userId: string, step: string) {
   localStorage.setItem(visitedKey(userId), JSON.stringify(visited));
 }
 
+function getModeKey(userId: string) {
+  return `valet:onboarding:mode:${userId}`;
+}
+
+function getSavedMode(userId: string): OnboardingMode | null {
+  try {
+    const raw = localStorage.getItem(getModeKey(userId));
+    if (raw === "quick_start" || raw === "full_setup") return raw;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMode(userId: string, mode: OnboardingMode) {
+  localStorage.setItem(getModeKey(userId), mode);
+}
+
 // ─── Autonomy computation ───
 
 interface ReadinessInputs {
@@ -80,14 +114,6 @@ interface ReadinessInputs {
   mailboxTwoFactorEnabled: boolean;
 }
 
-/**
- * Autonomy is computed relative to what the user has actually configured,
- * not against a global list of all possible platforms.
- *
- * - full: mailbox connected (without blocking 2FA) AND at least one platform credential saved
- * - assisted: has credentials OR has mailbox, but not both fully ready
- * - copilot_only: nothing configured
- */
 function computeAutonomyLevel(inputs: ReadinessInputs): AutonomyLevel {
   const { savedPlatforms, mailboxConnected, mailboxTwoFactorEnabled } = inputs;
   const hasAnyCreds = savedPlatforms.length > 0;
@@ -113,7 +139,6 @@ function computeDowngrades(
     message: string;
   }> = [];
 
-  // No mailbox at all
   if (!mailboxConnected) {
     downgrades.push({
       from: "full",
@@ -123,7 +148,6 @@ function computeDowngrades(
     });
   }
 
-  // Mailbox connected but 2FA blocks automatic access
   if (mailboxConnected && mailboxTwoFactorEnabled) {
     downgrades.push({
       from: "full",
@@ -133,7 +157,6 @@ function computeDowngrades(
     });
   }
 
-  // No credentials at all
   if (savedPlatforms.length === 0) {
     downgrades.push({
       from: "assisted",
@@ -149,10 +172,27 @@ function computeDowngrades(
 // ─── Main page ───
 
 export function OnboardingPage() {
-  const [step, setStep] = useState<OnboardingStep>("welcome");
+  const [step, setStep] = useState<OnboardingStep>("entry");
+  const [mode, setMode] = useState<OnboardingMode>("quick_start");
   const { user } = useAuth();
   const userId = user?.id ?? "";
   const { markCopilotAccepted, copilotAccepted } = useConsent();
+
+  // ─── Resume parsing state ───
+  const [resumeId, setResumeId] = useState<string | null>(null);
+  const [uploadedFilename, setUploadedFilename] = useState<string | null>(null);
+  const [parsedDataState, setParsedDataState] = useState<ParsedResumeData | null>(null);
+  const [parseConfidence, setParseConfidence] = useState<number | null>(null);
+
+  // WebSocket + polling hook for parse progress
+  const { parsedData: hookParsedData, parseStatus, error: parseError } = useResumeParse(resumeId);
+
+  // Sync hook output into local state
+  useEffect(() => {
+    if (hookParsedData) {
+      setParsedDataState(hookParsedData);
+    }
+  }, [hookParsedData]);
 
   // ─── Local state for data collected during onboarding ───
   const [mailboxConnected, setMailboxConnected] = useState(false);
@@ -211,7 +251,16 @@ export function OnboardingPage() {
   // Sync server state into local state
   useEffect(() => {
     if (resumesQuery.data?.status === 200) {
-      setHasResume(resumesQuery.data.body.data.length > 0);
+      const resumes = resumesQuery.data.body.data;
+      setHasResume(resumes.length > 0);
+
+      // If a resume is already parsed, restore its data
+      const parsed = resumes.find((r) => r.status === "parsed" && r.parsedData);
+      if (parsed && !parsedDataState) {
+        setParsedDataState(parsed.parsedData as ParsedResumeData);
+        setResumeId(parsed.id);
+        setParseConfidence(parsed.parsingConfidence ?? null);
+      }
     }
   }, [resumesQuery.data]);
 
@@ -265,9 +314,18 @@ export function OnboardingPage() {
     if (!allQueriesLoaded || stepRestored.current) return;
     stepRestored.current = true;
 
-    // Derive completion from server data (local state may not have synced yet)
+    // Restore saved mode
+    const savedModeValue = getSavedMode(userId);
+    if (savedModeValue) {
+      setMode(savedModeValue);
+    }
+
+    // Derive completion from server data
     const serverHasResume =
       resumesQuery.data?.status === 200 && resumesQuery.data.body.data.length > 0;
+    const serverHasParsedResume =
+      resumesQuery.data?.status === 200 &&
+      resumesQuery.data.body.data.some((r) => r.status === "parsed" && r.parsedData);
     const serverProfileComplete =
       profileData?.status === 200 &&
       !!profileData.body.name &&
@@ -284,49 +342,78 @@ export function OnboardingPage() {
         (jobPrefsQuery.data.body.preferredLocations?.length ?? 0) > 0);
 
     const visited = getVisited(userId);
+    const effectiveMode = savedModeValue ?? "quick_start";
 
-    if (!visited["welcome"]) {
-      setStep("welcome");
+    // Resume into the right step based on what's already done
+    if (!visited["entry"]) {
+      setStep("entry");
       return;
     }
-    if (!visited["gmail"]) {
-      setStep("gmail");
-      return;
-    }
-    if (!visited["credentials"]) {
-      setStep("credentials");
-      return;
-    }
-    if (!visited["security"]) {
-      setStep("security");
-      return;
-    }
+
     if (!serverHasResume) {
       setStep("resume");
       return;
     }
-    if (!serverProfileComplete) {
-      setStep("profile");
+
+    if (!serverHasParsedResume) {
+      // Resume exists but not parsed — show parse feedback
+      setStep("parse-feedback");
       return;
     }
-    if (!serverQaComplete) {
-      setStep("qa");
+
+    if (!serverProfileComplete && !visited["parse-review"]) {
+      setStep("parse-review");
       return;
     }
-    if (!serverPrefsComplete) {
-      setStep("preferences");
+
+    // Quick Start users who haven't seen preview
+    if (effectiveMode === "quick_start" && !visited["job-preview"]) {
+      setStep("job-preview");
       return;
     }
-    if (!copilotAccepted) {
-      setStep("consent");
-      return;
+
+    // Full Setup steps
+    if (effectiveMode === "full_setup" || visited["job-preview"]) {
+      // If coming from Quick Start bridge, switch to full setup
+      if (effectiveMode === "quick_start" && visited["job-preview"]) {
+        setMode("full_setup");
+        saveMode(userId, "full_setup");
+      }
+
+      if (!serverQaComplete) {
+        setStep("qa");
+        return;
+      }
+      if (!visited["gmail"]) {
+        setStep("gmail");
+        return;
+      }
+      if (!visited["credentials"]) {
+        setStep("credentials");
+        return;
+      }
+      if (!visited["security"]) {
+        setStep("security");
+        return;
+      }
+      if (!serverPrefsComplete) {
+        setStep("preferences");
+        return;
+      }
+      if (!copilotAccepted) {
+        setStep("consent");
+        return;
+      }
+      setStep("result");
     }
-    setStep("result");
   }, [allQueriesLoaded]);
 
-  // ─── Navigation helpers ───
+  // ─── Active steps for progress bar ───
 
-  const currentStepIndex = STEPS.findIndex((s) => s.key === step);
+  const activeSteps = mode === "quick_start" ? QUICK_START_STEPS : FULL_SETUP_STEPS;
+  const currentStepIndex = activeSteps.findIndex((s) => s.key === step);
+
+  // ─── Navigation helpers ───
 
   function goTo(target: OnboardingStep) {
     setStep(target);
@@ -334,31 +421,121 @@ export function OnboardingPage() {
 
   function goBack() {
     if (currentStepIndex > 0) {
-      const prev = STEPS[currentStepIndex - 1];
+      const prev = activeSteps[currentStepIndex - 1];
       if (prev) setStep(prev.key);
     }
   }
 
-  // ─── Profile data for QuickReview ───
-
-  const userProfile = profileData?.status === 200 ? profileData.body : null;
-  const profile = useMemo(
-    () => ({
-      name: userProfile?.name ?? "",
-      email: userProfile?.email ?? "",
-      phone: userProfile?.phone ?? "",
-      location: userProfile?.location ?? "",
-      experience: (userProfile?.workHistory ?? []).map(String),
-      education:
-        Array.isArray(userProfile?.education) && userProfile.education.length > 0
-          ? String(userProfile.education[0])
-          : "",
-      skills: userProfile?.skills ?? [],
-    }),
-    [userProfile],
-  );
-
   // ─── Handlers ───
+
+  function handleEntrySelect(selectedMode: OnboardingMode) {
+    setMode(selectedMode);
+    saveMode(userId, selectedMode);
+    markVisitedStep(userId, "entry");
+    goTo("resume");
+  }
+
+  function handleResumeUploadComplete(file: File, newResumeId: string) {
+    setResumeId(newResumeId);
+    setUploadedFilename(file.name);
+    setHasResume(true);
+    goTo("parse-feedback");
+  }
+
+  function handleParseRetry() {
+    // Reset parse state and go back to resume upload
+    setResumeId(null);
+    setUploadedFilename(null);
+    setParsedDataState(null);
+    goTo("resume");
+  }
+
+  const handleParseComplete = useCallback(() => {
+    // Fetch confidence from the resume query if available
+    if (resumeId && typeof resumesQuery.refetch === "function") {
+      void resumesQuery.refetch().then((result) => {
+        if (result.data?.status === 200) {
+          const resume = result.data.body.data.find((r: any) => r.id === resumeId);
+          if (resume) {
+            setParseConfidence(resume.parsingConfidence ?? null);
+          }
+        }
+      });
+    }
+    goTo("parse-review");
+  }, [resumeId]);
+
+  function handleProfileConfirm(updates: {
+    name: string;
+    email: string;
+    phone: string;
+    location: string;
+    experience: string[];
+    education: string;
+    skills: string[];
+  }) {
+    const body: Record<string, unknown> = {};
+    if (updates.name) body.name = updates.name;
+    if (updates.email) body.email = updates.email;
+    if (updates.phone) body.phone = updates.phone;
+    if (updates.location) body.location = updates.location;
+    if (updates.experience?.length) {
+      body.workHistory = updates.experience.map((exp) => ({
+        company: "",
+        title: exp,
+        startDate: "",
+        endDate: "",
+        description: "",
+      }));
+    }
+    if (updates.education) {
+      body.education = [
+        {
+          school: updates.education,
+          degree: "",
+          field: "",
+          startDate: "",
+          endDate: "",
+          gpa: "",
+        },
+      ];
+    }
+    if (updates.skills?.length) {
+      body.skills = updates.skills;
+    }
+
+    markVisitedStep(userId, "parse-review");
+
+    if (Object.keys(body).length > 0) {
+      updateProfile.mutate(
+        { body: body as any },
+        {
+          onSuccess: () => {
+            setProfileComplete(true);
+            if (mode === "quick_start") {
+              goTo("job-preview");
+            } else {
+              goTo("qa");
+            }
+          },
+        },
+      );
+    } else {
+      setProfileComplete(true);
+      if (mode === "quick_start") {
+        goTo("job-preview");
+      } else {
+        goTo("qa");
+      }
+    }
+  }
+
+  function handleJobPreviewContinueToFullSetup() {
+    markVisitedStep(userId, "job-preview");
+    setMode("full_setup");
+    saveMode(userId, "full_setup");
+    goTo("qa");
+  }
 
   const createMailbox = api.credentials.createMailboxCredential.useMutation();
 
@@ -366,8 +543,6 @@ export function OnboardingPage() {
     setIsConnectingMailbox(true);
     setMailboxError(null);
 
-    // App password bypasses interactive 2FA for IMAP access,
-    // so twoFactorEnabled=false means VALET can read codes without user intervention.
     const usesAppPassword = !!appPassword;
     createMailbox.mutate(
       {
@@ -443,59 +618,7 @@ export function OnboardingPage() {
 
   function handleSecurityContinue() {
     markVisitedStep(userId, "security");
-    goTo("resume");
-  }
-
-  function handleResumeComplete(_file: File, _resumeId: string) {
-    setHasResume(true);
-    goTo("profile");
-  }
-
-  function handleProfileConfirm(updates: {
-    phone: string;
-    location: string;
-    experience: string[];
-    education: string;
-  }) {
-    const body: Record<string, unknown> = {};
-    if (updates.phone) body.phone = updates.phone;
-    if (updates.location) body.location = updates.location;
-    if (updates.experience?.length) {
-      body.workHistory = updates.experience.map((exp) => ({
-        company: "",
-        title: exp,
-        startDate: "",
-        endDate: "",
-        description: "",
-      }));
-    }
-    if (updates.education) {
-      body.education = [
-        {
-          school: updates.education,
-          degree: "",
-          field: "",
-          startDate: "",
-          endDate: "",
-          gpa: "",
-        },
-      ];
-    }
-
-    if (Object.keys(body).length > 0) {
-      updateProfile.mutate(
-        { body: body as any },
-        {
-          onSuccess: () => {
-            setProfileComplete(true);
-            goTo("qa");
-          },
-        },
-      );
-    } else {
-      setProfileComplete(true);
-      goTo("qa");
-    }
+    goTo("preferences");
   }
 
   const createQaEntry = api.qaBank.create.useMutation();
@@ -506,7 +629,7 @@ export function OnboardingPage() {
   function handleQaContinue(answers: QaAnswers) {
     const entries = Object.entries(answers).filter(([, v]) => v.trim() !== "");
     if (entries.length === 0) {
-      goTo("preferences");
+      goTo("gmail");
       return;
     }
 
@@ -521,12 +644,11 @@ export function OnboardingPage() {
       setQaSaving(false);
       if (requiredFailed > 0) {
         toast.error("Required answers failed to save. Please try again.");
-        // Stay on Q&A so user can retry
       } else if (failed > 0) {
         toast.error(`${failed} of ${total} answers failed to save.`);
-        goTo("preferences");
+        goTo("gmail");
       } else {
-        goTo("preferences");
+        goTo("gmail");
       }
     }
 
@@ -603,7 +725,6 @@ export function OnboardingPage() {
       { body: {} },
       {
         onSuccess: () => {
-          // Also set localStorage as a fast-path for the auth-guard on this device
           localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
           window.location.replace("/apply");
         },
@@ -627,6 +748,8 @@ export function OnboardingPage() {
 
   // ─── Render ───
 
+  const showBackButton = currentStepIndex > 0 && step !== "result" && step !== "parse-feedback"; // Don't allow going back during parsing
+
   return (
     <div className="min-h-screen bg-[var(--wk-surface-page)]">
       {/* Header */}
@@ -638,53 +761,57 @@ export function OnboardingPage() {
       </div>
 
       {/* Progress bar */}
-      <div className="flex items-center justify-center gap-1 py-4 sm:py-6 px-4 overflow-x-auto">
-        {STEPS.map((s, i) => (
-          <div key={s.key} className="flex items-center gap-1">
-            <div
-              className={`flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full transition-colors shrink-0 ${
-                i < currentStepIndex
-                  ? "bg-[var(--wk-status-success)] text-white"
-                  : i === currentStepIndex
-                    ? "bg-[var(--wk-copilot)] text-white"
-                    : "bg-[var(--wk-border-default)] text-[var(--wk-text-tertiary)]"
-              }`}
-            >
-              {i < currentStepIndex ? (
-                <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              ) : (
-                <span className="text-[10px] sm:text-xs font-medium">{i + 1}</span>
-              )}
-            </div>
-            {i < STEPS.length - 1 && (
-              <div
-                className={`h-px w-3 sm:w-5 transition-colors shrink-0 ${
-                  i < currentStepIndex
-                    ? "bg-[var(--wk-status-success)]"
-                    : "bg-[var(--wk-border-default)]"
-                }`}
-              />
-            )}
+      {step !== "entry" && (
+        <>
+          <div className="flex items-center justify-center gap-1 py-4 sm:py-6 px-4 overflow-x-auto">
+            {activeSteps.map((s, i) => (
+              <div key={s.key} className="flex items-center gap-1">
+                <div
+                  className={`flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full transition-colors shrink-0 ${
+                    i < currentStepIndex
+                      ? "bg-[var(--wk-status-success)] text-white"
+                      : i === currentStepIndex
+                        ? "bg-[var(--wk-copilot)] text-white"
+                        : "bg-[var(--wk-border-default)] text-[var(--wk-text-tertiary)]"
+                  }`}
+                >
+                  {i < currentStepIndex ? (
+                    <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  ) : (
+                    <span className="text-[10px] sm:text-xs font-medium">{i + 1}</span>
+                  )}
+                </div>
+                {i < activeSteps.length - 1 && (
+                  <div
+                    className={`h-px w-3 sm:w-5 transition-colors shrink-0 ${
+                      i < currentStepIndex
+                        ? "bg-[var(--wk-status-success)]"
+                        : "bg-[var(--wk-border-default)]"
+                    }`}
+                  />
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Step labels (hidden on mobile for space) */}
-      <div className="hidden sm:flex justify-center gap-2 text-[10px] text-[var(--wk-text-secondary)] mb-6 px-4">
-        {STEPS.map((s, i) => (
-          <span
-            key={s.key}
-            className={`w-16 text-center ${
-              i === currentStepIndex ? "font-medium text-[var(--wk-text-primary)]" : ""
-            }`}
-          >
-            {s.label}
-          </span>
-        ))}
-      </div>
+          {/* Step labels (hidden on mobile for space) */}
+          <div className="hidden sm:flex justify-center gap-2 text-[10px] text-[var(--wk-text-secondary)] mb-6 px-4">
+            {activeSteps.map((s, i) => (
+              <span
+                key={s.key}
+                className={`w-16 text-center ${
+                  i === currentStepIndex ? "font-medium text-[var(--wk-text-primary)]" : ""
+                }`}
+              >
+                {s.label}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
 
-      {/* Back button (steps 2+, not on result) */}
-      {currentStepIndex > 0 && step !== "result" && (
+      {/* Back button */}
+      {showBackButton && (
         <div className="px-4 max-w-lg mx-auto mb-4">
           <Button variant="ghost" size="sm" onClick={goBack}>
             <ArrowLeft className="h-4 w-4 mr-1" />
@@ -695,14 +822,44 @@ export function OnboardingPage() {
 
       {/* Step content */}
       <div className="px-4 pb-12">
-        {step === "welcome" && (
-          <WelcomeStep
-            onContinue={() => {
-              markVisitedStep(userId, "welcome");
-              goTo("gmail");
-            }}
+        {step === "entry" && <EntryStep onSelect={handleEntrySelect} />}
+
+        {step === "resume" && <ResumeUpload onUploadComplete={handleResumeUploadComplete} />}
+
+        {step === "parse-feedback" && (
+          <ParseFeedback
+            filename={uploadedFilename ?? "Resume"}
+            parseStatus={parseStatus}
+            parsedData={hookParsedData}
+            error={parseError}
+            onRetry={handleParseRetry}
+            onParseComplete={handleParseComplete}
           />
         )}
+
+        {step === "parse-review" && (
+          <QuickReview
+            parsedData={parsedDataState}
+            parseConfidence={parseConfidence}
+            isSaving={updateProfile.isPending}
+            onConfirm={handleProfileConfirm}
+          />
+        )}
+
+        {step === "job-preview" && (
+          <JobPreviewStep
+            parsedData={
+              parsedDataState ??
+              ({
+                fullName: profileData?.status === 200 ? profileData.body.name : null,
+                email: profileData?.status === 200 ? profileData.body.email : null,
+              } as ParsedResumeData)
+            }
+            onContinueToFullSetup={handleJobPreviewContinueToFullSetup}
+          />
+        )}
+
+        {step === "qa" && <QaStep onContinue={handleQaContinue} isSaving={qaSaving} />}
 
         {step === "gmail" && (
           <GmailStep
@@ -726,18 +883,6 @@ export function OnboardingPage() {
         )}
 
         {step === "security" && <SecurityStep onContinue={handleSecurityContinue} />}
-
-        {step === "resume" && <ResumeUpload onUploadComplete={handleResumeComplete} />}
-
-        {step === "profile" && (
-          <QuickReview
-            profile={profile}
-            isSaving={updateProfile.isPending}
-            onConfirm={handleProfileConfirm}
-          />
-        )}
-
-        {step === "qa" && <QaStep onContinue={handleQaContinue} isSaving={qaSaving} />}
 
         {step === "preferences" && <PreferencesStep onContinue={handlePreferencesContinue} />}
 
