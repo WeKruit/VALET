@@ -212,10 +212,9 @@ vi.mock("../components/quick-review", () => ({
 }));
 
 vi.mock("../components/job-preview-step", () => ({
-  JobPreviewStep: ({ onContinueToFullSetup, onFinishQuickStart }: any) => (
+  JobPreviewStep: ({ onFinishQuickStart }: { onFinishQuickStart: () => void }) => (
     <div data-testid="job-preview-step">
       <button onClick={onFinishQuickStart}>Go to Dashboard</button>
-      <button onClick={onContinueToFullSetup}>Continue to Full Setup</button>
     </div>
   ),
 }));
@@ -538,14 +537,6 @@ describe("OnboardingPage", () => {
     expect(screen.getByTestId("job-preview-step")).toBeInTheDocument();
   });
 
-  it("Quick Start bridges to Full Setup from job preview", async () => {
-    const user = userEvent.setup();
-    await navigateToJobPreview(user);
-    await user.click(screen.getByRole("button", { name: /continue to full setup/i }));
-    // Should advance to Q&A (first Full Setup step after shared steps)
-    expect(screen.getByTestId("qa-step")).toBeInTheDocument();
-  });
-
   // ─── Full Setup flow ───
 
   it("Full Setup goes to Q&A after parse review", async () => {
@@ -620,6 +611,74 @@ describe("OnboardingPage", () => {
 
     expect(screen.getByTestId("gmail-step")).toBeInTheDocument();
     expect(mockToast.error).toHaveBeenCalled();
+  });
+
+  it("marks QA step visited after all mutations succeed", async () => {
+    const user = userEvent.setup();
+    await navigateToQaStep(user);
+
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    act(() => {
+      for (const cb of qaCallbacks.current) {
+        cb.onSuccess?.();
+      }
+    });
+
+    const visited = JSON.parse(
+      localStorage.getItem("valet:onboarding:visited:test-user-id") ?? "{}",
+    );
+    expect(visited["qa"]).toBe(true);
+  });
+
+  it("Full Setup restores to gmail after completing QA", () => {
+    localStorage.setItem(
+      "valet:onboarding:visited:test-user-id",
+      JSON.stringify({ entry: true, "parse-review": true, qa: true }),
+    );
+    localStorage.setItem("valet:onboarding:mode:test-user-id", "full_setup");
+
+    stableQueries.resumeList.data = {
+      status: 200,
+      body: {
+        data: [
+          {
+            id: "resume-parsed-1",
+            status: "parsed",
+            parsedData: { fullName: "Test User", email: "test@example.com" },
+            parsingConfidence: 0.95,
+            filename: "resume.pdf",
+          },
+        ],
+      },
+    } as any;
+
+    stableQueries.profileData.data = {
+      status: 200,
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        phone: "555-1234",
+        location: "New York",
+        workHistory: [],
+        education: [],
+        skills: [],
+      },
+    } as any;
+
+    stableQueries.qaList.data = {
+      status: 200,
+      body: {
+        data: [
+          { id: "qa-1", question: "workAuthorization", answer: "yes" },
+          { id: "qa-2", question: "visaSponsorship", answer: "no" },
+        ],
+      },
+    } as any;
+
+    renderOnboardingPage();
+
+    expect(screen.getByTestId("gmail-step")).toBeInTheDocument();
   });
 
   it("disables the continue button during Q&A save to prevent double-click", async () => {

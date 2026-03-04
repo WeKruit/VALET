@@ -18,8 +18,8 @@ const PRESETS: Array<{
 }> = [
   {
     id: "speed",
-    name: "Speed",
-    description: "Fastest. Uses lighter models for quick applications.",
+    name: "Quick",
+    description: "Fastest. Light-touch fill for simple applications.",
     icon: Zap,
     accentClass: "border-amber-400 bg-amber-50",
     iconColor: "text-amber-500",
@@ -27,15 +27,15 @@ const PRESETS: Array<{
   {
     id: "balanced",
     name: "Balanced",
-    description: "Best mix of speed and accuracy for most jobs.",
+    description: "Recommended. Good mix of speed and thoroughness.",
     icon: Scale,
     accentClass: "border-blue-400 bg-blue-50",
     iconColor: "text-blue-500",
   },
   {
     id: "quality",
-    name: "Quality",
-    description: "Most thorough. Uses top models for complex applications.",
+    name: "Thorough",
+    description: "Most careful. Takes longer for complex applications.",
     icon: Sparkles,
     accentClass: "border-purple-400 bg-purple-50",
     iconColor: "text-purple-500",

@@ -41,7 +41,7 @@ interface ReadinessResultStepProps {
   };
   downgrades: DowngradeReason[];
   onEnterWorkbench: () => void;
-  onGoBack: (step: string) => void;
+  onGoBack: (step: "qa" | "gmail" | "credentials") => void;
   isSubmitting?: boolean;
 }
 
@@ -248,7 +248,7 @@ export function ReadinessResultStep({
         <button
           type="button"
           className="block mx-auto text-sm text-[var(--wk-text-tertiary)] hover:text-[var(--wk-text-secondary)] hover:underline"
-          onClick={() => onGoBack("welcome")}
+          onClick={() => onGoBack("qa")}
         >
           Change something
         </button>

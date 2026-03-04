@@ -348,7 +348,9 @@ export function ApplyForm() {
         <CardContent className="p-6">
           <div className="flex items-center gap-2 mb-3">
             <Zap className="h-4 w-4 text-[var(--wk-text-secondary)]" />
-            <label className="text-sm font-medium text-[var(--wk-text-primary)]">Quality</label>
+            <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+              Effort level
+            </label>
           </div>
           <QualitySelector value={quality} onChange={setQuality} />
         </CardContent>
@@ -379,30 +381,32 @@ export function ApplyForm() {
       {isAdmin && <WorkerSelector value={targetWorkerId} onChange={setTargetWorkerId} />}
 
       {/* Notes card */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center gap-2 mb-3">
-            <StickyNote className="h-4 w-4 text-[var(--wk-text-secondary)]" />
-            <label className="text-sm font-medium text-[var(--wk-text-primary)]">
-              Notes
-              <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(optional)</span>
-            </label>
-          </div>
-          <Textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes about this application (optional)..."
-            maxLength={1000}
-            rows={3}
-            className="resize-none"
-          />
-          {notes.length > 0 && (
-            <p className="text-xs text-[var(--wk-text-tertiary)] mt-1 text-right">
-              {notes.length}/1000
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {isAdmin && (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <StickyNote className="h-4 w-4 text-[var(--wk-text-secondary)]" />
+              <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+                Notes
+                <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(optional)</span>
+              </label>
+            </div>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes about this application (optional)..."
+              maxLength={1000}
+              rows={3}
+              className="resize-none"
+            />
+            {notes.length > 0 && (
+              <p className="text-xs text-[var(--wk-text-tertiary)] mt-1 text-right">
+                {notes.length}/1000
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Mode indicator + submit */}
       <Card>

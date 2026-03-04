@@ -242,19 +242,11 @@ export function QaStep({ onContinue, isSaving, initialAnswers }: QaStepProps) {
                     ["eeoDisability", "Disability Status"],
                   ] as const
                 ).map(([key, label]) => (
-                  <div key={key}>
-                    <label className="text-xs font-medium">{label}</label>
-                    <Select value={answers[key]} onValueChange={(v) => update(key, v)}>
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="decline">Decline to self-identify</SelectItem>
-                        <SelectItem value="configure">
-                          I want to provide a specific answer
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div key={key} className="flex items-center justify-between">
+                    <span className="text-xs font-medium">{label}</span>
+                    <span className="text-xs text-[var(--wk-text-tertiary)]">
+                      Decline to self-identify
+                    </span>
                   </div>
                 ))}
               </div>
