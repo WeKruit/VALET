@@ -688,7 +688,7 @@ export function OnboardingPage() {
             | "onsite"
             | "any",
           minimumSalary:
-            preferences.minimumSalary !== "" && preferences.minimumSalary != null
+            (preferences.minimumSalary ?? "") !== ""
               ? Number(preferences.minimumSalary)
               : undefined,
           experienceLevel: (preferences.experienceLevel || undefined) as

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Button } from "@valet/ui/components/button";
@@ -6,17 +6,23 @@ import { Settings, X } from "lucide-react";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { api } from "@/lib/api-client";
 
+function isDismissedInStorage(userId: string | undefined): boolean {
+  if (!userId) return true;
+  return localStorage.getItem(`valet:setup-banner-dismissed:${userId}`) === "true";
+}
+
 export function CompleteSetupBanner() {
   const user = useAuth((s) => s.user);
   const userId = user?.id;
 
-  const [dismissed, setDismissed] = useState(() => {
-    if (!userId) return true;
-    return localStorage.getItem(`valet:setup-banner-dismissed:${userId}`) === "true";
-  });
+  const [dismissed, setDismissed] = useState(() => isDismissedInStorage(userId));
+
+  useEffect(() => {
+    setDismissed(isDismissedInStorage(userId));
+  }, [userId]);
 
   const readiness = api.credentials.checkReadiness.useQuery({
-    queryKey: ["credential-readiness", "setup-banner"],
+    queryKey: ["credential-readiness", "setup-banner", userId],
     queryData: {},
     staleTime: 1000 * 60,
     enabled: !!userId && !dismissed && user?.onboardingComplete === true,
