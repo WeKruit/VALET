@@ -4,6 +4,9 @@ import {
   Check,
   AlertTriangle,
   User,
+  Mail,
+  Phone,
+  MapPin,
   Briefcase,
   GraduationCap,
   Wrench,
@@ -14,6 +17,8 @@ import type { ParsedResumeData } from "../hooks/use-resume-parse";
 interface JobPreviewStepProps {
   parsedData: ParsedResumeData;
   onContinueToFullSetup: () => void;
+  onFinishQuickStart: () => void;
+  isSubmitting?: boolean;
 }
 
 interface ProfileField {
@@ -23,7 +28,12 @@ interface ProfileField {
   filled: boolean;
 }
 
-export function JobPreviewStep({ parsedData, onContinueToFullSetup }: JobPreviewStepProps) {
+export function JobPreviewStep({
+  parsedData,
+  onContinueToFullSetup,
+  onFinishQuickStart,
+  isSubmitting,
+}: JobPreviewStepProps) {
   const fields: ProfileField[] = [
     {
       label: "Full Name",
@@ -34,19 +44,19 @@ export function JobPreviewStep({ parsedData, onContinueToFullSetup }: JobPreview
     {
       label: "Email",
       value: parsedData.email,
-      icon: User,
+      icon: Mail,
       filled: !!parsedData.email,
     },
     {
       label: "Phone",
       value: parsedData.phone,
-      icon: User,
+      icon: Phone,
       filled: !!parsedData.phone,
     },
     {
       label: "Location",
       value: parsedData.location,
-      icon: User,
+      icon: MapPin,
       filled: !!parsedData.location,
     },
     {
@@ -156,7 +166,25 @@ export function JobPreviewStep({ parsedData, onContinueToFullSetup }: JobPreview
         This was a preview only — no applications were submitted.
       </p>
 
-      <Button variant="cta" size="lg" className="w-full" onClick={onContinueToFullSetup}>
+      <Button
+        variant="cta"
+        size="lg"
+        className="w-full"
+        disabled={isSubmitting}
+        onClick={onFinishQuickStart}
+      >
+        {isSubmitting ? "Finishing..." : "Go to Dashboard"}
+      </Button>
+
+      <p className="text-center text-xs text-[var(--wk-text-tertiary)]">or</p>
+
+      <Button
+        variant="ghost"
+        size="lg"
+        className="w-full"
+        disabled={isSubmitting}
+        onClick={onContinueToFullSetup}
+      >
         Continue to Full Setup
         <ArrowRight className="h-4 w-4 ml-2" />
       </Button>

@@ -397,20 +397,14 @@ export function OnboardingPage() {
       return;
     }
 
-    // Quick Start users who haven't seen preview
-    if (effectiveMode === "quick_start" && !visited["job-preview"]) {
+    // Quick Start users — show preview (whether first visit or return)
+    if (effectiveMode === "quick_start") {
       setStep("job-preview");
       return;
     }
 
     // Full Setup steps
-    if (effectiveMode === "full_setup" || visited["job-preview"]) {
-      // If coming from Quick Start bridge, switch to full setup
-      if (effectiveMode === "quick_start" && visited["job-preview"]) {
-        setMode("full_setup");
-        saveMode(userId, "full_setup");
-      }
-
+    if (effectiveMode === "full_setup") {
       if (!serverQaComplete) {
         setStep("qa");
         return;
@@ -516,7 +510,7 @@ export function OnboardingPage() {
       }
     }
 
-    updateProfile.mutate({ body: body as any }, { onSuccess: advance });
+    updateProfile.mutate({ body }, { onSuccess: advance });
   }
 
   function handleJobPreviewContinueToFullSetup() {
@@ -524,6 +518,23 @@ export function OnboardingPage() {
     setMode("full_setup");
     saveMode(userId, "full_setup");
     goTo("qa");
+  }
+
+  function finishOnboarding() {
+    setIsSubmitting(true);
+    completeOnboarding.mutate(
+      { body: {} },
+      {
+        onSuccess: () => {
+          localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
+          window.location.replace("/apply");
+        },
+        onError: () => {
+          setIsSubmitting(false);
+          toast.error("Failed to complete onboarding. Please try again.");
+        },
+      },
+    );
   }
 
   const createMailbox = api.credentials.createMailboxCredential.useMutation();
@@ -709,20 +720,7 @@ export function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleEnterWorkbench() {
-    setIsSubmitting(true);
-    completeOnboarding.mutate(
-      { body: {} },
-      {
-        onSuccess: () => {
-          localStorage.setItem(`valet:onboarding:completed:${userId}`, "true");
-          window.location.replace("/apply");
-        },
-        onError: () => {
-          setIsSubmitting(false);
-          toast.error("Failed to complete onboarding. Please try again.");
-        },
-      },
-    );
+    finishOnboarding();
   }
 
   // ─── Loading state ───
@@ -845,6 +843,8 @@ export function OnboardingPage() {
               } as ParsedResumeData)
             }
             onContinueToFullSetup={handleJobPreviewContinueToFullSetup}
+            onFinishQuickStart={finishOnboarding}
+            isSubmitting={isSubmitting}
           />
         )}
 
