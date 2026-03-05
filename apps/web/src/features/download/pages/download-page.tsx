@@ -70,7 +70,7 @@ export function DownloadPage() {
           )}
 
           {release && (
-            <div className="mx-auto max-w-2xl space-y-8">
+            <div className="mx-auto max-w-5xl space-y-8">
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {/* Apple Silicon (ARM64) */}
                 <Card>
@@ -91,74 +91,88 @@ export function DownloadPage() {
                       <span>&middot;</span>
                       <span>.dmg</span>
                     </div>
-                    <Button asChild variant="cta" className="w-full">
-                      <a href={release.dmgArm64Url}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Download for Apple Silicon
-                      </a>
-                    </Button>
+                    {release.dmgArm64Url ? (
+                      <Button asChild variant="cta" className="w-full">
+                        <a href={release.dmgArm64Url}>
+                          <Download className="mr-2 h-4 w-4" />
+                          Download for Apple Silicon
+                        </a>
+                      </Button>
+                    ) : (
+                      <Button variant="cta" className="w-full" disabled>
+                        Apple Silicon build unavailable
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
 
-                {/* Intel (x64) — only shown when available */}
-                {release.dmgX64Url && (
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-[var(--wk-radius-xl)] bg-[var(--wk-surface-sunken)]">
-                          <Cpu className="h-5 w-5 text-[var(--wk-accent-amber)]" />
-                        </div>
-                        <CardTitle>Intel</CardTitle>
+                {/* Intel (x64) */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-[var(--wk-radius-xl)] bg-[var(--wk-surface-sunken)]">
+                        <Cpu className="h-5 w-5 text-[var(--wk-accent-amber)]" />
                       </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-[var(--wk-text-secondary)]">
-                        For Macs with Intel processors
-                      </p>
-                      <div className="flex flex-wrap gap-2 text-xs text-[var(--wk-text-tertiary)]">
-                        <span>macOS 10.15+</span>
-                        <span>&middot;</span>
-                        <span>.dmg</span>
-                      </div>
+                      <CardTitle>Intel</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-[var(--wk-text-secondary)]">
+                      For Macs with Intel processors
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs text-[var(--wk-text-tertiary)]">
+                      <span>macOS 10.15+</span>
+                      <span>&middot;</span>
+                      <span>.dmg</span>
+                    </div>
+                    {release.dmgX64Url ? (
                       <Button asChild variant="secondary" className="w-full">
                         <a href={release.dmgX64Url}>
                           <Download className="mr-2 h-4 w-4" />
                           Download for Intel
                         </a>
                       </Button>
-                    </CardContent>
-                  </Card>
-                )}
+                    ) : (
+                      <Button variant="secondary" className="w-full" disabled>
+                        Intel build unavailable
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
 
-                {/* Windows (x64) — only shown when available */}
-                {release.exeX64Url && (
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-[var(--wk-radius-xl)] bg-[var(--wk-surface-sunken)]">
-                          <Monitor className="h-5 w-5 text-[var(--wk-accent-amber)]" />
-                        </div>
-                        <CardTitle>Windows</CardTitle>
+                {/* Windows (x64) */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-[var(--wk-radius-xl)] bg-[var(--wk-surface-sunken)]">
+                        <Monitor className="h-5 w-5 text-[var(--wk-accent-amber)]" />
                       </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-[var(--wk-text-secondary)]">
-                        For Windows 10 or Windows 11 (64-bit)
-                      </p>
-                      <div className="flex flex-wrap gap-2 text-xs text-[var(--wk-text-tertiary)]">
-                        <span>Windows 10+</span>
-                        <span>&middot;</span>
-                        <span>.exe</span>
-                      </div>
+                      <CardTitle>Windows</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-[var(--wk-text-secondary)]">
+                      For Windows 10 or Windows 11 (64-bit)
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs text-[var(--wk-text-tertiary)]">
+                      <span>Windows 10+</span>
+                      <span>&middot;</span>
+                      <span>.exe</span>
+                    </div>
+                    {release.exeX64Url ? (
                       <Button asChild variant="secondary" className="w-full">
                         <a href={release.exeX64Url}>
                           <Download className="mr-2 h-4 w-4" />
                           Download for Windows
                         </a>
                       </Button>
-                    </CardContent>
-                  </Card>
-                )}
+                    ) : (
+                      <Button variant="secondary" className="w-full" disabled>
+                        Windows build unavailable
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
 
               <p className="text-center text-xs text-[var(--wk-text-tertiary)]">
