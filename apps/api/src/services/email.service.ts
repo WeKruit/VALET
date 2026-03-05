@@ -236,7 +236,7 @@ export class EmailService {
     let text: string | undefined;
 
     try {
-      const rendered = await this.emailTemplateService.render("early_access", {
+      const rendered = await this.emailTemplateService.render("early_access_confirmation", {
         name,
         position,
       });
