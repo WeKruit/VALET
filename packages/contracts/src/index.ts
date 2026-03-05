@@ -20,6 +20,8 @@ import { credentialContract } from "./credentials.js";
 import { fitLabContract } from "./fit-lab.js";
 import { insightsContract } from "./insights.js";
 import { jobLeadContract } from "./job-leads.js";
+import { referralContract } from "./referrals.js";
+import { creditContract } from "./credits.js";
 
 const c = initContract();
 
@@ -45,6 +47,8 @@ export const apiContract = c.router({
   fitLab: fitLabContract,
   insights: insightsContract,
   jobLeads: jobLeadContract,
+  referrals: referralContract,
+  credits: creditContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -71,4 +75,6 @@ export {
   fitLabContract,
   insightsContract,
   jobLeadContract,
+  referralContract,
+  creditContract,
 };

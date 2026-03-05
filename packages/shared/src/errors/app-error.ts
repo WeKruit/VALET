@@ -21,6 +21,10 @@ export class AppError extends Error {
     return new AppError(403, "FORBIDDEN", msg);
   }
 
+  static paymentRequired(msg = "Payment required") {
+    return new AppError(402, "INSUFFICIENT_CREDITS", msg);
+  }
+
   static notFound(msg = "Not found") {
     return new AppError(404, "NOT_FOUND", msg);
   }

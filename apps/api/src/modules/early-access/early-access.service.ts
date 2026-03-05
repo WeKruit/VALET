@@ -1,20 +1,36 @@
+import { eq } from "drizzle-orm";
+import { users, type Database } from "@valet/db";
 import { AppError } from "../../common/errors.js";
 import type { EarlyAccessRepository } from "./early-access.repository.js";
 import type { EmailService } from "../../services/email.service.js";
+import type { AuthService } from "../auth/auth.service.js";
+import type { CreditService } from "../credits/credit.service.js";
 
 export class EarlyAccessService {
   private earlyAccessRepo: EarlyAccessRepository;
   private emailService: EmailService;
+  private db: Database;
+  private authService: AuthService;
+  private creditService: CreditService;
 
   constructor({
     earlyAccessRepo,
     emailService,
+    db,
+    authService,
+    creditService,
   }: {
     earlyAccessRepo: EarlyAccessRepository;
     emailService: EmailService;
+    db: Database;
+    authService: AuthService;
+    creditService: CreditService;
   }) {
     this.earlyAccessRepo = earlyAccessRepo;
     this.emailService = emailService;
+    this.db = db;
+    this.authService = authService;
+    this.creditService = creditService;
   }
 
   async submit(data: { email: string; name: string; source?: string; referralCode?: string }) {
@@ -54,8 +70,36 @@ export class EarlyAccessService {
       throw AppError.notFound("Early access submission not found");
     }
 
-    // Update status to promoted
+    // Update early_access_submissions status
     await this.earlyAccessRepo.updateEmailStatus(id, "promoted", new Date());
+
+    // Update user's role in the users table
+    const userRows = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, submission.email))
+      .limit(1);
+
+    if (userRows[0]) {
+      await this.db
+        .update(users)
+        .set({ role: "beta", updatedAt: new Date() })
+        .where(eq(users.id, userRows[0].id));
+
+      // Revoke all tokens so user gets a fresh JWT with the new role
+      await this.authService.revokeAllUserTokens(userRows[0].id);
+
+      // Issue 50 trial credits with 30-day expiry
+      const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await this.creditService.grantCredits(userRows[0].id, 50, "trial", {
+        description: "Welcome trial credits (30-day expiry)",
+        idempotencyKey: `trial-promo-${userRows[0].id}`,
+      });
+      await this.db
+        .update(users)
+        .set({ trialCreditsExpireAt: thirtyDays })
+        .where(eq(users.id, userRows[0].id));
+    }
 
     // Fire-and-forget beta welcome email
     this.emailService.sendWelcome(submission.email, submission.name).catch(() => {});

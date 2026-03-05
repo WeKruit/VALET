@@ -6,6 +6,12 @@ import { DisclaimerModal } from "@/features/consent/components/disclaimer-modal"
 import { LoadingSpinner } from "./loading-spinner";
 import { api } from "@/lib/api-client";
 
+/** Roles that have active product permissions (not gated behind early access). */
+const ACTIVE_ROLES = new Set(["beta", "developer", "admin", "superadmin"]);
+function isActiveRole(role: string | undefined): boolean {
+  return !!role && ACTIVE_ROLES.has(role);
+}
+
 interface AuthGuardProps {
   children: React.ReactNode;
 }
@@ -13,13 +19,20 @@ interface AuthGuardProps {
 export function AuthGuard({ children }: AuthGuardProps) {
   const { user, isLoading, setUser } = useAuth();
   const location = useLocation();
+
+  // Compute whether user has full product access (ungated role)
+  const isFullUser = !!user && isActiveRole(user.role);
+
+  // Only fire protected queries for users with active roles.
+  // Gated users (user/waitlist) have zero CASL permissions → these queries
+  // would 403 and cause a loading hang. Gate them behind isFullUser.
   const {
     isLoading: consentLoading,
     needsTos,
     copilotAccepted,
     markTosAccepted,
     markCopilotAccepted,
-  } = useConsent();
+  } = useConsent({ enabled: isFullUser });
 
   const currentUserQuery = useCurrentUser();
 
@@ -42,14 +55,14 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const resumesQuery = api.resumes.list.useQuery({
     queryKey: ["resumes", "list", user?.id],
     queryData: {},
-    enabled: !!user,
+    enabled: isFullUser,
     staleTime: 1000 * 60 * 5,
   });
 
   const profileQuery = api.users.getProfile.useQuery({
     queryKey: ["user-profile", "auth-guard", user?.id],
     queryData: {},
-    enabled: !!user,
+    enabled: isFullUser,
     staleTime: 1000 * 60 * 5,
   });
 
@@ -65,6 +78,16 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  // Early access gate: gated roles go straight to /early-access
+  // MUST be checked BEFORE consent/loading to avoid 403 storm on protected queries
+  const isEarlyAccessPath = location.pathname === "/early-access";
+  if (!isActiveRole(user.role)) {
+    if (!isEarlyAccessPath) {
+      return <Navigate to="/early-access" replace />;
+    }
+    return <>{children}</>;
   }
 
   if (consentLoading || resumesQuery.isLoading || profileQuery.isLoading) {
@@ -84,17 +107,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
         onCopilotAccepted={markCopilotAccepted}
       />
     );
-  }
-
-  // Early access gate: roles below "developer" can only see /early-access
-  const isEarlyAccessPath = location.pathname === "/early-access";
-  const gatedRoles = new Set<string | undefined>([undefined, "user", "waitlist", "beta"]);
-  const isWaitlisted = gatedRoles.has(user.role);
-  if (isWaitlisted) {
-    if (!isEarlyAccessPath) {
-      return <Navigate to="/early-access" replace />;
-    }
-    return <>{children}</>;
   }
 
   // Onboarding is complete when the user has uploaded a resume, accepted the

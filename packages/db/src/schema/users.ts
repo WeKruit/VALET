@@ -5,6 +5,7 @@ import {
   varchar,
   text,
   boolean,
+  integer,
   jsonb,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -48,6 +49,9 @@ export const users = pgTable("users", {
   acceptedDisclaimerVersion: varchar("accepted_disclaimer_version", { length: 20 }),
   acceptedDisclaimerAt: timestamp("accepted_disclaimer_at", { withTimezone: true }),
   onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+  myReferralCode: varchar("my_referral_code", { length: 20 }).unique(),
+  creditBalance: integer("credit_balance").default(0).notNull(),
+  trialCreditsExpireAt: timestamp("trial_credits_expire_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
