@@ -15,7 +15,12 @@ export class EarlyAccessRepository {
 
   async findByEmail(email: string) {
     const rows = await this.db
-      .select()
+      .select({
+        id: earlyAccessSubmissions.id,
+        email: earlyAccessSubmissions.email,
+        name: earlyAccessSubmissions.name,
+        emailStatus: earlyAccessSubmissions.emailStatus,
+      })
       .from(earlyAccessSubmissions)
       .where(eq(earlyAccessSubmissions.email, email))
       .limit(1);
@@ -23,16 +28,12 @@ export class EarlyAccessRepository {
   }
 
   async create(data: { email: string; name: string; source?: string; referralCode?: string }) {
-    const rows = await this.db
-      .insert(earlyAccessSubmissions)
-      .values({
-        email: data.email,
-        name: data.name,
-        source: data.source ?? "landing_page",
-        referralCode: data.referralCode ?? null,
-      })
-      .returning();
-    return rows[0]!;
+    await this.db.insert(earlyAccessSubmissions).values({
+      email: data.email,
+      name: data.name,
+      source: data.source ?? "landing_page",
+      referralCode: data.referralCode ?? null,
+    });
   }
 
   async countAll(): Promise<number> {
@@ -44,7 +45,16 @@ export class EarlyAccessRepository {
 
   async getById(id: string) {
     const rows = await this.db
-      .select()
+      .select({
+        id: earlyAccessSubmissions.id,
+        email: earlyAccessSubmissions.email,
+        name: earlyAccessSubmissions.name,
+        source: earlyAccessSubmissions.source,
+        referralCode: earlyAccessSubmissions.referralCode,
+        emailSentAt: earlyAccessSubmissions.emailSentAt,
+        emailStatus: earlyAccessSubmissions.emailStatus,
+        createdAt: earlyAccessSubmissions.createdAt,
+      })
       .from(earlyAccessSubmissions)
       .where(eq(earlyAccessSubmissions.id, id))
       .limit(1);
@@ -76,17 +86,28 @@ export class EarlyAccessRepository {
           : sql`${conditions[0]} AND ${conditions[1]}`
         : undefined;
 
+    const selectFields = {
+      id: earlyAccessSubmissions.id,
+      email: earlyAccessSubmissions.email,
+      name: earlyAccessSubmissions.name,
+      source: earlyAccessSubmissions.source,
+      referralCode: earlyAccessSubmissions.referralCode,
+      emailSentAt: earlyAccessSubmissions.emailSentAt,
+      emailStatus: earlyAccessSubmissions.emailStatus,
+      createdAt: earlyAccessSubmissions.createdAt,
+    };
+
     const [items, countResult] = await Promise.all([
       whereClause
         ? this.db
-            .select()
+            .select(selectFields)
             .from(earlyAccessSubmissions)
             .where(whereClause)
             .orderBy(desc(earlyAccessSubmissions.createdAt))
             .offset(offset)
             .limit(limit)
         : this.db
-            .select()
+            .select(selectFields)
             .from(earlyAccessSubmissions)
             .orderBy(desc(earlyAccessSubmissions.createdAt))
             .offset(offset)
@@ -118,7 +139,10 @@ export class EarlyAccessRepository {
         ...(sentAt ? { emailSentAt: sentAt } : {}),
       })
       .where(eq(earlyAccessSubmissions.id, id))
-      .returning();
+      .returning({
+        id: earlyAccessSubmissions.id,
+        emailStatus: earlyAccessSubmissions.emailStatus,
+      });
     return rows[0] ?? null;
   }
 
@@ -126,7 +150,7 @@ export class EarlyAccessRepository {
     const rows = await this.db
       .delete(earlyAccessSubmissions)
       .where(eq(earlyAccessSubmissions.id, id))
-      .returning();
+      .returning({ id: earlyAccessSubmissions.id });
     return rows[0] ?? null;
   }
 
