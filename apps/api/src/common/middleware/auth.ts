@@ -33,8 +33,18 @@ const PUBLIC_EXACT_PATHS = [
 
 const PUBLIC_PREFIX_PATHS = ["/api/v1/ws", "/docs"];
 
-/** Routes that handle their own JWT auth (e.g. via query-param token). */
-const SELF_AUTH_PATTERNS = [/^\/api\/v1\/tasks\/[^/]+\/events\/stream$/];
+/** Routes that bypass JWT auth and authenticate with X-Local-Worker-Session tokens instead. */
+const SELF_AUTH_PATTERNS = [
+  /^\/api\/v1\/tasks\/[^/]+\/events\/stream$/,
+  /^\/api\/v1\/local-workers\/claim$/,
+  /^\/api\/v1\/local-workers\/[^/]+\/heartbeat$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/events$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/awaiting-review$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/complete$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/fail$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/release$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/cancel$/,
+];
 
 export async function authMiddleware(request: FastifyRequest, _reply: FastifyReply) {
   const path = request.url.split("?")[0];

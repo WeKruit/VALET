@@ -66,6 +66,7 @@ import { SubmissionProofRepository } from "../modules/tasks/submission-proof.rep
 import { InsightsService } from "../modules/insights/insights.service.js";
 import { JobLeadRepository } from "../modules/job-leads/job-lead.repository.js";
 import { JobLeadService } from "../modules/job-leads/job-lead.service.js";
+import { LocalWorkerBrokerService } from "../modules/local-workers/local-worker-broker.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -132,6 +133,7 @@ export interface AppCradle {
   insightsService: InsightsService;
   jobLeadRepo: JobLeadRepository;
   jobLeadService: JobLeadService;
+  localWorkerBrokerService: LocalWorkerBrokerService;
 }
 
 declare module "@fastify/awilix" {
@@ -256,5 +258,8 @@ export default fp(async (fastify: FastifyInstance) => {
     insightsService: asClass(InsightsService, { lifetime: Lifetime.SINGLETON }),
     jobLeadRepo: asClass(JobLeadRepository, { lifetime: Lifetime.SINGLETON }),
     jobLeadService: asClass(JobLeadService, { lifetime: Lifetime.SINGLETON }),
+    localWorkerBrokerService: asClass(LocalWorkerBrokerService, {
+      lifetime: Lifetime.SINGLETON,
+    }),
   });
 });

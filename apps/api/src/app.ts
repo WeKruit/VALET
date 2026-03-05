@@ -46,6 +46,7 @@ import { credentialRouter } from "./modules/credentials/credential.routes.js";
 import { fitLabRouter } from "./modules/fit-lab/fit-lab.routes.js";
 import { insightsRouter } from "./modules/insights/insights.routes.js";
 import { jobLeadRouter } from "./modules/job-leads/job-lead.routes.js";
+import { localWorkerRoutes } from "./modules/local-workers/local-worker.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -159,6 +160,7 @@ export async function buildApp() {
 
   // User-facing standalone routes (outside ts-rest, needs auth)
   await fastify.register(taskUserRoutes);
+  await fastify.register(localWorkerRoutes);
 
   // SSE streaming route (handles its own JWT auth via query param)
   await fastify.register(taskEventsSSERoutes);

@@ -56,7 +56,7 @@ function buildCallbackUrl(): string {
   const token = process.env.GH_SERVICE_SECRET;
   if (!token) return base;
   const sep = base.includes("?") ? "&" : "?";
-  return `${base}${sep}token=${token}`;
+  return `${base}${sep}token=${encodeURIComponent(token)}`;
 }
 
 export class TaskService {
