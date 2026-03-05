@@ -25,12 +25,18 @@ try {
   await migrate(db, { migrationsFolder });
   console.log("Migrations completed successfully");
 } catch (error: unknown) {
-  // When staging and production share the same database, migrations applied by one
-  // environment will already exist when the other deploys. Drizzle tries to INSERT
-  // the migration record and hits a PK constraint. This is safe to ignore.
+  // When staging and production share the same database, the migration DDL may
+  // already be applied but Drizzle tries to INSERT the journal record and hits
+  // a PK constraint. In this case the DDL was already executed by the other
+  // environment, so it is safe to skip.
+  //
+  // IMPORTANT: We only skip the journal-insert duplicate. If the DDL itself
+  // failed we must NOT swallow the error — that would leave the schema out of
+  // sync while the journal records the migration as applied.
   const isPkDuplicate =
     error instanceof Error &&
-    error.message.includes("duplicate key value violates unique constraint");
+    error.message.includes("duplicate key value violates unique constraint") &&
+    error.message.includes("__drizzle_migrations");
   if (isPkDuplicate) {
     console.log("Migrations already applied (shared database) — skipping");
   } else {
