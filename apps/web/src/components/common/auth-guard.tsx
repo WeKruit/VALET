@@ -109,6 +109,17 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
+  // Show copilot disclaimer if ToS accepted but copilot not yet accepted
+  if (!copilotAccepted) {
+    return (
+      <DisclaimerModal
+        step="copilot"
+        onTosAccepted={markTosAccepted}
+        onCopilotAccepted={markCopilotAccepted}
+      />
+    );
+  }
+
   // Onboarding is complete when the user has uploaded a resume, accepted the
   // copilot disclaimer, AND completed onboarding (server-side timestamp OR
   // localStorage fallback for same-device continuity).
