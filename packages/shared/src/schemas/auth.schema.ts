@@ -62,7 +62,7 @@ export const messageResponse = z.object({
 // ─── Desktop Auth Schemas ───
 
 export const desktopExchangeSupabaseRequest = z.object({
-  supabaseAccessToken: z.string().min(1),
+  supabaseAccessToken: z.string().min(1).max(4096),
 });
 
 export const desktopGoogleAuthRequest = z.object({
