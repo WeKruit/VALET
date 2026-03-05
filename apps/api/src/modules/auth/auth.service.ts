@@ -319,6 +319,8 @@ export class AuthService {
 
   async revokeAllUserTokens(userId: string): Promise<void> {
     await this.redis.incr(`token:version:${userId}`);
+    // Clear cached role so the next request picks up any role change immediately
+    await this.redis.del(`role:cache:${userId}`);
   }
 
   private hashToken(token: string): string {
@@ -438,14 +440,17 @@ export class AuthService {
     email: string,
     role: string = "user",
   ): Promise<TokenPair> {
-    const accessToken = await new jose.SignJWT({ sub: userId, email, role })
+    // Read current token version so revokeAllUserTokens() actually invalidates tokens
+    const tokenVersion = Number((await this.redis.get(`token:version:${userId}`)) ?? 0);
+
+    const accessToken = await new jose.SignJWT({ sub: userId, email, role, tokenVersion })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("15m")
       .setIssuer("valet-api")
       .sign(this.jwtSecret);
 
-    const refreshToken = await new jose.SignJWT({ sub: userId, email, role })
+    const refreshToken = await new jose.SignJWT({ sub: userId, email, role, tokenVersion })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("7d")

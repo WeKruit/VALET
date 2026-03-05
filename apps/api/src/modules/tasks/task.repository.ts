@@ -499,4 +499,8 @@ export class TaskRepository {
       })
       .where(eq(tasks.id, id));
   }
+
+  async delete(id: string) {
+    await this.db.delete(tasks).where(eq(tasks.id, id));
+  }
 }

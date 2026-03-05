@@ -564,21 +564,6 @@ export class TaskService {
       ? `${body.notes ?? ""} [sandbox:${resolvedSandboxId}]`.trim()
       : body.notes;
 
-    // Credit enforcement (feature-flagged)
-    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
-      const preTaskId = `pre-${Date.now()}`;
-      const debit = await this.creditService.debitForTask(
-        userId,
-        preTaskId,
-        `task-create-${preTaskId}`,
-      );
-      if (!debit.success) {
-        throw AppError.paymentRequired(
-          "Insufficient credits. Purchase more credits or upgrade your plan.",
-        );
-      }
-    }
-
     const task = await this.taskRepo.create({
       userId,
       jobUrl: body.jobUrl,
@@ -587,6 +572,29 @@ export class TaskService {
       notes,
       sandboxId: resolvedSandboxId,
     });
+
+    // Credit enforcement (feature-flagged) — debit AFTER task creation so we have a real task UUID
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
+      try {
+        const debit = await this.creditService.debitForTask(
+          userId,
+          task.id,
+          `task-create-${task.id}`,
+        );
+        if (!debit.success) {
+          // Insufficient credits — clean up the task row
+          await this.taskRepo.delete(task.id);
+          throw AppError.paymentRequired(
+            "Insufficient credits. Purchase more credits or upgrade your plan.",
+          );
+        }
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        // Infra/DB error during debit — clean up the task row and re-throw
+        await this.taskRepo.delete(task.id).catch(() => {});
+        throw err;
+      }
+    }
 
     // Resolve sandbox UUID → GH worker UUID for queue routing
     let queueTargetWorkerId: string | undefined;

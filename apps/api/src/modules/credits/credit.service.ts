@@ -85,7 +85,7 @@ export class CreditService {
         RETURNING credit_balance
       )
       INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
-      SELECT ${userId}::uuid, ${amount}, credit_balance, ${reason}, ${opts.description ?? null}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}::uuid, ${opts.idempotencyKey ?? null}
+      SELECT ${userId}::uuid, ${amount}, credit_balance, ${reason}, ${opts.description ?? null}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${opts.idempotencyKey ?? null}
       FROM updated
       RETURNING balance_after
     `);
@@ -116,35 +116,32 @@ export class CreditService {
     }
 
     // Atomic debit with balance check (row-level lock via FOR UPDATE)
-    try {
-      const result = await this.db.execute(sql`
-        WITH locked AS (
-          SELECT id, credit_balance FROM users WHERE id = ${userId}::uuid FOR UPDATE
-        ),
-        check_balance AS (
-          SELECT id, credit_balance FROM locked WHERE credit_balance > 0
-        ),
-        updated AS (
-          UPDATE users
-          SET credit_balance = credit_balance - 1, updated_at = NOW()
-          WHERE id = (SELECT id FROM check_balance)
-          RETURNING credit_balance
-        )
-        INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
-        SELECT ${userId}::uuid, -1, credit_balance, 'task_debit', 'Task application credit', 'task', ${taskId}::uuid, ${idempotencyKey}
-        FROM updated
-        RETURNING balance_after
-      `);
+    // DB/infra errors propagate naturally — only "balance was 0" returns success:false
+    const result = await this.db.execute(sql`
+      WITH locked AS (
+        SELECT id, credit_balance FROM users WHERE id = ${userId}::uuid FOR UPDATE
+      ),
+      check_balance AS (
+        SELECT id, credit_balance FROM locked WHERE credit_balance > 0
+      ),
+      updated AS (
+        UPDATE users
+        SET credit_balance = credit_balance - 1, updated_at = NOW()
+        WHERE id = (SELECT id FROM check_balance)
+        RETURNING credit_balance
+      )
+      INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
+      SELECT ${userId}::uuid, -1, credit_balance, 'task_debit', 'Task application credit', 'task', ${taskId}, ${idempotencyKey}
+      FROM updated
+      RETURNING balance_after
+    `);
 
-      const rows = (result as unknown as { rows: Array<{ balance_after: number }> }).rows;
-      if (!rows[0]) {
-        // Balance was 0 — no update happened
-        return { success: false, balance: 0 };
-      }
-      return { success: true, balance: rows[0].balance_after };
-    } catch {
+    const rows = (result as unknown as { rows: Array<{ balance_after: number }> }).rows;
+    if (!rows[0]) {
+      // Balance was 0 — no update happened
       return { success: false, balance: 0 };
     }
+    return { success: true, balance: rows[0].balance_after };
   }
 
   async refundTask(
