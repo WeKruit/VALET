@@ -54,3 +54,4 @@ minio-data/
 .terraform.lock.hcl
 **/.terraform/
 **/terraform.tfstate*
+.worktrees/
