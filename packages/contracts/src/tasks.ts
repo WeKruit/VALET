@@ -11,6 +11,8 @@ import {
   resolveBlockerRequest,
   resolveBlockerResponse,
   vncUrlResponse,
+  browserSessionResponse,
+  submissionProofResponse,
   errorResponse,
 } from "@valet/shared/schemas";
 
@@ -70,6 +72,16 @@ export const taskContract = c.router({
     },
     summary: "Get a task by ID",
   },
+  getProof: {
+    method: "GET",
+    path: "/api/v1/tasks/:id/proof",
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: submissionProofResponse,
+      404: errorResponse,
+    },
+    summary: "Get submission proof pack for a completed task",
+  },
   create: {
     method: "POST",
     path: "/api/v1/tasks",
@@ -77,6 +89,7 @@ export const taskContract = c.router({
     responses: {
       201: taskResponse,
       400: errorResponse,
+      402: errorResponse,
     },
     summary: "Create a new application task",
   },
@@ -148,5 +161,19 @@ export const taskContract = c.router({
       404: errorResponse,
     },
     summary: "Get the VNC live-view URL for the sandbox running this task",
+  },
+  createLiveviewSession: {
+    method: "POST",
+    path: "/api/v1/tasks/:id/liveview/session",
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      200: browserSessionResponse,
+      404: errorResponse,
+      409: errorResponse,
+      502: errorResponse,
+      503: errorResponse,
+    },
+    summary: "Create a browser liveview session for a paused task",
   },
 });

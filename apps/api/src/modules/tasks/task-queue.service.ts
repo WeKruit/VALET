@@ -64,6 +64,27 @@ export class TaskQueueService {
   }
 
   /**
+   * Fire-and-forget wake call to ATM. Ensures at least 1 GH worker is running
+   * before enqueuing a task. Non-blocking — job enqueues immediately.
+   */
+  private wakeWorkers(): void {
+    if (process.env.ATM_WAKE_ENABLED !== "true") return;
+    const baseUrl = process.env.ATM_BASE_URL;
+    const secret = process.env.ATM_DEPLOY_SECRET;
+    if (!baseUrl || !secret) return;
+
+    fetch(`${baseUrl}/fleet/wake`, {
+      method: "POST",
+      headers: {
+        "X-Deploy-Secret": secret,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ count: 1 }),
+      signal: AbortSignal.timeout(5_000),
+    }).catch((err) => this.logger.warn({ err }, "ATM wake failed (non-fatal)"));
+  }
+
+  /**
    * Enqueue a job application task.
    * @returns The pg-boss job ID, or null if pg-boss is not available.
    */
@@ -82,11 +103,12 @@ export class TaskQueueService {
       ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
 
-    // pg-boss requires queues to exist before sending. For targeted queues
-    // (Kasm workers), the worker may not have booted yet, so create it first.
-    if (options?.targetWorkerId) {
-      await boss.createQueue(queueName);
-    }
+    // Ensure queue exists before sending. pg-boss requires queues to be created first.
+    // TODO: Align GH PgBossConsumer.ts expiry from 1800s to 14400s (tracked for GH session)
+    await boss.createQueue(queueName);
+
+    // Fire-and-forget: ensure at least 1 GH worker is awake
+    this.wakeWorkers();
 
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves
@@ -121,9 +143,12 @@ export class TaskQueueService {
       ? `${QUEUE_APPLY_JOB}/${options.targetWorkerId}`
       : QUEUE_APPLY_JOB;
 
-    if (options?.targetWorkerId) {
-      await boss.createQueue(queueName);
-    }
+    // Ensure queue exists before sending. pg-boss requires queues to be created first.
+    // TODO: Align GH PgBossConsumer.ts expiry from 1800s to 14400s (tracked for GH session)
+    await boss.createQueue(queueName);
+
+    // Fire-and-forget: ensure at least 1 GH worker is awake
+    this.wakeWorkers();
 
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves

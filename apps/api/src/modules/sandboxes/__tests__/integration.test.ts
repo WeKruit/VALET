@@ -79,7 +79,7 @@ function makeMockProviderFactory() {
       startMachine: vi.fn().mockResolvedValue({ success: true, message: "started" }),
       stopMachine: vi.fn().mockResolvedValue({ success: true, message: "stopped" }),
       getMachineStatus: vi.fn().mockResolvedValue({ state: "running" }),
-      getAgentUrl: vi.fn().mockReturnValue("http://34.197.248.80:8000"),
+      getAgentUrl: vi.fn().mockReturnValue("http://34.197.248.80:8080"),
       pingAgent: vi.fn().mockResolvedValue(true),
     }),
     getByType: vi.fn(),
@@ -116,8 +116,6 @@ function makeMockDeepHealthChecker() {
       checks: [
         { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
         { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
-        { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
-        { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
       ],
       timestamp: Date.now(),
     }),
@@ -147,6 +145,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   lastStartedAt: null,
   lastStoppedAt: null,
   autoStopEnabled: false,
+  autoStopOwner: "none",
   idleMinutesBeforeStop: 60,
   machineType: "ec2",
   agentVersion: null,
@@ -155,6 +154,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   ghImageUpdatedAt: null,
   deployedCommitSha: null,
   healthCheckFailureCount: 0,
+  lastBecameIdleAt: null,
   createdAt: new Date("2026-02-10T00:00:00Z"),
   updatedAt: new Date("2026-02-14T00:00:00Z"),
 };
@@ -189,6 +189,7 @@ describe("SandboxService", () => {
       sandboxProviderFactory: providerFactory as unknown as SandboxProviderFactory,
       sandboxAgentClient: agentClient as unknown as SandboxAgentClient,
       deepHealthChecker: deepHealthChecker as unknown as DeepHealthChecker,
+      userSandboxRepo: { unassignBySandboxId: vi.fn().mockResolvedValue(0) } as never,
     });
   });
 
@@ -418,20 +419,6 @@ describe("SandboxService", () => {
             responseTimeMs: 0,
             details: { error: "No public IP configured" },
           },
-          {
-            name: "Deploy Server",
-            port: 8000,
-            status: "down",
-            responseTimeMs: 0,
-            details: { error: "No public IP configured" },
-          },
-          {
-            name: "noVNC",
-            port: 6080,
-            status: "down",
-            responseTimeMs: 0,
-            details: { error: "No public IP configured" },
-          },
         ],
         timestamp: Date.now(),
       });
@@ -470,8 +457,6 @@ describe("SandboxService", () => {
         checks: [
           { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
           { name: "GH Worker", port: 3101, status: "up", responseTimeMs: 38 },
-          { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
-          { name: "noVNC", port: 6080, status: "up", responseTimeMs: 12 },
         ],
         timestamp: ts,
       });
@@ -496,8 +481,6 @@ describe("SandboxService", () => {
         checks: [
           { name: "GH API", port: 3100, status: "up", responseTimeMs: 42 },
           { name: "GH Worker", port: 3101, status: "down", responseTimeMs: 0 },
-          { name: "Deploy Server", port: 8000, status: "up", responseTimeMs: 25 },
-          { name: "noVNC", port: 6080, status: "timeout", responseTimeMs: 8000 },
         ],
         timestamp: Date.now(),
       });

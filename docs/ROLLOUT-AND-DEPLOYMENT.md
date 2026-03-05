@@ -13,15 +13,14 @@ Operations reference for deploying VALET and GHOST-HANDS across all environments
 3. [CI Pipeline](#3-ci-pipeline)
 4. [Staging Deployment](#4-staging-deployment)
 5. [Production Deployment](#5-production-deployment)
-6. [EC2 VALET Worker Deployment](#6-ec2-worker-deployment)
-7. [GHOST-HANDS Docker Deployment (on VALET EC2)](#7-ghost-hands-docker-deployment-on-valet-ec2)
-8. [Manual Deployment](#8-manual-deployment)
-9. [Database Migrations](#9-database-migrations)
-10. [Rollback Procedures](#10-rollback-procedures)
-11. [Health Checks](#11-health-checks)
-12. [Secrets Management](#12-secrets-management)
-13. [Sandbox Lifecycle](#13-sandbox-lifecycle)
-14. [Known Gaps](#14-known-gaps)
+6. [GHOST-HANDS Docker Deployment (on EC2)](#6-ghost-hands-docker-deployment-on-ec2)
+7. [Manual Deployment](#7-manual-deployment)
+8. [Database Migrations](#8-database-migrations)
+9. [Rollback Procedures](#9-rollback-procedures)
+10. [Health Checks](#10-health-checks)
+11. [Secrets Management](#11-secrets-management)
+12. [Sandbox Lifecycle](#12-sandbox-lifecycle)
+13. [Known Gaps](#13-known-gaps)
 
 ---
 
@@ -29,15 +28,14 @@ Operations reference for deploying VALET and GHOST-HANDS across all environments
 
 The system consists of two codebases deployed to two different infrastructure platforms:
 
-| Component       | Codebase       | Platform     | Services                                                               |
-| --------------- | -------------- | ------------ | ---------------------------------------------------------------------- |
-| **VALET**       | `VALET/`       | Fly.io       | `web` (React SPA on nginx), `api` (Fastify), `worker` (job dispatcher) |
-| **GHOST-HANDS** | `GHOST-HANDS/` | EC2 (Docker) | `api` (Hono), `worker` (browser automation)                            |
+| Component       | Codebase       | Platform     | Services                                    |
+| --------------- | -------------- | ------------ | ------------------------------------------- |
+| **VALET**       | `VALET/`       | Fly.io       | `web` (React SPA on nginx), `api` (Fastify) |
+| **GHOST-HANDS** | `GHOST-HANDS/` | EC2 (Docker) | `api` (Hono), `worker` (browser automation) |
 
 **Deployment triggers:**
 
 - **Fly.io services** -- push to `staging` branch (selective deploy) or `main` branch (full deploy)
-- **EC2 workers** -- push to `staging`/`main` when worker-relevant paths change, or manual `workflow_dispatch`
 - **Sandbox provisioning/termination** -- manual `workflow_dispatch` via GitHub Actions
 
 ### Workflow files
@@ -48,17 +46,15 @@ The system consists of two codebases deployed to two different infrastructure pl
 | CD Staging        | `cd-staging.yml`        | Selective deploy to Fly.io staging                    |
 | CD Production     | `cd-prod.yml`           | Full deploy to Fly.io production                      |
 | Deploy (reusable) | `deploy.yml`            | Shared Fly.io deploy logic (called by staging + prod) |
-| EC2 Worker        | `cd-ec2.yml`            | Deploy worker tarball to EC2 sandbox fleet            |
-| Provision Sandbox | `provision-sandbox.yml` | Create new EC2 instance via Terraform                 |
 | Terminate Sandbox | `terminate-sandbox.yml` | Destroy EC2 instance via Terraform                    |
 | Secrets Sync      | `secrets-sync.yml`      | Push `.env` to all EC2 sandboxes                      |
 
 ### Branch-to-environment mapping
 
-| Branch    | Environment | Fly.io Apps                                          | EC2 Target           |
-| --------- | ----------- | ---------------------------------------------------- | -------------------- |
-| `staging` | staging     | `valet-api-stg`, `valet-worker-stg`, `valet-web-stg` | Staging sandboxes    |
-| `main`    | production  | `valet-api`, `valet-worker`, `valet-web`             | Production sandboxes |
+| Branch    | Environment | Fly.io Apps                      | EC2 Target           |
+| --------- | ----------- | -------------------------------- | -------------------- |
+| `staging` | staging     | `valet-api-stg`, `valet-web-stg` | Staging sandboxes    |
+| `main`    | production  | `valet-api`, `valet-web`         | Production sandboxes |
 
 ### Environment URLs
 
@@ -73,13 +69,12 @@ The system consists of two codebases deployed to two different infrastructure pl
 
 ### VALET on Fly.io
 
-Three independent Fly.io apps, all in the `iad` (us-east-1) region:
+Two independent Fly.io apps, all in the `iad` (us-east-1) region:
 
-| App                  | Fly Config        | Dockerfile               | Internal Port | VM Spec          |
-| -------------------- | ----------------- | ------------------------ | ------------- | ---------------- |
-| `valet-api[-stg]`    | `fly/api.toml`    | `apps/api/Dockerfile`    | 3000          | shared-1x, 512MB |
-| `valet-worker[-stg]` | `fly/worker.toml` | `apps/worker/Dockerfile` | N/A (process) | shared-1x, 1GB   |
-| `valet-web[-stg]`    | `fly/web.toml`    | `apps/web/Dockerfile`    | 8080          | shared-1x, 256MB |
+| App               | Fly Config     | Dockerfile            | Internal Port | VM Spec          |
+| ----------------- | -------------- | --------------------- | ------------- | ---------------- |
+| `valet-api[-stg]` | `fly/api.toml` | `apps/api/Dockerfile` | 3000          | shared-1x, 512MB |
+| `valet-web[-stg]` | `fly/web.toml` | `apps/web/Dockerfile` | 8080          | shared-1x, 256MB |
 
 **API config** (from `fly/api.toml`):
 
@@ -117,27 +112,6 @@ kill_timeout = 30
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
-```
-
-**Worker config** (from `fly/worker.toml`):
-
-```toml
-primary_region = "iad"
-kill_timeout = 60
-
-[build]
-  dockerfile = "../apps/worker/Dockerfile"
-  context = ".."
-
-[processes]
-  worker = "node apps/worker/dist/main.js"
-
-# No auto-stop -- workers must stay running to poll for tasks
-[[vm]]
-  memory = "1gb"
-  cpu_kind = "shared"
-  cpus = 1
-  processes = ["worker"]
 ```
 
 **Web config** (from `fly/web.toml`):
@@ -185,14 +159,6 @@ runtime: node:20-slim + tini, non-root 'valet' user, port 3000
 CMD: node apps/api/dist/server.js
 ```
 
-**Worker** (`apps/worker/Dockerfile`) -- multi-stage Node.js 20 build with browser deps:
-
-```
-builder: pnpm install, turbo build --filter=@valet/worker
-runtime: node:20-slim + tini + Chromium system libraries, non-root 'valet' user
-CMD: node apps/worker/dist/main.js
-```
-
 **Web** (`apps/web/Dockerfile`) -- multi-stage build to nginx:
 
 ```
@@ -210,7 +176,6 @@ Each EC2 sandbox instance runs:
 | GH API         | Docker (bun)      | 3100 (localhost only) | `docker-compose.prod.yml`                            |
 | GH Worker      | Docker (bun)      | 3101 (localhost only) | `docker-compose.prod.yml` or standalone `docker run` |
 | Health Server  | Node.js (systemd) | 8000                  | `infra/scripts/health-server.js`                     |
-| VALET Worker   | Node.js (systemd) | N/A                   | `/opt/valet/app/apps/worker/dist/main.js`            |
 | Xvfb           | systemd           | N/A                   | Virtual display `:99` for headed browser             |
 | x11vnc + noVNC | systemd           | 6080                  | Remote desktop access                                |
 | AdsPower       | systemd           | 50325                 | Anti-detect browser engine                           |
@@ -328,11 +293,10 @@ env:
 
 Staging uses `dorny/paths-filter` to selectively deploy only affected services:
 
-| Deploy Target | Triggers on changes to                                                                                                             |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **API**       | `apps/api/`, `packages/shared/`, `packages/contracts/`, `packages/db/`, `packages/llm/`, `fly/`, `pnpm-lock.yaml`, `turbo.json`    |
-| **Worker**    | `apps/worker/`, `packages/shared/`, `packages/contracts/`, `packages/db/`, `packages/llm/`, `fly/`, `pnpm-lock.yaml`, `turbo.json` |
-| **Web**       | `apps/web/`, `packages/shared/`, `packages/contracts/`, `packages/ui/`, `fly/`, `pnpm-lock.yaml`, `turbo.json`                     |
+| Deploy Target | Triggers on changes to                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **API**       | `apps/api/`, `packages/shared/`, `packages/contracts/`, `packages/db/`, `packages/llm/`, `fly/`, `pnpm-lock.yaml`, `turbo.json` |
+| **Web**       | `apps/web/`, `packages/shared/`, `packages/contracts/`, `packages/ui/`, `fly/`, `pnpm-lock.yaml`, `turbo.json`                  |
 
 If no deployable changes are detected, the deploy job is skipped entirely. A **Deploy Targets** summary table is written to the GitHub Actions step summary.
 
@@ -345,12 +309,10 @@ uses: ./.github/workflows/deploy.yml
 with:
   environment: staging
   api-app: valet-api-stg
-  worker-app: valet-worker-stg
   web-app: valet-web-stg
   api-url: https://valet-api-stg.fly.dev
   google-client-id: "108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com"
   deploy-api: ${{ needs.detect-changes.outputs.deploy-api == 'true' }}
-  deploy-worker: ${{ needs.detect-changes.outputs.deploy-worker == 'true' }}
   deploy-web: ${{ needs.detect-changes.outputs.deploy-web == 'true' }}
 secrets:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -365,9 +327,6 @@ validate (pnpm install --frozen-lockfile, typecheck, build)
   |     flyctl deploy --config fly/api.toml --app valet-api-stg --remote-only --wait-timeout 300
   |     Post-deploy health check: GET /api/v1/health (5 retries, 10s apart)
   |
-  +-- deploy-worker (if enabled, timeout: 15min)
-  |     flyctl deploy --config fly/worker.toml --app valet-worker-stg --remote-only --wait-timeout 300
-  |
   +-- deploy-web (if enabled, timeout: 15min)
         WS_URL derived from API URL: sed 's|^https://|wss://|'/api/v1/ws
         flyctl deploy --config fly/web.toml --app valet-web-stg --remote-only --wait-timeout 300
@@ -376,7 +335,7 @@ validate (pnpm install --frozen-lockfile, typecheck, build)
           --build-arg VITE_GOOGLE_CLIENT_ID=108153440133-...
 ```
 
-All three deploy jobs run **in parallel** after the validate step passes. DB migrations run automatically during the API deploy via `release_command` (see section 8).
+Both deploy jobs run **in parallel** after the validate step passes. DB migrations run automatically during the API deploy via `release_command` (see section 8).
 
 ---
 
@@ -401,11 +360,9 @@ uses: ./.github/workflows/deploy.yml
 with:
   environment: production
   api-app: valet-api
-  worker-app: valet-worker
   web-app: valet-web
   api-url: https://valet-api.fly.dev
   google-client-id: "108153440133-8oorgsj5m7u67fg68bulpr1akrs6ttet.apps.googleusercontent.com"
-  # deploy-api, deploy-worker, deploy-web all default to true
 secrets:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 ```
@@ -414,157 +371,9 @@ Uses the same reusable `deploy.yml` pipeline described in section 4.
 
 ---
 
-## 6. EC2 Worker Deployment
+## 6. GHOST-HANDS Docker Deployment (on EC2)
 
-**Workflow:** `.github/workflows/cd-ec2.yml`
-**Trigger:** Push to `staging`/`main` when worker-related paths change, or manual `workflow_dispatch`
-**Concurrency:** Fleet-level (`deploy-ec2-fleet-<env>`) + per-instance (`deploy-ec2-instance-<ip>`)
-
-### Trigger paths
-
-```yaml
-paths:
-  - "apps/worker/**"
-  - "packages/shared/**"
-  - "packages/contracts/**"
-  - "packages/db/**"
-  - "packages/llm/**"
-  - "pnpm-lock.yaml"
-```
-
-### Manual dispatch inputs
-
-| Input         | Description                                                  |
-| ------------- | ------------------------------------------------------------ |
-| `target_ips`  | Comma-separated IPs (empty = deploy to all active sandboxes) |
-| `environment` | `staging` or `production`                                    |
-
-### Fleet discovery (3-tier fallback)
-
-```
-1. Manual target IPs  (from workflow_dispatch input)
-       |
-       v (if empty)
-2. API fleet discovery (GET /api/v1/admin/sandboxes?status=active&environment=<env>)
-       |
-       v (if API fails)
-3. SANDBOX_IPS secret  (JSON array in GitHub environment secret)
-       |
-       v (if empty)
-4. Skip deployment     (warning, no targets)
-```
-
-### Build phase
-
-```bash
-# Build worker and all dependencies
-pnpm --filter @valet/shared build
-pnpm --filter @valet/contracts build
-pnpm --filter @valet/db build
-pnpm --filter @valet/llm build
-pnpm --filter @valet/worker build
-
-# Create deployment tarball
-tar -czf /tmp/valet-worker.tar.gz \
-  apps/worker/dist/ \
-  apps/worker/package.json \
-  packages/shared/dist/ \
-  packages/shared/package.json \
-  packages/db/dist/ \
-  packages/db/package.json \
-  packages/contracts/dist/ \
-  packages/contracts/package.json \
-  packages/llm/dist/ \
-  packages/llm/package.json \
-  package.json \
-  pnpm-workspace.yaml \
-  pnpm-lock.yaml
-```
-
-The tarball is uploaded as a GitHub Actions artifact with 3-day retention.
-
-### Per-instance deploy (matrix strategy)
-
-Deploys in parallel to up to 5 instances (`max-parallel: 5`, `fail-fast: false`). For each sandbox:
-
-**Step 1: Mark deploying**
-
-```bash
-curl -sf -X PATCH "$API_URL/api/v1/admin/sandboxes/$SANDBOX_ID" \
-  -H "Authorization: Bearer $VALET_API_TOKEN" \
-  -d '{"status": "deploying"}'
-```
-
-**Step 2: Upload and deploy**
-
-```bash
-# SCP tarball to instance
-scp -i ~/.ssh/ec2_key /tmp/valet-worker.tar.gz ubuntu@$IP:/tmp/
-
-# On instance:
-# 1. Backup current deployment
-sudo cp -a /opt/valet/app /opt/valet/app-backup
-
-# 2. Extract tarball
-sudo tar -xzf /tmp/valet-worker.tar.gz -C /opt/valet/app
-
-# 3. Install production dependencies
-cd /opt/valet/app && pnpm install --prod --frozen-lockfile
-
-# 4. Restart service
-sudo systemctl daemon-reload
-sudo systemctl restart valet-worker
-```
-
-**Step 3: Health check** (3 attempts with exponential backoff: 10s, 20s, 40s)
-
-- Check `systemctl is-active valet-worker` equals "active"
-- Check restart count < 3 (crash loop detection)
-
-**Step 4: Update status**
-
-- On success: `PATCH {"status": "active"}`
-- On failure: `PATCH {"status": "unhealthy"}`
-
-**Step 5: Automatic rollback on failure**
-
-```bash
-# Restore from backup
-sudo rm -rf /opt/valet/app
-sudo mv /opt/valet/app-backup /opt/valet/app
-sudo systemctl restart valet-worker
-```
-
-### systemd service unit
-
-Created by `deploy-worker.sh` on the instance at `/etc/systemd/system/valet-worker.service`:
-
-```ini
-[Unit]
-Description=Valet Browser Worker
-After=network.target xvfb.service
-Requires=xvfb.service
-
-[Service]
-Type=simple
-User=valet
-WorkingDirectory=/opt/valet/app
-EnvironmentFile=/opt/valet/.env
-ExecStart=/usr/bin/node apps/worker/dist/main.js
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-```
-
----
-
-## 7. GHOST-HANDS Docker Deployment (on VALET EC2)
-
-GHOST-HANDS runs as Docker containers on the same EC2 instances managed by VALET. The GH deployment pipeline is separate from the VALET worker tarball deployment.
+GHOST-HANDS runs as Docker containers on EC2 instances. The GH deployment pipeline is managed via ATM (Automation & Tooling Manager).
 
 ### End-to-end flow
 
@@ -752,7 +561,7 @@ VALET can start/stop individual GH worker containers on each EC2 instance for sa
 
 ```bash
 # SSH into instance
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<instance-ip>
 
 # Full deploy from GH repo's deploy.sh
 cd /opt/ghosthands
@@ -788,7 +597,7 @@ bash /opt/valet/scripts/gh-deploy.sh deploy <image-tag>
 
 ---
 
-## 8. Manual Deployment
+## 7. Manual Deployment
 
 ### VALET on Fly.io (without CI/CD)
 
@@ -799,7 +608,6 @@ fly auth login
 
 # ── Staging ──
 fly deploy --config fly/api.toml --app valet-api-stg --remote-only
-fly deploy --config fly/worker.toml --app valet-worker-stg --remote-only
 fly deploy --config fly/web.toml --app valet-web-stg --remote-only \
   --build-arg VITE_API_URL=https://valet-api-stg.fly.dev \
   --build-arg VITE_WS_URL=wss://valet-api-stg.fly.dev/api/v1/ws \
@@ -807,7 +615,6 @@ fly deploy --config fly/web.toml --app valet-web-stg --remote-only \
 
 # ── Production ──
 fly deploy --config fly/api.toml --app valet-api --remote-only
-fly deploy --config fly/worker.toml --app valet-worker --remote-only
 fly deploy --config fly/web.toml --app valet-web --remote-only \
   --build-arg VITE_API_URL=https://valet-api.fly.dev \
   --build-arg VITE_WS_URL=wss://valet-api.fly.dev/api/v1/ws \
@@ -816,29 +623,11 @@ fly deploy --config fly/web.toml --app valet-web --remote-only \
 
 > **Note:** `flyctl` resolves Dockerfile paths relative to the toml file directory. The toml files reference `../apps/<service>/Dockerfile` with `context = ".."`, so `fly deploy` must be run from the VALET repo root.
 
-### VALET Worker on EC2 (interactive script)
-
-```bash
-# Full deploy with build
-./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/valet-worker.pem
-
-# Skip local build (reuse existing dist/ artifacts)
-./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/valet-worker.pem --skip-build
-
-# Auto-rollback on health check failure (no interactive prompt)
-./infra/scripts/deploy-worker.sh --host 54.123.45.67 --key ~/.ssh/valet-worker.pem --rollback-on-failure
-
-# Positional arg shorthand
-./infra/scripts/deploy-worker.sh 54.123.45.67 ~/.ssh/valet-worker.pem
-```
-
-The script performs: SSH test, local build, tarball creation, SCP upload, backup, extract, `pnpm install --prod`, systemd restart, health check (3 retries with exponential backoff), and interactive rollback on failure.
-
 ### GHOST-HANDS on EC2
 
 ```bash
 # SSH into instance
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<instance-ip>
 
 # Deploy a specific Docker image tag
 cd /opt/ghosthands
@@ -881,18 +670,6 @@ This responds immediately with `{"success": true, "message": "Deploy of v1.2.3 i
 # Via gh CLI
 gh workflow run cd-prod.yml
 
-# EC2 worker to specific instances
-gh workflow run cd-ec2.yml \
-  -f environment=staging \
-  -f target_ips="34.197.248.80,35.123.45.67"
-
-# Provision a new sandbox
-gh workflow run provision-sandbox.yml \
-  -f environment=staging \
-  -f instance_type=t3.medium \
-  -f browser_engine=chromium \
-  -f capacity=5
-
 # Terminate a sandbox
 gh workflow run terminate-sandbox.yml \
   -f sandbox_id=<uuid> \
@@ -906,7 +683,7 @@ gh workflow run secrets-sync.yml \
 
 ---
 
-## 9. Database Migrations
+## 8. Database Migrations
 
 ### How migrations run
 
@@ -948,7 +725,7 @@ git commit -m "db: add migration for ..."
 
 - `DATABASE_DIRECT_URL` (session pooler, port 5432) **must** be set as a Fly secret on the API app. `migrate.js` prefers it over `DATABASE_URL` (transaction pooler, port 6543).
 - The `_journal.json` file **must** be tracked in git -- the Docker image needs it at runtime.
-- **Staging and production share the same Supabase database.** A migration applied to one environment immediately affects the other.
+- **Staging and production use separate Supabase projects.** See [Database Environments](#database-environments) below for details. Migrations must be applied to both databases.
 
 ### Running migrations manually
 
@@ -960,9 +737,24 @@ pnpm db:migrate
 fly deploy --config fly/api.toml --app valet-api-stg --remote-only
 ```
 
+### Database Environments
+
+As of 2026-02-24, staging and production use **separate Supabase projects**:
+
+| Environment    | Supabase Project          | Ref                    | Fly Apps Using It |
+| -------------- | ------------------------- | ---------------------- | ----------------- |
+| **Production** | `wekruit-prod` (Pro plan) | `ugidjvgzyeiiktnqstro` | `valet-api`       |
+| **Staging**    | Original project          | `unistzvhgvgjyzotwzxr` | `valet-api-stg`   |
+
+**Important:** Migrations must be applied to **both** databases. The Fly.io `release_command` handles this automatically per environment (each app has its own `DATABASE_DIRECT_URL` secret pointing to the correct project).
+
+**EC2 GH workers** currently connect to the staging database only. Production GH worker connectivity is planned for a future milestone.
+
+**S3 Storage** is also per-project. Each Supabase project has its own S3 endpoint and credentials. Buckets (`resumes`, `screenshots`, `artifacts`) must exist in both projects.
+
 ---
 
-## 10. Rollback Procedures
+## 9. Rollback Procedures
 
 ### Fly.io rollback (VALET services)
 
@@ -979,7 +771,7 @@ fly releases rollback --app valet-api-stg
 fly releases rollback v42 --app valet-api-stg
 ```
 
-Repeat for each affected app (`valet-worker-stg`, `valet-web-stg`). For production, drop the `-stg` suffix.
+Repeat for each affected app (`valet-web-stg`). For production, drop the `-stg` suffix.
 
 **Option 2: Redeploy from a known-good commit**
 
@@ -995,35 +787,6 @@ fly deploy --config fly/api.toml --app valet-api --remote-only
 
 **Migration failure** -- if the `release_command` fails, Fly automatically aborts the deploy. The old version keeps running. No manual action is needed.
 
-### EC2 VALET Worker rollback
-
-**Automatic** (built into `cd-ec2.yml`): if the health check fails after a successful deploy, the workflow automatically restores from backup:
-
-```bash
-sudo rm -rf /opt/valet/app
-sudo mv /opt/valet/app-backup /opt/valet/app
-sudo systemctl restart valet-worker
-```
-
-**Manual rollback:**
-
-```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
-
-# Check backup exists
-ls /opt/valet/app-backup/apps/
-
-# Restore
-sudo systemctl stop valet-worker
-sudo rm -rf /opt/valet/app
-sudo mv /opt/valet/app-backup /opt/valet/app
-sudo systemctl start valet-worker
-
-# Verify
-sudo systemctl is-active valet-worker
-sudo journalctl -u valet-worker -n 50 --no-pager
-```
-
 ### GHOST-HANDS Docker rollback
 
 **Automatic** (built into `scripts/deploy.sh`): if the health check fails after deploy, the script reverts `GH_IMAGE_TAG` in `.env`, pulls the previous image, and restarts compose services.
@@ -1031,7 +794,7 @@ sudo journalctl -u valet-worker -n 50 --no-pager
 **Manual rollback:**
 
 ```bash
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<instance-ip>
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<instance-ip>
 cd /opt/ghosthands
 ./scripts/deploy.sh rollback
 ```
@@ -1055,17 +818,16 @@ psql "$DATABASE_DIRECT_URL" -c "-- your rollback SQL here"
 
 ---
 
-## 11. Health Checks
+## 10. Health Checks
 
 ### Fly.io health checks (automatic, continuous)
 
 Configured in the Fly.io toml files, executed by Fly.io infrastructure:
 
-| Service | Endpoint                      | Interval | Timeout | Grace Period |
-| ------- | ----------------------------- | -------- | ------- | ------------ |
-| API     | `GET /api/v1/health`          | 15s      | 5s      | 10s          |
-| Web     | `GET /health`                 | 30s      | 5s      | 5s           |
-| Worker  | None (process group, no HTTP) | --       | --      | --           |
+| Service | Endpoint             | Interval | Timeout | Grace Period |
+| ------- | -------------------- | -------- | ------- | ------------ |
+| API     | `GET /api/v1/health` | 15s      | 5s      | 10s          |
+| Web     | `GET /health`        | 30s      | 5s      | 5s           |
 
 ### Post-deploy health check (API only)
 
@@ -1081,13 +843,6 @@ for i in 1 2 3 4 5; do
 done
 exit 1
 ```
-
-### EC2 health check -- CI/CD (cd-ec2.yml)
-
-After deploying to each sandbox, 3 retries with exponential backoff (10s, 20s, 40s):
-
-- `systemctl is-active valet-worker` must return "active"
-- Restart count (`NRestarts`) must be < 3 (crash loop detection)
 
 ### EC2 health check -- comprehensive script
 
@@ -1152,7 +907,7 @@ curl -sf http://localhost:3100/health
 
 ---
 
-## 12. Secrets Management
+## 11. Secrets Management
 
 ### Where secrets live
 
@@ -1166,16 +921,16 @@ curl -sf http://localhost:3100/health
 
 ### GitHub secrets reference
 
-| Secret                  | Scope       | Used by                                                        |
-| ----------------------- | ----------- | -------------------------------------------------------------- |
-| `FLY_API_TOKEN`         | Repository  | `cd-staging.yml`, `cd-prod.yml` (Fly.io deploys)               |
-| `VALET_API_TOKEN`       | Repository  | `cd-ec2.yml`, `provision-sandbox.yml`, `terminate-sandbox.yml` |
-| `SANDBOX_SSH_KEY`       | Repository  | `cd-ec2.yml`, `secrets-sync.yml`, `provision-sandbox.yml`      |
-| `AWS_ACCESS_KEY_ID`     | Repository  | `provision-sandbox.yml`, `terminate-sandbox.yml`               |
-| `AWS_SECRET_ACCESS_KEY` | Repository  | `provision-sandbox.yml`, `terminate-sandbox.yml`               |
-| `TURBO_TOKEN`           | Repository  | CI/CD (Turborepo remote cache)                                 |
-| `SANDBOX_IPS`           | Environment | `secrets-sync.yml` (JSON array of IPs, fallback)               |
-| `SANDBOX_WORKER_ENV`    | Environment | `secrets-sync.yml` (full `.env` file contents)                 |
+| Secret                  | Scope       | Used by                                          |
+| ----------------------- | ----------- | ------------------------------------------------ |
+| `FLY_API_TOKEN`         | Repository  | `cd-staging.yml`, `cd-prod.yml` (Fly.io deploys) |
+| `VALET_API_TOKEN`       | Repository  | `terminate-sandbox.yml`                          |
+| `SANDBOX_SSH_KEY`       | Repository  | `secrets-sync.yml`, `terminate-sandbox.yml`      |
+| `AWS_ACCESS_KEY_ID`     | Repository  | `terminate-sandbox.yml`                          |
+| `AWS_SECRET_ACCESS_KEY` | Repository  | `terminate-sandbox.yml`                          |
+| `TURBO_TOKEN`           | Repository  | CI/CD (Turborepo remote cache)                   |
+| `SANDBOX_IPS`           | Environment | `secrets-sync.yml` (JSON array of IPs, fallback) |
+| `SANDBOX_WORKER_ENV`    | Environment | `secrets-sync.yml` (full `.env` file contents)   |
 
 ### Setting Fly.io secrets
 
@@ -1197,7 +952,7 @@ fly secrets list -a valet-api-stg
 ./infra/scripts/set-secrets.sh <ec2-ip> [ssh-key-path]
 ```
 
-Prompts interactively for each secret, shows masked current values, writes to `/opt/valet/.env` with `600` permissions, and restarts the worker. Required secrets: `HATCHET_CLIENT_TOKEN`, `DATABASE_URL`, `REDIS_URL`. Optional: `ADSPOWER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `SENTRY_DSN`, `LOG_LEVEL`.
+Prompts interactively for each secret, shows masked current values, writes to `/opt/valet/.env` with `600` permissions, and restarts the worker. Required secrets: `DATABASE_URL`, `REDIS_URL`. Optional: `ADSPOWER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `SENTRY_DSN`, `LOG_LEVEL`.
 
 ### EC2 secrets -- bulk sync workflow
 
@@ -1226,30 +981,18 @@ gh workflow run secrets-sync.yml \
 
 ---
 
-## 13. Sandbox Lifecycle
+## 12. Sandbox Lifecycle
 
 ### Provisioning a new sandbox
 
-**Workflow:** `.github/workflows/provision-sandbox.yml` (manual dispatch only)
+Sandbox provisioning is now managed via the **ASG (Auto Scaling Group)** `ghosthands-worker-asg` and **ATM** (Automation & Tooling Manager). New instances are launched from the golden AMI and self-register with the fleet.
 
-| Input            | Options                          | Default |
-| ---------------- | -------------------------------- | ------- |
-| `environment`    | dev, staging, prod               | --      |
-| `instance_type`  | t3.medium, t3.large, t3.xlarge   | --      |
-| `browser_engine` | chromium, adspower               | --      |
-| `capacity`       | Number (max concurrent sessions) | 5       |
+**Manual provisioning (if needed):**
 
-**Steps:**
-
-1. **Terraform apply** -- creates EC2 instance in `us-east-1` with specified type
-2. **Wait for SSH** (5-minute timeout, 15s polling)
-3. **Wait for cloud-init** completion
-4. **Install browser engine:**
-   - Chromium: `sudo apt-get install -y chromium-browser`
-   - AdsPower: uploads and runs `infra/scripts/install-adspower.sh`
-5. **Build and deploy** VALET worker (same tarball approach as `cd-ec2.yml`)
-6. **Register sandbox** via `POST /api/v1/admin/sandboxes` with metadata (name, instance_id, public_ip, instance_type, browser_engine, capacity, environment)
-7. **Health check** (3 retries)
+1. Scale the ASG: `aws autoscaling set-desired-capacity --auto-scaling-group-name ghosthands-worker-asg --desired-capacity <N>`
+2. New instances boot from golden AMI, start GhostHands Docker containers
+3. ATM discovers new instances via EC2 ASG tag within 60s
+4. Register sandbox via `POST /api/v1/admin/sandboxes` with metadata
 
 **Post-provisioning manual steps:**
 
@@ -1313,7 +1056,7 @@ Additional per-instance costs: 40GB gp3 EBS ($3.20/mo), Elastic IP ($3.65/mo), ~
 
 ---
 
-## 14. Known Gaps
+## 13. Known Gaps
 
 ### Missing infrastructure
 
@@ -1328,12 +1071,10 @@ Additional per-instance costs: 40GB gp3 EBS ($3.20/mo), Elastic IP ($3.65/mo), ~
 
 ### Architectural limitations
 
-| Limitation                                  | Detail                                                                                                                              |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Shared staging/production database**      | Same Supabase instance. A migration to staging immediately affects production. Need separate DB per environment for true isolation. |
-| **No automated DB rollback**                | Failed migrations abort the deploy, but there is no reverse-migration tooling. Must write and deploy corrective SQL manually.       |
-| **Stale Hatchet references in EC2 scripts** | `set-secrets.sh` and `deploy-worker.sh` still reference `HATCHET_CLIENT_TOKEN` in their `.env` templates. Should be updated.        |
-| **No graceful drain for Fly.io worker**     | The Fly.io worker gets `SIGTERM` with 60s timeout, but no drain endpoint or in-progress job protection.                             |
-| **Single SSH key across all sandboxes**     | All instances share `SANDBOX_SSH_KEY`. Key rotation requires updating the secret and reprovisioning SSH access.                     |
-| **EC2 fleet discovery requires API**        | If the VALET API is down, `cd-ec2.yml` falls back to `SANDBOX_IPS` secret which must be manually maintained.                        |
-| **No SPA versioning**                       | Web app rollback means redeploying a previous commit. No built-in version tracking for the static SPA bundle.                       |
+| Limitation                                | Detail                                                                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Separate staging/production databases** | Split completed 2026-02-24. Staging: `unistzvhgvgjyzotwzxr`, Production: `ugidjvgzyeiiktnqstro`. Migrations must be applied to both. |
+| **No automated DB rollback**              | Failed migrations abort the deploy, but there is no reverse-migration tooling. Must write and deploy corrective SQL manually.        |
+| **Single SSH key across all sandboxes**   | All instances share `SANDBOX_SSH_KEY`. Key rotation requires updating the secret and reprovisioning SSH access.                      |
+| **EC2 fleet discovery requires ATM**      | If ATM is down, VALET falls back to `gh_worker_registry` DB table which may have stale IPs.                                          |
+| **No SPA versioning**                     | Web app rollback means redeploying a previous commit. No built-in version tracking for the static SPA bundle.                        |

@@ -462,6 +462,21 @@ export class ResumeService {
         type: "resume_parsed",
         resumeId,
         parseConfidence: parsedData.parseConfidence,
+        parsedData: {
+          fullName: parsedData.fullName ?? null,
+          email: parsedData.email ?? null,
+          phone: parsedData.phone ?? null,
+          location: parsedData.location ?? null,
+          summary: parsedData.summary ?? null,
+          workHistory: parsedData.workHistory ?? [],
+          education: parsedData.education ?? [],
+          skills: parsedData.skills ?? [],
+          totalYearsExperience: parsedData.totalYearsExperience ?? null,
+          workAuthorization: parsedData.workAuthorization ?? null,
+          websites: parsedData.websites ?? [],
+          certifications: parsedData.certifications ?? [],
+          projects: parsedData.projects ?? [],
+        },
       });
     } catch (err) {
       this.logger.error({ err, resumeId }, "Failed to save parse results");

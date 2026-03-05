@@ -7,11 +7,12 @@ interface User {
   email: string;
   name: string;
   avatarUrl?: string | null;
-  role?: "user" | "developer" | "admin" | "superadmin";
+  role?: "waitlist" | "beta" | "user" | "developer" | "admin" | "superadmin";
   subscriptionTier?: "free" | "starter" | "pro" | "enterprise";
   onboardingComplete?: boolean;
   copilotAppsCompleted?: number;
   autopilotUnlocked?: boolean;
+  creditBalance?: number;
 }
 
 interface AuthStore {
@@ -24,6 +25,13 @@ interface AuthStore {
 
 function clearLocalAuthState() {
   clearAccessToken();
+  // Clear user-scoped onboarding keys (keyed by userId, so clean all matching)
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key?.startsWith("valet:onboarding:")) {
+      localStorage.removeItem(key);
+    }
+  }
   localStorage.removeItem("wk-auth");
   window.location.href = "/login";
 }

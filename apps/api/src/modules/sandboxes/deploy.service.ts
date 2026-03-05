@@ -5,7 +5,7 @@ import type { NotificationService } from "../notifications/notification.service.
 import type { UserRepository } from "../users/user.repository.js";
 import type { DeployStatus, DeploySandboxStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
-import type { SandboxAgentClient } from "./agent/sandbox-agent.client.js";
+import { SANDBOX_AGENT_PORT, type SandboxAgentClient } from "./agent/sandbox-agent.client.js";
 
 const DEPLOY_PREFIX = "deploy:";
 const DEPLOY_LIST_KEY = "deploys:recent";
@@ -299,7 +299,7 @@ export class DeployService {
 
   private async getActiveTaskCount(publicIp: string): Promise<number> {
     try {
-      const resp = await fetch(`http://${publicIp}:8000/health`, {
+      const resp = await fetch(`http://${publicIp}:${SANDBOX_AGENT_PORT}/health`, {
         signal: AbortSignal.timeout(10_000),
       });
       if (!resp.ok) return 0;
@@ -324,7 +324,7 @@ export class DeployService {
     publicIp: string,
     imageTag: string,
   ): Promise<{ success: boolean; message: string }> {
-    const agentUrl = `http://${publicIp}:8000`;
+    const agentUrl = `http://${publicIp}:${SANDBOX_AGENT_PORT}`;
     const maxRetries = 3;
     const baseDelayMs = 10_000; // 10 seconds
 

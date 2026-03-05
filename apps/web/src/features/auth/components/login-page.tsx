@@ -20,10 +20,22 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
+const REFERRAL_STORAGE_KEY = "valet:referral-code";
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setUser } = useAuth();
+
+  const claimReferral = api.referrals.claim.useMutation();
+
+  // Capture referral code from URL and persist to localStorage
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) {
+      localStorage.setItem(REFERRAL_STORAGE_KEY, refCode);
+    }
+  }, [searchParams]);
 
   function handleAuthSuccess(data: {
     accessToken: string;
@@ -42,13 +54,27 @@ export function LoginPage() {
       email: data.user.email,
       name: data.user.name,
       avatarUrl: data.user.avatarUrl ?? undefined,
-      role: (data.user.role as "user" | "developer" | "admin" | "superadmin") ?? "user",
+      role:
+        (data.user.role as "waitlist" | "beta" | "user" | "developer" | "admin" | "superadmin") ??
+        "user",
       subscriptionTier:
         (data.user.subscriptionTier as "free" | "starter" | "pro" | "enterprise") ?? undefined,
       onboardingComplete: false,
       copilotAppsCompleted: 0,
       autopilotUnlocked: false,
     });
+
+    // Claim referral code if one was captured (fire-and-forget)
+    if (import.meta.env.VITE_FEATURE_REFERRALS === "true") {
+      const storedRef = localStorage.getItem(REFERRAL_STORAGE_KEY);
+      if (storedRef) {
+        claimReferral.mutate(
+          { body: { referralCode: storedRef } },
+          { onSuccess: () => localStorage.removeItem(REFERRAL_STORAGE_KEY) },
+        );
+      }
+    }
+
     navigate("/onboarding");
   }
 

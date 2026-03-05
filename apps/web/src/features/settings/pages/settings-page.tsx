@@ -8,11 +8,13 @@ import { BillingSettings } from "../../billing/components/billing-settings";
 import { JobPreferencesSettings } from "../components/job-preferences-settings";
 import { NotificationSettings } from "../components/notification-settings";
 import { SessionSettings } from "../components/session-settings";
+import { CredentialSettings } from "../components/credential-settings";
 
 const VALID_TABS = [
   "resumes",
   "profile",
   "answers",
+  "credentials",
   "automation",
   "job-preferences",
   "notifications",
@@ -56,6 +58,9 @@ export function SettingsPage() {
           <TabsTrigger value="answers" className="whitespace-nowrap">
             Q&A Bank
           </TabsTrigger>
+          <TabsTrigger value="credentials" className="whitespace-nowrap">
+            Credentials
+          </TabsTrigger>
           <TabsTrigger value="automation" className="whitespace-nowrap">
             Automation
           </TabsTrigger>
@@ -83,6 +88,10 @@ export function SettingsPage() {
 
         <TabsContent value="answers" aria-label="Q&A Bank settings panel">
           <QaBankSettings />
+        </TabsContent>
+
+        <TabsContent value="credentials" aria-label="Credentials settings panel">
+          <CredentialSettings />
         </TabsContent>
 
         <TabsContent value="automation" aria-label="Automation settings panel">

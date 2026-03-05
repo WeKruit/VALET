@@ -9,7 +9,7 @@ import { Play, Square, Loader2 } from "lucide-react";
 import type { Ec2Status } from "../types";
 
 const statusConfig: Record<
-  Ec2Status,
+  Ec2Status | "standby",
   {
     label: string;
     variant: "success" | "warning" | "error" | "default";
@@ -47,10 +47,16 @@ const statusConfig: Record<
     Icon: Square,
     tooltip: "Instance has been terminated",
   },
+  standby: {
+    label: "Standby",
+    variant: "default",
+    Icon: Loader2,
+    tooltip: "Instance is in ASG standby (idle, will stop soon)",
+  },
 };
 
 interface Ec2StatusBadgeProps {
-  status: Ec2Status | null | undefined;
+  status: Ec2Status | "standby" | string | null | undefined;
   className?: string;
 }
 
@@ -63,7 +69,7 @@ export function Ec2StatusBadge({ status, className }: Ec2StatusBadgeProps) {
     );
   }
 
-  const config = statusConfig[status] ?? {
+  const config = statusConfig[status as Ec2Status | "standby"] ?? {
     label: status,
     variant: "default" as const,
     Icon: Square,
@@ -78,9 +84,7 @@ export function Ec2StatusBadge({ status, className }: Ec2StatusBadgeProps) {
         <TooltipTrigger asChild>
           <div className="inline-flex">
             <Badge variant={config.variant} className={`gap-1 ${className ?? ""}`}>
-              <Icon
-                className={`h-3 w-3 ${isTransitional ? "animate-spin" : ""}`}
-              />
+              <Icon className={`h-3 w-3 ${isTransitional ? "animate-spin" : ""}`} />
               {config.label}
             </Badge>
           </div>

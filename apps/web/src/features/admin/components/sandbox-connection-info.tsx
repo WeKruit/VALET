@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@valet/ui/components/tooltip";
-import { Terminal, Monitor, HeartPulse, Copy, Check, ExternalLink } from "lucide-react";
+import { Terminal, HeartPulse, Copy, Check, ExternalLink } from "lucide-react";
 
 interface SandboxConnectionInfoProps {
   publicIp: string | null | undefined;
@@ -27,12 +27,7 @@ function CopyButton({ text }: { text: string }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            onClick={handleCopy}
-          >
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCopy}>
             {copied ? (
               <Check className="h-3.5 w-3.5 text-[var(--wk-status-success)]" />
             ) : (
@@ -48,20 +43,14 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function SandboxConnectionInfo({
-  publicIp,
-  sshKeyName,
-}: SandboxConnectionInfoProps) {
+export function SandboxConnectionInfo({ publicIp, sshKeyName }: SandboxConnectionInfoProps) {
   if (!publicIp) {
     return null;
   }
 
-  const keyPath = sshKeyName
-    ? `~/.ssh/${sshKeyName}.pem`
-    : "~/.ssh/valet-worker.pem";
+  const keyPath = sshKeyName ? `~/.ssh/${sshKeyName}.pem` : "~/.ssh/wekruit-atm-server.pem";
   const sshCommand = `ssh -i ${keyPath} ubuntu@${publicIp}`;
-  const novncUrl = `http://${publicIp}:6080/vnc.html`;
-  const healthUrl = `http://${publicIp}:8000/health`;
+  const healthUrl = `http://${publicIp}:8080/health`;
 
   return (
     <Card>
@@ -72,17 +61,7 @@ export function SandboxConnectionInfo({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <ConnectionRow
-          icon={<Terminal className="h-4 w-4" />}
-          label="SSH"
-          value={sshCommand}
-        />
-        <ConnectionRow
-          icon={<Monitor className="h-4 w-4" />}
-          label="noVNC"
-          value={novncUrl}
-          href={novncUrl}
-        />
+        <ConnectionRow icon={<Terminal className="h-4 w-4" />} label="SSH" value={sshCommand} />
         <ConnectionRow
           icon={<HeartPulse className="h-4 w-4" />}
           label="Health"
@@ -120,12 +99,7 @@ function ConnectionRow({
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  asChild
-                >
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" asChild>
                   <a href={href} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>

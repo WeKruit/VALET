@@ -34,7 +34,6 @@ function createMockTaskRepo() {
     updateWorkflowRunId: vi.fn(),
     updateGhosthandsResult: vi.fn(),
     updateLlmUsage: vi.fn(),
-    updateProgress: vi.fn(),
     updateInteractionData: vi.fn(),
     clearInteractionData: vi.fn(),
     cancel: vi.fn(),
@@ -69,6 +68,8 @@ function createMockGhSessionRepo() {
 function createMockRedis() {
   return {
     publish: vi.fn().mockResolvedValue(1),
+    xadd: vi.fn().mockResolvedValue("1-0"),
+    expire: vi.fn().mockResolvedValue(1),
   };
 }
 
@@ -397,9 +398,6 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
 
       expect(mockGhClient.retryJob).toHaveBeenCalledWith(ghJobId);
       expect(mockTaskRepo.updateStatus).toHaveBeenCalledWith(taskId, "queued");
-      // WEK-71: Progress is no longer written to tasks table on retry.
-      expect(mockTaskRepo.updateProgress).not.toHaveBeenCalled();
-
       // WebSocket event published for retry
       expect(mockRedis.publish).toHaveBeenCalledWith(
         `tasks:${TEST_USER_ID}`,

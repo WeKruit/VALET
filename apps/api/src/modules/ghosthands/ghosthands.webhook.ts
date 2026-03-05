@@ -7,6 +7,8 @@ import type {
 } from "./ghosthands.types.js";
 import type { TaskStatus } from "@valet/shared/schemas";
 import { publishToUser } from "../../websocket/handler.js";
+import { streamKey } from "../../lib/redis-streams.js";
+import { browserSessionTokenStore } from "../tasks/browser-session-token-store.js";
 
 /**
  * Verify shared service key from GhostHands.
@@ -27,6 +29,7 @@ function verifyServiceKey(request: FastifyRequest): boolean {
     }
   }
 
+  // TODO: Remove query param auth after GH callbackNotifier sends X-GH-Service-Key header
   // 2. Check query param (for GH callbackNotifier which doesn't send auth headers)
   const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
   const tokenParam = url.searchParams.get("token");
@@ -75,7 +78,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
 
-      const { taskRepo, ghJobRepo, sandboxRepo, redis, kasmClient } = request.diScope.cradle;
+      const { taskRepo, ghJobRepo, sandboxRepo, redis, referralService, creditService } =
+        request.diScope.cradle;
       const payload = request.body as GHCallbackPayload;
 
       if (!payload?.job_id || !payload?.status) {
@@ -98,16 +102,21 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
 
       // Map GhostHands status to VALET task status
       const statusMap: Record<string, TaskStatus> = {
+        pending: "queued",
+        queued: "queued",
         running: "in_progress",
+        paused: "waiting_human",
+        awaiting_review: "waiting_human",
+        needs_human: "waiting_human",
         completed: "completed",
         failed: "failed",
         cancelled: "cancelled",
-        needs_human: "waiting_human",
-        resumed: "in_progress",
+        expired: "failed",
+        resumed: "in_progress", // legacy compatibility
       };
 
-      const taskStatus = statusMap[payload.status];
-      if (!taskStatus) {
+      const mappedStatus = statusMap[payload.status];
+      if (!mappedStatus) {
         request.log.warn(
           { ghStatus: payload.status },
           "Unknown GhostHands status, ignoring callback",
@@ -135,6 +144,27 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         }
       }
 
+      // Keep test-task semantics: GH queue/running callbacks should preserve "testing"
+      // until a terminal status arrives.
+      const existingTask = await taskRepo.findByIdAdmin(valetTaskId);
+      const taskStatus: TaskStatus =
+        existingTask?.status === "testing" &&
+        (mappedStatus === "queued" || mappedStatus === "in_progress")
+          ? "testing"
+          : mappedStatus;
+      const leftWaitingHuman =
+        existingTask?.status === "waiting_human" &&
+        (taskStatus === "testing" ||
+          taskStatus === "in_progress" ||
+          taskStatus === "completed" ||
+          taskStatus === "failed" ||
+          taskStatus === "cancelled");
+      const transitionedFromWaitingHuman = existingTask?.status === "waiting_human";
+      const isWaitingGhStatus =
+        payload.status === "paused" ||
+        payload.status === "needs_human" ||
+        payload.status === "awaiting_review";
+
       // EC7: Atomic status update — single UPDATE ... WHERE status NOT IN (terminal).
       // No read-then-write race; the DB enforces the guard in one round-trip.
       const task = await taskRepo.updateStatusGuarded(valetTaskId, taskStatus);
@@ -148,6 +178,13 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(200).send({ received: true, skipped: true });
       }
 
+      // Invalidate browser-session tokens when task leaves waiting_human
+      // (resumed, completed, failed, cancelled). Prevents stale tokens
+      // from connecting to a different paused job on the same worker.
+      if (taskStatus !== "waiting_human") {
+        browserSessionTokenStore.invalidateByTaskId(valetTaskId);
+      }
+
       // HITL-specific data handling
       // Map GH interaction types to VALET's schema (e.g. "2fa" → "two_factor")
       const interactionTypeMap: Record<string, string> = {
@@ -159,7 +196,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         verification: "verification",
         visual_verification: "verification", // backwards compat with old GH
       };
-      if (payload.status === "needs_human" && payload.interaction) {
+      if (isWaitingGhStatus && payload.interaction) {
         const mappedType = interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
         await taskRepo.updateInteractionData(valetTaskId, {
           interactionType: mappedType,
@@ -172,7 +209,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           },
         });
       }
-      if (payload.status === "resumed") {
+      if (payload.status === "resumed" || leftWaitingHuman) {
         await taskRepo.clearInteractionData(valetTaskId);
       }
 
@@ -231,6 +268,14 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         };
       }
 
+      // Store browser_session_available in job metadata
+      if (payload.browser_session_available != null) {
+        ghJobUpdate.metadata = {
+          ...((ghJobUpdate.metadata as Record<string, unknown>) ?? {}),
+          browser_session_available: payload.browser_session_available,
+        };
+      }
+
       {
         const now = new Date();
         if (payload.status === "running") {
@@ -240,7 +285,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         if (
           payload.status === "completed" ||
           payload.status === "failed" ||
-          payload.status === "cancelled"
+          payload.status === "cancelled" ||
+          payload.status === "expired"
         ) {
           ghJobUpdate.completedAt = completedAt ? new Date(completedAt) : now;
         }
@@ -262,14 +308,16 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
             };
           }
         }
-        if (payload.status === "needs_human" && payload.interaction) {
-          const mappedInteractionType =
-            interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
-          ghJobUpdate.interactionType = mappedInteractionType;
-          ghJobUpdate.interactionData = payload.interaction as unknown as Record<string, unknown>;
+        if (isWaitingGhStatus) {
+          if (payload.interaction) {
+            const mappedInteractionType =
+              interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
+            ghJobUpdate.interactionType = mappedInteractionType;
+            ghJobUpdate.interactionData = payload.interaction as unknown as Record<string, unknown>;
+          }
           ghJobUpdate.pausedAt = now;
         }
-        if (payload.status === "resumed") {
+        if (payload.status === "resumed" || leftWaitingHuman) {
           ghJobUpdate.interactionType = null;
           ghJobUpdate.interactionData = null;
           ghJobUpdate.pausedAt = null;
@@ -303,18 +351,54 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         }
       }
 
+      // ── Publish to Redis Stream (SSE bridge) ─────────────────
+      // The SSE endpoint (task-events-sse.routes.ts) reads from Redis Streams
+      // via XREAD. GH can't publish directly to VALET's Redis, so the webhook
+      // handler bridges GH events → Redis Streams for real-time SSE delivery.
+      const sseKey = streamKey(payload.job_id);
+      await redis
+        .xadd(
+          sseKey,
+          "*",
+          "event_type",
+          payload.status,
+          "job_id",
+          payload.job_id,
+          "task_id",
+          valetTaskId,
+          "status",
+          taskStatus,
+          "message",
+          payload.result_summary ?? payload.error_message ?? "",
+          "payload",
+          JSON.stringify(payload),
+        )
+        .catch((err: unknown) => {
+          request.log.warn(
+            { err, jobId: payload.job_id },
+            "Failed to publish event to Redis stream",
+          );
+        });
+      // TTL so old streams get cleaned up (1 hour)
+      await redis.expire(sseKey, 3600).catch(() => {});
+
       // Publish WebSocket events based on status
       if (taskStatus === "waiting_human" && payload.interaction) {
         // HITL blocker: publish task_needs_human with interaction data
         const wsMappedType =
           interactionTypeMap[payload.interaction.type] ?? payload.interaction.type;
 
-        // WEK-162: Prefer kasm_url from callback, fallback to sandbox noVNC URL
+        // WEK-147: Prefer kasm_url from callback (direct KasmVNC), fallback to sandbox noVNC URL
         let vncUrl: string | undefined;
-        let vncType: "kasm" | "novnc" | undefined;
+        let vncType: "kasmvnc" | "kasm" | "novnc" | undefined;
         if (payload.kasm_url) {
           vncUrl = payload.kasm_url;
-          vncType = "kasm";
+          // Direct KasmVNC (:6901) vs legacy Kasm Workspaces (/api/public)
+          vncType = payload.kasm_url.includes(":6901")
+            ? "kasmvnc"
+            : payload.kasm_url.includes("/api/public")
+              ? "kasm"
+              : "kasmvnc";
         } else if (task.sandboxId) {
           try {
             const sandbox = await sandboxRepo.findById(task.sandboxId);
@@ -335,6 +419,7 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           taskId: task.id,
           status: taskStatus,
           ...(vncUrl ? { vncUrl, vncType } : {}),
+          browserSessionAvailable: payload.browser_session_available ?? false,
           interaction: {
             type: wsMappedType,
             screenshotUrl: payload.interaction.screenshot_url ?? null,
@@ -345,14 +430,23 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
             metadata: payload.interaction.metadata ?? null,
           },
         });
-      } else if (taskStatus === "in_progress" && payload.status === "resumed") {
-        // Resumed from HITL: publish task_resumed
+      } else if (
+        taskStatus === "in_progress" &&
+        (payload.status === "resumed" || transitionedFromWaitingHuman)
+      ) {
+        // Resumed from HITL: publish task_resumed.
+        // New GH status model reports "running" after unblock; "resumed" is legacy.
         await publishToUser(redis, task.userId, {
           type: "task_resumed",
           taskId: task.id,
           status: taskStatus,
         });
-      } else if (taskStatus === "in_progress" && payload.status === "running") {
+      } else if (
+        taskStatus === "in_progress" ||
+        taskStatus === "queued" ||
+        taskStatus === "testing" ||
+        taskStatus === "waiting_human"
+      ) {
         // WEK-71: Progress is now computed from gh_job_events (single source of truth).
         // No longer persist progress/currentStep to the tasks table from callbacks.
         // The frontend reads live progress via getById() -> computeProgressFromEvents().
@@ -362,16 +456,17 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           status: taskStatus,
         });
       } else {
-        // Standard task_update for completed/failed/cancelled
-        // WEK-71: No longer persist currentStep to tasks table.
-        // Progress is computed from gh_job_events; terminal progress (100)
-        // is still set by updateStatus() for completed tasks.
+        // Standard task_update for terminal task statuses.
+        // WEK-71: Progress is computed from gh_job_events at read time.
+        // No progress writes to tasks table.
         const errorMessage = payload.error_message ?? payload.error?.message ?? "Unknown error";
         const stepLabel =
           taskStatus === "completed"
             ? (payload.result_summary ?? "Application submitted")
             : taskStatus === "failed"
-              ? `Failed: ${errorMessage}`
+              ? payload.status === "expired"
+                ? "Expired: job timed out before execution"
+                : `Failed: ${errorMessage}`
               : "Cancelled";
         await publishToUser(redis, task.userId, {
           type: "task_update",
@@ -384,26 +479,59 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         });
       }
 
-      // WEK-147: Clean up Kasm session on terminal status
-      if (
-        (taskStatus === "completed" || taskStatus === "failed" || taskStatus === "cancelled") &&
-        kasmClient
-      ) {
+      // ── Referral activation on first completed task ─────────────
+      if (taskStatus === "completed" && process.env.FEATURE_REFERRALS === "true") {
         try {
-          const ghJobRecord = await ghJobRepo.findById(payload.job_id);
-          const kasmId = ghJobRecord?.metadata?.kasm_id as string | undefined;
-          if (kasmId) {
-            await kasmClient.destroyKasm(kasmId);
+          const referrerUserId = await referralService.activateReferral(task.userId);
+          if (referrerUserId) {
+            await creditService.grantCredits(referrerUserId, 25, "referral_reward", {
+              description: "Referral reward: referred user completed first task",
+              referenceType: "referral",
+              referenceId: valetTaskId,
+              idempotencyKey: `referral-activate-${valetTaskId}`,
+            });
             request.log.info(
-              { kasmId, jobId: payload.job_id },
-              "Destroyed Kasm session after job completion",
+              { referrerUserId, referredUserId: task.userId, taskId: valetTaskId },
+              "Referral activated and reward credits granted",
             );
           }
         } catch (err) {
-          request.log.warn(
-            { err, jobId: payload.job_id },
-            "Failed to destroy Kasm session (may already be gone)",
+          request.log.error(
+            { err, userId: task.userId, taskId: valetTaskId },
+            "Failed to process referral activation (non-critical)",
           );
+        }
+      }
+
+      // ── Credit refund on early task failure ─────────────────────
+      if (
+        taskStatus === "failed" &&
+        process.env.FEATURE_CREDITS_ENFORCEMENT === "true" &&
+        existingTask
+      ) {
+        const ageMs = Date.now() - existingTask.createdAt.getTime();
+        const fiveMinutes = 5 * 60 * 1000;
+        const neverStarted = !existingTask.startedAt;
+        if (ageMs < fiveMinutes || neverStarted) {
+          try {
+            await creditService.refundTask(
+              task.userId,
+              valetTaskId,
+              `task-refund-${valetTaskId}`,
+              neverStarted
+                ? "Refund: task failed before starting"
+                : "Refund: task failed within 5 minutes",
+            );
+            request.log.info(
+              { userId: task.userId, taskId: valetTaskId, ageMs, neverStarted },
+              "Credit refunded for early task failure",
+            );
+          } catch (err) {
+            request.log.error(
+              { err, userId: task.userId, taskId: valetTaskId },
+              "Failed to refund credit for early failure (non-critical)",
+            );
+          }
         }
       }
 

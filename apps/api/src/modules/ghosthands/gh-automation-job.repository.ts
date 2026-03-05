@@ -162,10 +162,10 @@ export class GhAutomationJobRepository {
   }
 
   /**
-   * Insert a pending gh_automation_jobs record directly from VALET.
+   * Create a gh_automation_jobs record directly from VALET.
    * Used when dispatching via pg-boss queue instead of GH REST API.
    */
-  async insertPendingJob(params: {
+  async createJob(params: {
     userId: string;
     jobType: string;
     targetUrl: string;
@@ -226,7 +226,7 @@ export class GhAutomationJobRepository {
       .from(ghAutomationJobs)
       .where(
         and(
-          inArray(ghAutomationJobs.status, ["running", "paused", "needs_human"]),
+          inArray(ghAutomationJobs.status, ["running", "paused", "needs_human", "awaiting_review"]),
           sql`${ghAutomationJobs.metadata}->>'kasm_id' IS NOT NULL`,
         ),
       )
@@ -235,13 +235,13 @@ export class GhAutomationJobRepository {
   }
 
   async findStuckJobs(stuckMinutes = 30): Promise<GhJobRecord[]> {
-    const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000);
+    const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000).toISOString();
     const rows = await this.db
       .select()
       .from(ghAutomationJobs)
       .where(
         and(
-          inArray(ghAutomationJobs.status, ["queued", "running"]),
+          inArray(ghAutomationJobs.status, ["pending", "queued", "running"]),
           sql`${ghAutomationJobs.updatedAt} < ${cutoff}`,
         ),
       )

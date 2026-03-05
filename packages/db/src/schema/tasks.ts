@@ -18,6 +18,7 @@ import { sandboxes } from "./sandboxes.js";
 export const taskStatusEnum = pgEnum("task_status", [
   "created",
   "queued",
+  "testing",
   "in_progress",
   "waiting_human",
   "completed",

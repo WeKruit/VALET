@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Ec2SandboxProvider } from "../../../providers/ec2-sandbox.provider.js";
 import type { EC2Service } from "../../../ec2.service.js";
+import type { AtmFleetClient } from "../../../atm-fleet.client.js";
 import type { SandboxRecord } from "../../../sandbox.repository.js";
 
 function makeMockEc2Service() {
@@ -14,6 +15,19 @@ function makeMockEc2Service() {
       .fn<(instanceId: string, target: string) => Promise<string>>()
       .mockResolvedValue("running"),
   };
+}
+
+function makeMockAtmFleetClient(configured = false) {
+  return {
+    isConfigured: configured,
+    resolveFleetId: vi.fn().mockResolvedValue(null),
+    resolveFleetIdSync: vi.fn().mockReturnValue(null),
+    getIdleStatus: vi.fn().mockResolvedValue({ enabled: false, workers: [] }),
+    wakeWorker: vi.fn().mockResolvedValue({ status: "started", ip: null }),
+    stopWorker: vi.fn().mockResolvedValue({ status: "stopping" }),
+    getWorkerHealth: vi.fn().mockResolvedValue({ status: "healthy" }),
+    getWorkerState: vi.fn().mockResolvedValue(null),
+  } as unknown as AtmFleetClient;
 }
 
 const SANDBOX_FIXTURE: SandboxRecord = {
@@ -39,6 +53,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   lastStartedAt: null,
   lastStoppedAt: null,
   autoStopEnabled: false,
+  autoStopOwner: "none",
   idleMinutesBeforeStop: 30,
   machineType: "ec2",
   agentVersion: null,
@@ -47,17 +62,23 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   ghImageUpdatedAt: null,
   deployedCommitSha: null,
   healthCheckFailureCount: 0,
+  lastBecameIdleAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
 
 describe("Ec2SandboxProvider", () => {
   let ec2Service: ReturnType<typeof makeMockEc2Service>;
+  let atmFleetClient: AtmFleetClient;
   let provider: Ec2SandboxProvider;
 
   beforeEach(() => {
     ec2Service = makeMockEc2Service();
-    provider = new Ec2SandboxProvider({ ec2Service: ec2Service as unknown as EC2Service });
+    atmFleetClient = makeMockAtmFleetClient(false);
+    provider = new Ec2SandboxProvider({
+      ec2Service: ec2Service as unknown as EC2Service,
+      atmFleetClient,
+    });
   });
 
   it("has type 'ec2'", () => {
@@ -135,9 +156,9 @@ describe("Ec2SandboxProvider", () => {
   });
 
   describe("getAgentUrl", () => {
-    it("returns HTTP URL with port 8000", () => {
+    it("returns HTTP URL with port 8080", () => {
       const url = provider.getAgentUrl(SANDBOX_FIXTURE);
-      expect(url).toBe("http://34.197.248.80:8000");
+      expect(url).toBe("http://34.197.248.80:8080");
     });
 
     it("throws when sandbox has no public IP", () => {
@@ -178,6 +199,181 @@ describe("Ec2SandboxProvider", () => {
       const noIpSandbox = { ...SANDBOX_FIXTURE, publicIp: null };
       const result = await provider.pingAgent(noIpSandbox);
       expect(result).toBe(false);
+    });
+  });
+
+  // ── ATM-enabled tests ────────────────────────────────────────────
+
+  describe("with ATM configured", () => {
+    let atmProvider: Ec2SandboxProvider;
+    let atmClient: ReturnType<typeof makeMockAtmFleetClient>;
+    let ec2: ReturnType<typeof makeMockEc2Service>;
+
+    beforeEach(() => {
+      ec2 = makeMockEc2Service();
+      atmClient = makeMockAtmFleetClient(true);
+      (atmClient as any).resolveFleetId.mockResolvedValue("gh-worker-1");
+      atmProvider = new Ec2SandboxProvider({
+        ec2Service: ec2 as unknown as EC2Service,
+        atmFleetClient: atmClient,
+      });
+    });
+
+    describe("startMachine", () => {
+      it("delegates to ATM wakeWorker", async () => {
+        (atmClient as any).wakeWorker.mockResolvedValue({
+          status: "started",
+          serverId: "gh-worker-1",
+          instanceId: "i-abc",
+          ip: "1.2.3.4",
+        });
+
+        const result = await atmProvider.startMachine(SANDBOX_FIXTURE);
+
+        expect((atmClient as any).wakeWorker).toHaveBeenCalledWith("gh-worker-1");
+        expect(ec2.startInstance).not.toHaveBeenCalled();
+        expect(result.success).toBe(true);
+        expect(result.newStatus).toBe("pending");
+        expect(result.metadata).toEqual(
+          expect.objectContaining({ atm_fleet_id: "gh-worker-1", hostname: "1.2.3.4" }),
+        );
+      });
+
+      it("returns running status when already_running", async () => {
+        (atmClient as any).wakeWorker.mockResolvedValue({
+          status: "already_running",
+          serverId: "gh-worker-1",
+          instanceId: "i-abc",
+          ip: "1.2.3.4",
+        });
+
+        const result = await atmProvider.startMachine(SANDBOX_FIXTURE);
+
+        expect(result.newStatus).toBe("running");
+        expect(result.message).toContain("already running");
+        expect(result.metadata?.hostname).toBe("1.2.3.4");
+      });
+
+      it("falls back to EC2 SDK when fleet ID is null", async () => {
+        (atmClient as any).resolveFleetId.mockResolvedValue(null);
+
+        const result = await atmProvider.startMachine(SANDBOX_FIXTURE);
+
+        expect(ec2.startInstance).toHaveBeenCalledWith("i-0123456789abcdef0");
+        expect((atmClient as any).wakeWorker).not.toHaveBeenCalled();
+        expect(result.newStatus).toBe("pending");
+      });
+
+      it("propagates ATM errors", async () => {
+        const { AtmError } = await import("../../../atm-fleet.client.js");
+        (atmClient as any).wakeWorker.mockRejectedValue(
+          new AtmError(409, '{"error":"Worker busy"}'),
+        );
+
+        await expect(atmProvider.startMachine(SANDBOX_FIXTURE)).rejects.toThrow("Worker busy");
+      });
+    });
+
+    describe("stopMachine", () => {
+      it("delegates to ATM stopWorker", async () => {
+        (atmClient as any).stopWorker.mockResolvedValue({
+          status: "stopping",
+          serverId: "gh-worker-1",
+          instanceId: "i-abc",
+        });
+
+        const result = await atmProvider.stopMachine(SANDBOX_FIXTURE);
+
+        expect((atmClient as any).stopWorker).toHaveBeenCalledWith("gh-worker-1");
+        expect(ec2.stopInstance).not.toHaveBeenCalled();
+        expect(result.success).toBe(true);
+        expect(result.newStatus).toBe("stopping");
+      });
+
+      it("falls back to EC2 SDK when fleet ID is null", async () => {
+        (atmClient as any).resolveFleetId.mockResolvedValue(null);
+
+        await atmProvider.stopMachine(SANDBOX_FIXTURE);
+
+        expect(ec2.stopInstance).toHaveBeenCalledWith("i-0123456789abcdef0");
+        expect((atmClient as any).stopWorker).not.toHaveBeenCalled();
+      });
+
+      it("propagates ATM 409 errors", async () => {
+        const { AtmError } = await import("../../../atm-fleet.client.js");
+        (atmClient as any).stopWorker.mockRejectedValue(
+          new AtmError(409, '{"error":"Active jobs"}'),
+        );
+
+        await expect(atmProvider.stopMachine(SANDBOX_FIXTURE)).rejects.toThrow("Active jobs");
+      });
+    });
+
+    describe("getMachineStatus", () => {
+      it("returns ATM worker state mapped to MachineStatus", async () => {
+        (atmClient as any).getWorkerState.mockResolvedValue({
+          serverId: "gh-worker-1",
+          ip: "1.2.3.4",
+          instanceId: "i-abc",
+          ec2State: "running",
+          activeJobs: 0,
+          idleSinceMs: 0,
+          transitioning: false,
+        });
+
+        const status = await atmProvider.getMachineStatus(SANDBOX_FIXTURE);
+
+        expect(status.state).toBe("running");
+        expect(status.publicIp).toBe("1.2.3.4");
+      });
+
+      it("maps stopped ec2State correctly", async () => {
+        (atmClient as any).getWorkerState.mockResolvedValue({
+          serverId: "gh-worker-1",
+          ip: "",
+          instanceId: "i-abc",
+          ec2State: "stopped",
+          activeJobs: 0,
+          idleSinceMs: 0,
+          transitioning: false,
+        });
+
+        const status = await atmProvider.getMachineStatus(SANDBOX_FIXTURE);
+        expect(status.state).toBe("stopped");
+      });
+
+      it("maps pending ec2State to starting", async () => {
+        (atmClient as any).getWorkerState.mockResolvedValue({
+          serverId: "gh-worker-1",
+          ip: "",
+          instanceId: "i-abc",
+          ec2State: "pending",
+          activeJobs: 0,
+          idleSinceMs: 0,
+          transitioning: false,
+        });
+
+        const status = await atmProvider.getMachineStatus(SANDBOX_FIXTURE);
+        expect(status.state).toBe("starting");
+      });
+
+      it("falls back to EC2 SDK when ATM throws", async () => {
+        (atmClient as any).getWorkerState.mockRejectedValue(new Error("ATM down"));
+
+        const status = await atmProvider.getMachineStatus(SANDBOX_FIXTURE);
+
+        expect(ec2.getInstanceStatus).toHaveBeenCalledWith("i-0123456789abcdef0");
+        expect(status.state).toBe("running");
+      });
+
+      it("falls back to EC2 SDK when fleet ID is null", async () => {
+        (atmClient as any).resolveFleetId.mockResolvedValue(null);
+
+        await atmProvider.getMachineStatus(SANDBOX_FIXTURE);
+
+        expect(ec2.getInstanceStatus).toHaveBeenCalledWith("i-0123456789abcdef0");
+        expect((atmClient as any).getWorkerState).not.toHaveBeenCalled();
+      });
     });
   });
 });

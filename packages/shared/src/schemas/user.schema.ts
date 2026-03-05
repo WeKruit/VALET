@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { workHistoryEntry, educationEntry } from "./resume.schema.js";
+import {
+  autonomyLevel,
+  emailReadiness,
+  mailboxReadiness,
+  platformReadiness,
+} from "./autonomy.schema.js";
 
-export const userRole = z.enum(["user", "developer", "admin", "superadmin"]);
+export const userRole = z.enum(["waitlist", "beta", "user", "developer", "admin", "superadmin"]);
 
 export const subscriptionTier = z.enum(["free", "starter", "pro", "enterprise"]);
 
@@ -45,6 +51,16 @@ export const salaryRange = z.object({
   currency: z.string().max(3).default("USD"),
 });
 
+export const experienceLevel = z.enum([
+  "intern",
+  "entry",
+  "mid",
+  "senior",
+  "lead",
+  "principal",
+  "executive",
+]);
+
 export const jobPreferences = z.object({
   targetJobTitles: z.array(z.string()).default([]),
   preferredLocations: z.array(z.string()).default([]),
@@ -52,6 +68,8 @@ export const jobPreferences = z.object({
   remotePreference: remotePreference.default("any"),
   excludedCompanies: z.array(z.string()).default([]),
   preferredIndustries: z.array(z.string()).default([]),
+  minimumSalary: z.number().min(0).optional(),
+  experienceLevel: experienceLevel.optional(),
 });
 
 export const notificationPreferences = z.object({
@@ -80,6 +98,12 @@ export const userProfileResponse = userSchema.extend({
   preferences: userPreferences,
   jobPreferences: jobPreferences.optional(),
   notificationPreferences: notificationPreferences.optional(),
+  autonomyLevel: autonomyLevel.optional(),
+  autonomyBlockingReasons: z.array(z.string()).optional(),
+  emailReadiness: emailReadiness.optional(),
+  mailboxReadiness: mailboxReadiness.optional(),
+  platformReadiness: platformReadiness.optional(),
+  onboardingCompletedAt: z.coerce.date().nullable().optional(),
 });
 
 // ─── Inferred Types ───
@@ -88,6 +112,7 @@ export type SubscriptionTier = z.infer<typeof subscriptionTier>;
 export type User = z.infer<typeof userSchema>;
 export type UserPreferences = z.infer<typeof userPreferences>;
 export type RemotePreference = z.infer<typeof remotePreference>;
+export type ExperienceLevel = z.infer<typeof experienceLevel>;
 export type SalaryRange = z.infer<typeof salaryRange>;
 export type JobPreferences = z.infer<typeof jobPreferences>;
 export type NotificationPreferences = z.infer<typeof notificationPreferences>;

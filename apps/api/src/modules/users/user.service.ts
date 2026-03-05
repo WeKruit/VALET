@@ -37,10 +37,7 @@ export class UserService {
     return prefs;
   }
 
-  async updatePreferences(
-    userId: string,
-    preferences: Record<string, unknown>,
-  ) {
+  async updatePreferences(userId: string, preferences: Record<string, unknown>) {
     await this.userRepo.updatePreferences(userId, preferences);
     return this.getPreferences(userId);
   }
@@ -89,5 +86,15 @@ export class UserService {
     };
     await this.userRepo.mergePreferences(userId, { notificationPreferences: merged });
     return merged;
+  }
+
+  async completeOnboarding(userId: string): Promise<Date> {
+    const user = await this.getById(userId);
+    if ((user as Record<string, unknown>).onboardingCompletedAt) {
+      return (user as Record<string, unknown>).onboardingCompletedAt as Date;
+    }
+    const now = new Date();
+    await this.userRepo.updateProfile(userId, { onboardingCompletedAt: now });
+    return now;
   }
 }

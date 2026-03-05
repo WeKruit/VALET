@@ -75,10 +75,14 @@ export class TaskRepository {
       search?: string;
       sortBy: string;
       sortOrder: string;
+      excludeTest?: boolean;
     },
   ): Promise<{ data: TaskRecord[]; total: number }> {
     const conditions: SQL[] = [eq(tasks.userId, userId)];
 
+    if (query.excludeTest) {
+      conditions.push(sql`(${tasks.notes} IS NULL OR ${tasks.notes} NOT LIKE '[e2e-test]%')`);
+    }
     if (query.status) {
       conditions.push(eq(tasks.status, query.status as TaskStatus));
     }
@@ -177,11 +181,8 @@ export class TaskRepository {
     const extra: Record<string, unknown> = { updatedAt: now };
     if (status === "completed" || status === "failed" || status === "cancelled") {
       extra.completedAt = now;
-      if (status === "completed") {
-        extra.progress = 100;
-      }
     }
-    if (status === "in_progress") {
+    if (status === "in_progress" || status === "testing") {
       extra.startedAt = now;
     }
 
@@ -208,11 +209,8 @@ export class TaskRepository {
     };
     if (status === "completed" || status === "failed" || status === "cancelled") {
       extra.completedAt = now;
-      if (status === "completed") {
-        extra.progress = 100;
-      }
     }
-    if (status === "in_progress") {
+    if (status === "in_progress" || status === "testing") {
       extra.startedAt = now;
     }
 
@@ -229,17 +227,6 @@ export class TaskRepository {
 
   async cancel(id: string) {
     return this.updateStatus(id, "cancelled");
-  }
-
-  async updateProgress(id: string, data: { progress?: number; currentStep?: string }) {
-    await this.db
-      .update(tasks)
-      .set({
-        ...(data.progress !== undefined ? { progress: data.progress } : {}),
-        ...(data.currentStep !== undefined ? { currentStep: data.currentStep } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(tasks.id, id));
   }
 
   async updateWorkflowRunId(id: string, workflowRunId: string) {
@@ -306,7 +293,7 @@ export class TaskRepository {
       .where(
         and(
           eq(tasks.userId, userId),
-          inArray(tasks.status, ["created", "queued", "in_progress", "waiting_human"]),
+          inArray(tasks.status, ["created", "queued", "testing", "in_progress", "waiting_human"]),
           eq(tasks.sandboxId, sandboxId),
         ),
       )
@@ -331,18 +318,23 @@ export class TaskRepository {
     return rows.map((r) => toTaskRecord(r as Record<string, unknown>));
   }
 
-  async getStats(userId: string) {
+  async getStats(userId: string, excludeTest?: boolean) {
+    const conditions: SQL[] = [eq(tasks.userId, userId)];
+    if (excludeTest) {
+      conditions.push(sql`(${tasks.notes} IS NULL OR ${tasks.notes} NOT LIKE '[e2e-test]%')`);
+    }
+
     const rows = await this.db
       .select({
         total: count(),
         completed: count(sql`CASE WHEN ${tasks.status} = 'completed' THEN 1 END`),
         inProgress: count(
-          sql`CASE WHEN ${tasks.status} IN ('created', 'queued', 'in_progress') THEN 1 END`,
+          sql`CASE WHEN ${tasks.status} IN ('created', 'queued', 'testing', 'in_progress') THEN 1 END`,
         ),
         needsReview: count(sql`CASE WHEN ${tasks.status} = 'waiting_human' THEN 1 END`),
       })
       .from(tasks)
-      .where(eq(tasks.userId, userId));
+      .where(and(...conditions));
 
     return rows[0] ?? { total: 0, completed: 0, inProgress: 0, needsReview: 0 };
   }
@@ -363,12 +355,15 @@ export class TaskRepository {
   }
 
   async findStuckJobs(stuckMinutes = 30): Promise<TaskRecord[]> {
-    const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000);
+    const cutoff = new Date(Date.now() - stuckMinutes * 60 * 1000).toISOString();
     const rows = await this.db
       .select()
       .from(tasks)
       .where(
-        and(inArray(tasks.status, ["queued", "in_progress"]), sql`${tasks.updatedAt} < ${cutoff}`),
+        and(
+          inArray(tasks.status, ["queued", "testing", "in_progress"]),
+          sql`${tasks.updatedAt} < ${cutoff}`,
+        ),
       )
       .orderBy(asc(tasks.updatedAt))
       .limit(100);
@@ -463,6 +458,36 @@ export class TaskRepository {
     return rows[0]?.count ?? 0;
   }
 
+  /**
+   * Count active tasks grouped by sandboxId for derived load calculation.
+   * Active statuses: queued, testing, in_progress, waiting_human.
+   * - "created" excluded (not yet dispatched to a sandbox)
+   * - "waiting_human" included (task still occupies the sandbox; relies on
+   *   stale-task reconciliation to clear abandoned ones)
+   * Uses idx_tasks_sandbox_status index.
+   */
+  async countActiveBySandboxIds(sandboxIds: string[]): Promise<Map<string, number>> {
+    if (sandboxIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        sandboxId: tasks.sandboxId,
+        count: count(),
+      })
+      .from(tasks)
+      .where(
+        and(
+          inArray(tasks.sandboxId, sandboxIds),
+          inArray(tasks.status, ["queued", "testing", "in_progress", "waiting_human"]),
+        ),
+      )
+      .groupBy(tasks.sandboxId);
+    const result = new Map<string, number>();
+    for (const row of rows) {
+      if (row.sandboxId) result.set(row.sandboxId, row.count);
+    }
+    return result;
+  }
+
   async clearInteractionData(id: string) {
     await this.db
       .update(tasks)
@@ -473,5 +498,9 @@ export class TaskRepository {
         updatedAt: new Date(),
       })
       .where(eq(tasks.id, id));
+  }
+
+  async delete(id: string) {
+    await this.db.delete(tasks).where(eq(tasks.id, id));
   }
 }

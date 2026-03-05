@@ -33,6 +33,7 @@ export interface SandboxRecord {
   healthStatus: SandboxHealthStatus;
   lastHealthCheckAt: Date | null;
   capacity: number;
+  /** @deprecated Legacy — not authoritative for stop/scale decisions. Derive load from tasks table. */
   currentLoad: number;
   sshKeyName: string | null;
   novncUrl: string | null;
@@ -44,6 +45,7 @@ export interface SandboxRecord {
   lastStartedAt: Date | null;
   lastStoppedAt: Date | null;
   autoStopEnabled: boolean;
+  autoStopOwner: "none" | "valet" | "atm";
   idleMinutesBeforeStop: number;
   machineType: string;
   agentVersion: string | null;
@@ -52,6 +54,7 @@ export interface SandboxRecord {
   ghImageUpdatedAt: Date | null;
   deployedCommitSha: string | null;
   healthCheckFailureCount: number;
+  lastBecameIdleAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -286,18 +289,43 @@ export class SandboxRepository {
     return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
   }
 
-  async findAutoStopCandidates(): Promise<SandboxRecord[]> {
+  /**
+   * Find sandboxes eligible for VALET auto-stop.
+   * Scope boundary: autoStopOwner = "valet" (not machineType).
+   * ASG-managed GH workers are excluded as defense-in-depth
+   * (ATM is sole stop authority for ASG workers).
+   * Does NOT use currentLoad (legacy, non-authoritative for stop decisions).
+   */
+  async findValetAutoStopCandidates(): Promise<SandboxRecord[]> {
     const data = await this.db
       .select()
       .from(sandboxes)
       .where(
         and(
           eq(sandboxes.autoStopEnabled, true),
+          eq(sandboxes.autoStopOwner, "valet"),
+          eq(sandboxes.status, "active"),
           eq(sandboxes.ec2Status, "running"),
-          eq(sandboxes.currentLoad, 0),
         ),
       );
-    return data.map((r) => toSandboxRecord(r as Record<string, unknown>));
+    // Defense-in-depth: exclude ASG-managed rows (same pattern as findAsgManaged())
+    return data
+      .map((r) => toSandboxRecord(r as Record<string, unknown>))
+      .filter((r) => {
+        const tags = r.tags as Record<string, unknown> | null;
+        return tags?.asg_managed !== true;
+      });
+  }
+
+  /**
+   * Set or clear the idle anchor timestamp for VALET auto-stop.
+   * Pass a Date to record when the sandbox became idle, or null to clear it.
+   */
+  async setLastBecameIdleAt(id: string, at: Date | null): Promise<void> {
+    await this.db
+      .update(sandboxes)
+      .set({ lastBecameIdleAt: at, updatedAt: new Date() })
+      .where(eq(sandboxes.id, id));
   }
 
   /**
@@ -317,6 +345,24 @@ export class SandboxRepository {
     )) as Array<{ worker_id: string }>;
 
     return rows[0]?.worker_id ?? null;
+  }
+
+  /**
+   * Resolve a worker ID to its EC2 IP address via the gh_worker_registry table.
+   * Includes 'draining' status because cancel/resume must still reach draining workers.
+   * Returns null if no matching worker is found.
+   */
+  async findWorkerIp(workerId: string): Promise<string | null> {
+    const rows = (await this.db.execute(
+      sql`SELECT ec2_ip FROM gh_worker_registry
+          WHERE worker_id = ${workerId}
+            AND status IN ('active', 'draining')
+            AND ec2_ip IS NOT NULL
+          ORDER BY last_heartbeat DESC
+          LIMIT 1`,
+    )) as Array<{ ec2_ip: string }>;
+
+    return rows[0]?.ec2_ip ?? null;
   }
 
   /**
@@ -397,7 +443,10 @@ export class SandboxRepository {
    * Used by syncAsgIps to reconcile ASG instances with DB records.
    */
   async findAsgManaged(): Promise<SandboxRecord[]> {
-    const data = await this.db.select().from(sandboxes).where(eq(sandboxes.status, "active"));
+    const data = await this.db
+      .select()
+      .from(sandboxes)
+      .where(inArray(sandboxes.status, ["active", "stopped", "provisioning", "stopping"]));
     // Filter in JS since tags is a JSONB column and Drizzle doesn't natively
     // support deep JSON field queries in a portable way.
     return data
@@ -406,5 +455,89 @@ export class SandboxRepository {
         const tags = r.tags as Record<string, unknown> | null;
         return tags?.asg_managed === true;
       });
+  }
+
+  /**
+   * Find workers registered from a given EC2 IP in gh_worker_registry.
+   * Used as a DB fallback when the deploy-server agent is unreachable.
+   */
+  async findWorkersByIp(
+    ec2Ip: string,
+  ): Promise<Array<{ worker_id: string; status: string; uptime_seconds: number | null }>> {
+    const rows = (await this.db.execute(
+      sql`SELECT worker_id, status,
+              EXTRACT(EPOCH FROM (NOW() - registered_at))::int AS uptime_seconds
+          FROM gh_worker_registry
+          WHERE ec2_ip = ${ec2Ip}
+            AND status IN ('active', 'draining')
+          ORDER BY last_heartbeat DESC`,
+    )) as Array<{ worker_id: string; status: string; uptime_seconds: number | null }>;
+
+    return rows;
+  }
+
+  /**
+   * Cross-reference gh_worker_registry with sandboxes table.
+   * Returns discrepancies found for logging by the health monitor.
+   */
+  async syncWorkerRegistryWithSandboxes(logger: {
+    info: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+  }): Promise<{ orphanedWorkers: number; sandboxesWithoutWorkers: number }> {
+    // 1. Get all active/draining workers from gh_worker_registry
+    const workers = (await this.db.execute(
+      sql`SELECT worker_id, ec2_ip, ec2_instance_id, status
+          FROM gh_worker_registry
+          WHERE status IN ('active', 'draining')
+            AND ec2_ip IS NOT NULL`,
+    )) as Array<{
+      worker_id: string;
+      ec2_ip: string;
+      ec2_instance_id: string | null;
+      status: string;
+    }>;
+
+    // 2. Get all active sandboxes
+    const activeSandboxes = await this.findAllActive();
+    const sandboxByIp = new Map(
+      activeSandboxes.filter((s) => s.publicIp).map((s) => [s.publicIp!, s]),
+    );
+    const sandboxIpsWithWorkers = new Set<string>();
+
+    // 3. Check each worker's EC2 IP against sandboxes
+    let orphanedWorkers = 0;
+    for (const worker of workers) {
+      const sandbox = sandboxByIp.get(worker.ec2_ip);
+      if (!sandbox) {
+        orphanedWorkers++;
+        logger.warn(
+          { workerId: worker.worker_id, ec2Ip: worker.ec2_ip },
+          "Worker registered from unknown IP — no matching sandbox",
+        );
+      } else {
+        sandboxIpsWithWorkers.add(worker.ec2_ip);
+      }
+    }
+
+    // 4. Check for sandboxes with no workers
+    let sandboxesWithoutWorkers = 0;
+    for (const sandbox of activeSandboxes) {
+      if (sandbox.publicIp && !sandboxIpsWithWorkers.has(sandbox.publicIp)) {
+        sandboxesWithoutWorkers++;
+        logger.warn(
+          { sandboxId: sandbox.id, sandboxName: sandbox.name, publicIp: sandbox.publicIp },
+          "Active sandbox has no registered workers",
+        );
+      }
+    }
+
+    if (orphanedWorkers === 0 && sandboxesWithoutWorkers === 0) {
+      logger.info(
+        { workerCount: workers.length, sandboxCount: activeSandboxes.length },
+        "Worker registry ↔ sandbox cross-reference OK",
+      );
+    }
+
+    return { orphanedWorkers, sandboxesWithoutWorkers };
   }
 }

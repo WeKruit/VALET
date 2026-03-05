@@ -141,6 +141,48 @@
       "when": 1745798000000,
       "tag": "0019_add_roles_and_email_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1745884000000,
+      "tag": "0020_add_user_sandboxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1761991200000,
+      "tag": "0021_add_testing_task_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1762077600000,
+      "tag": "0022_add_auto_stop_owner_and_last_became_idle_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1762164000000,
+      "tag": "0023_add_ux_chain_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1762250400000,
+      "tag": "0024_add_onboarding_completed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1762336800000,
+      "tag": "0025_add_referral_and_credit_system",
+      "breakpoints": true
     }
   ]
 }

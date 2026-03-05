@@ -249,7 +249,7 @@ export function resolveSteps(
     resolved.push({ milestone, status: "pending", timestamp: null, detail: null });
   }
 
-  if (["in_progress", "queued", "created", "waiting_human"].includes(task.status)) {
+  if (["in_progress", "testing", "queued", "created", "waiting_human"].includes(task.status)) {
     const p = resolved.find((s) => s.status === "pending");
     if (p) p.status = "current";
   }

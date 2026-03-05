@@ -52,6 +52,7 @@ export const sandboxes = pgTable(
     healthStatus: sandboxHealthStatusEnum("health_status").default("unhealthy").notNull(),
     lastHealthCheckAt: timestamp("last_health_check_at", { withTimezone: true }),
     capacity: integer("capacity").default(5).notNull(),
+    /** @deprecated Legacy — not authoritative for stop/scale decisions. Derive load from tasks table. */
     currentLoad: integer("current_load").default(0).notNull(),
     sshKeyName: varchar("ssh_key_name", { length: 255 }),
     novncUrl: text("novnc_url"),
@@ -63,6 +64,7 @@ export const sandboxes = pgTable(
     lastStartedAt: timestamp("last_started_at", { withTimezone: true }),
     lastStoppedAt: timestamp("last_stopped_at", { withTimezone: true }),
     autoStopEnabled: boolean("auto_stop_enabled").default(false).notNull(),
+    autoStopOwner: varchar("auto_stop_owner", { length: 16 }).notNull().default("none"),
     idleMinutesBeforeStop: integer("idle_minutes_before_stop").default(30).notNull(),
     machineType: varchar("machine_type", { length: 20 }).notNull().default("ec2"),
     agentVersion: varchar("agent_version", { length: 50 }),
@@ -71,6 +73,7 @@ export const sandboxes = pgTable(
     ghImageUpdatedAt: timestamp("gh_image_updated_at", { withTimezone: true }),
     deployedCommitSha: varchar("deployed_commit_sha", { length: 40 }),
     healthCheckFailureCount: integer("health_check_failure_count").default(0).notNull(),
+    lastBecameIdleAt: timestamp("last_became_idle_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

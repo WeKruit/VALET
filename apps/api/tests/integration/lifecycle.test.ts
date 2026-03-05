@@ -29,7 +29,6 @@ function createMockTaskRepo() {
     updateWorkflowRunId: vi.fn(),
     updateGhosthandsResult: vi.fn(),
     updateLlmUsage: vi.fn(),
-    updateProgress: vi.fn(),
     updateInteractionData: vi.fn(),
     clearInteractionData: vi.fn(),
     cancel: vi.fn(),
@@ -56,6 +55,8 @@ function createMockGhJobRepo() {
 function createMockRedis() {
   return {
     publish: vi.fn().mockResolvedValue(1),
+    xadd: vi.fn().mockResolvedValue("1-0"),
+    expire: vi.fn().mockResolvedValue(1),
   };
 }
 
@@ -161,10 +162,6 @@ describe("Integration: Application Lifecycle (P0)", () => {
       // Verify task was updated to in_progress
       expect(taskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "in_progress");
 
-      // WEK-71: Progress is no longer persisted to tasks table from callbacks.
-      // It's computed from gh_job_events at read time.
-      expect(taskRepo.updateProgress).not.toHaveBeenCalled();
-
       // Verify gh_automation_jobs was synced
       expect(ghJobRepo.updateStatus).toHaveBeenCalledWith(
         ghJobId,
@@ -225,10 +222,6 @@ describe("Integration: Application Lifecycle (P0)", () => {
           error: null,
         }),
       );
-
-      // WEK-71: Progress is no longer persisted to tasks table from callbacks.
-      // Terminal states (completed) set progress=100 in updateStatus().
-      expect(taskRepo.updateProgress).not.toHaveBeenCalled();
 
       // WebSocket published with completed status
       expect(redis.publish).toHaveBeenCalledWith(

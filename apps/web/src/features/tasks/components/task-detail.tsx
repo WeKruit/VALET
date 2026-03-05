@@ -14,6 +14,7 @@ import { FieldReview } from "./field-review";
 import { HitlBlockerCard } from "./hitl-blocker-card";
 import { GhJobCard } from "./gh-job-card";
 import { ActivityFeed } from "./activity-feed";
+import { ProofPack } from "./proof-pack";
 import { useTask } from "../hooks/use-tasks";
 import { useTaskWebSocket } from "../hooks/use-task-websocket";
 import { useSSEEvents } from "../hooks/use-sse-events";
@@ -28,13 +29,11 @@ import {
   ChevronDown,
   ChevronUp,
   Monitor,
-  MousePointer,
 } from "lucide-react";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { LiveView } from "./live-view";
-import { useVncUrl } from "../hooks/use-vnc-url";
+import { useCreateBrowserSession } from "../hooks/use-browser-session";
 
 interface TaskDetailProps {
   taskId: string;
@@ -46,6 +45,7 @@ const statusBadgeVariant: Record<
 > = {
   created: "default",
   queued: "default",
+  testing: "info",
   in_progress: "info",
   waiting_human: "warning",
   completed: "success",
@@ -82,13 +82,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     taskData?.status === "cancelled" ||
     taskData?.status === "failed";
   const { latestEvent: sseEvent, status: sseStatus } = useSSEEvents(taskId, !isTerminalTask);
-  // WEK-147: Fetch VNC/Kasm session URL for live view
-  const { data: vncData } = useVncUrl(taskId, !isTerminalTask);
-  const vncUrl = vncData?.status === 200 ? vncData.body.url : null;
-  const vncReadOnly = vncData?.status === 200 ? vncData.body.readOnly : true;
-  const vncType = vncData?.status === 200 ? vncData.body.type : undefined;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
-  const [showLiveView, setShowLiveView] = useState(false);
   const queryClient = useQueryClient();
   const { data: eventsData } = useTaskEvents(taskId, !isTerminalTask);
   const taskEvents = eventsData?.events ?? [];
@@ -123,6 +117,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
       toast.error("Failed to update external status.");
     },
   });
+
+  const browserSession = useCreateBrowserSession();
 
   if (isLoading) {
     return (
@@ -211,6 +207,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
               <Badge variant={statusBadgeVariant[task.status] ?? "default"} className="capitalize">
                 {task.status.replace("_", " ")}
               </Badge>
+              {task.notes?.startsWith("[e2e-test]") && <Badge variant="secondary">test</Badge>}
             </div>
           </div>
         </CardHeader>
@@ -299,53 +296,32 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         </CardContent>
       </Card>
 
-      {/* WEK-163: Prominent Watch Live / Take Control CTA */}
-      {!isTerminal && vncUrl && !showLiveView && (
+      {/* Browser Session CTA — only when paused AND browser session is available */}
+      {isWaitingReview && task.ghJob?.browserSessionAvailable && (
         <>
-          <div
-            className={`rounded-[var(--wk-radius-lg)] border-2 p-4 flex items-center justify-between ${
-              isWaitingReview
-                ? "border-[var(--wk-status-warning)] bg-amber-50/50 dark:bg-amber-950/10"
-                : "border-[var(--wk-copilot)] bg-blue-50/50 dark:bg-blue-950/10"
-            }`}
-          >
+          <div className="rounded-[var(--wk-radius-lg)] border-2 border-[var(--wk-status-warning)] bg-amber-50/50 dark:bg-amber-950/10 p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Monitor className="h-5 w-5 text-[var(--wk-copilot)] shrink-0" />
               <div>
-                <p className="text-sm font-medium">
-                  {isWaitingReview
-                    ? "Browser session needs your attention"
-                    : "Browser automation is running"}
-                </p>
+                <p className="text-sm font-medium">Browser session needs your attention</p>
                 <p className="text-xs text-[var(--wk-text-secondary)] mt-0.5">
-                  {isWaitingReview
-                    ? "Take control of the browser to resolve the blocker"
-                    : "Watch the automation in real time"}
+                  Take control of the browser to resolve the blocker
                 </p>
               </div>
             </div>
             <Button
-              variant={isWaitingReview ? "primary" : "secondary"}
+              variant="primary"
               size="sm"
-              onClick={() => {
-                if (vncType === "kasm" && import.meta.env.VITE_KASM_INLINE_IFRAME !== "true") {
-                  window.open(vncUrl, "_blank", "noopener,noreferrer");
-                } else {
-                  setShowLiveView(true);
-                }
-              }}
+              disabled={browserSession.isPending}
+              onClick={() =>
+                browserSession.mutate({
+                  params: { id: taskId },
+                  body: {},
+                })
+              }
             >
-              {isWaitingReview ? (
-                <>
-                  <MousePointer className="h-4 w-4 mr-1.5" />
-                  Take Control
-                </>
-              ) : (
-                <>
-                  <Monitor className="h-4 w-4 mr-1.5" />
-                  Watch Live
-                </>
-              )}
+              <Monitor className="h-4 w-4 mr-1.5" />
+              {browserSession.isPending ? "Opening..." : "Open Browser Session"}
             </Button>
           </div>
           <p className="text-xs text-[var(--wk-text-tertiary)] mt-2">
@@ -353,17 +329,6 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             session.
           </p>
         </>
-      )}
-
-      {/* Live View - only for active tasks with VNC URL */}
-      {!isTerminal && vncUrl && (
-        <LiveView
-          url={vncUrl}
-          isVisible={showLiveView}
-          onToggle={() => setShowLiveView(!showLiveView)}
-          readOnly={vncReadOnly}
-          type={vncType}
-        />
       )}
 
       {/* HITL Blocker Card - browser automation blocked */}
@@ -383,8 +348,12 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                 ? task.interaction.pausedAt.toISOString()
                 : String(task.interaction.pausedAt),
           }}
-          vncUrl={vncUrl}
-          vncType={vncType}
+          browserSessionAvailable={task.ghJob?.browserSessionAvailable === true}
+          credentialIssue={
+            task.interaction.type === "login_required" ||
+            (task.interaction.type === "two_factor" &&
+              task.interaction.metadata?.detection_method === "credential_failure")
+          }
           onCancel={() =>
             cancelTask.mutate({
               params: { id: taskId },
@@ -399,6 +368,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
 
       {/* Activity Feed - real GH job events timeline */}
       {task.ghJob && <ActivityFeed taskId={taskId} isTerminal={isTerminal} />}
+
+      {/* Submission Proof Pack - for completed tasks */}
+      {task.status === "completed" && <ProofPack taskId={taskId} />}
 
       {/* Field Review Panel - copilot field review */}
       {needsFieldReview && (

@@ -10,6 +10,7 @@ import type { Database } from "@valet/db";
 import type { TaskQueueService } from "../modules/tasks/task-queue.service.js";
 import type { SandboxRepository } from "../modules/sandboxes/sandbox.repository.js";
 import type { SandboxService } from "../modules/sandboxes/sandbox.service.js";
+import type { UserSandboxRepository } from "../modules/sandboxes/user-sandbox.repository.js";
 
 export class AutoScaleService {
   private logger: FastifyBaseLogger;
@@ -17,6 +18,7 @@ export class AutoScaleService {
   private db: Database;
   private sandboxRepo: SandboxRepository;
   private sandboxService: SandboxService;
+  private userSandboxRepo: UserSandboxRepository;
   private asgClient: AutoScalingClient | null;
   private ec2Client: EC2Client | null;
   private enabled: boolean;
@@ -31,18 +33,21 @@ export class AutoScaleService {
     db,
     sandboxRepo,
     sandboxService,
+    userSandboxRepo,
   }: {
     logger: FastifyBaseLogger;
     taskQueueService: TaskQueueService;
     db: Database;
     sandboxRepo: SandboxRepository;
     sandboxService: SandboxService;
+    userSandboxRepo: UserSandboxRepository;
   }) {
     this.logger = logger;
     this.taskQueueService = taskQueueService;
     this.db = db;
     this.sandboxRepo = sandboxRepo;
     this.sandboxService = sandboxService;
+    this.userSandboxRepo = userSandboxRepo;
 
     this.enabled = process.env.AUTOSCALE_ASG_ENABLED === "true";
     this.asgName = process.env.AWS_ASG_NAME ?? "";
@@ -272,13 +277,13 @@ export class AutoScaleService {
 
             try {
               const newSandbox = await this.sandboxRepo.create({
-                name: `gh-worker-asg-${instanceId.slice(-6)}`,
+                name: `gh-worker-${instanceId.slice(-6)}`,
                 environment: "staging",
                 instanceId,
                 instanceType: "t3.large",
                 publicIp,
                 capacity: 1,
-                sshKeyName: "valet-worker.pem",
+                sshKeyName: "wekruit-atm-server.pem",
                 tags: {
                   purpose: "staging",
                   region: "us-east-1",
@@ -331,6 +336,9 @@ export class AutoScaleService {
             ec2Status: "terminated",
             healthStatus: "unhealthy",
           });
+
+          // Clear user-sandbox assignments for terminated sandbox
+          await this.userSandboxRepo.unassignBySandboxId(sandbox.id);
         }
       }
 

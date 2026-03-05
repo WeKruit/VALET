@@ -23,6 +23,7 @@ export function useTasks(params?: UseTasksParams) {
         ...(params?.search && { search: params.search }),
         sortBy: (params?.sortBy ?? "createdAt") as any,
         sortOrder: (params?.sortOrder ?? "desc") as any,
+        excludeTest: true,
       },
     },
     staleTime: 1000 * 30,

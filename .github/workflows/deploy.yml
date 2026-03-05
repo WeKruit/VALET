@@ -11,10 +11,6 @@ on:
         description: "Fly.io app name for API"
         required: true
         type: string
-      worker-app:
-        description: "Fly.io app name for Worker"
-        required: true
-        type: string
       web-app:
         description: "Fly.io app name for Web"
         required: true
@@ -24,10 +20,6 @@ on:
         required: true
         type: string
       deploy-api:
-        required: false
-        type: boolean
-        default: true
-      deploy-worker:
         required: false
         type: boolean
         default: true
@@ -120,40 +112,6 @@ jobs:
           done
           echo "Health check failed after 5 attempts"
           exit 1
-
-  # ── Deploy Worker ──
-  deploy-worker:
-    if: inputs.deploy-worker
-    runs-on: ubuntu-latest
-    needs: validate
-    environment: ${{ inputs.environment }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy Worker to Fly.io
-        run: |
-          for attempt in 1 2 3; do
-            echo "Deploy attempt $attempt/3..."
-            if flyctl deploy \
-              --config fly/worker.toml \
-              --app ${{ inputs.worker-app }} \
-              --remote-only \
-              --strategy rolling \
-              --wait-timeout 300; then
-              echo "Deploy succeeded on attempt $attempt"
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Deploy failed, retrying in 30s..."
-              sleep 30
-            fi
-          done
-          echo "Deploy failed after 3 attempts"
-          exit 1
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   # ── Deploy Web (static SPA — no backend dependency) ──
   deploy-web:

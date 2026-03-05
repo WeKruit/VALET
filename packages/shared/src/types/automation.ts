@@ -2,8 +2,8 @@
  * Automation TypeScript interfaces for WeKruit Valet.
  *
  * These define the contracts for browser automation, form analysis,
- * platform adapters, and supporting types. Implementations are deferred
- * to later sprints; mock adapters live in apps/worker/src/adapters/.
+ * platform adapters, and supporting types. Implementations live in
+ * GhostHands (browser automation service).
  */
 
 // ---------------------------------------------------------------------------
@@ -302,7 +302,10 @@ export interface IBrowserAgent {
   getCurrentUrl(): Promise<string>;
   observe(instruction: string): Promise<ObserveResult[]>;
   act(instruction: string): Promise<ActResult>;
-  extract<T = Record<string, unknown>>(instruction: string, schema: Record<string, unknown>): Promise<ExtractResult<T>>;
+  extract<T = Record<string, unknown>>(
+    instruction: string,
+    schema: Record<string, unknown>,
+  ): Promise<ExtractResult<T>>;
   waitForSelector(selector: string, timeoutMs?: number): Promise<void>;
 }
 
@@ -340,10 +343,7 @@ export interface IPlatformAdapter {
 
 /** Top-level orchestrator deciding Stagehand vs Magnitude vs human */
 export interface IAgentOrchestrator {
-  executeStep(
-    step: string,
-    context: Record<string, unknown>,
-  ): Promise<OperationResult>;
+  executeStep(step: string, context: Record<string, unknown>): Promise<OperationResult>;
   switchAgent(reason: string): Promise<void>;
   requestHumanTakeover(reason: string, screenshotUrl?: string): Promise<void>;
   getCurrentAgent(): "stagehand" | "magnitude" | "human";

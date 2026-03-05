@@ -46,7 +46,9 @@ import { AuditLogRepository } from "../modules/sandboxes/audit-log.repository.js
 import { AuditLogService } from "../modules/sandboxes/audit-log.service.js";
 import { SandboxAgentClient } from "../modules/sandboxes/agent/sandbox-agent.client.js";
 import { DeepHealthChecker } from "../modules/sandboxes/deep-health-checker.js";
+import { AtmFleetClient } from "../modules/sandboxes/atm-fleet.client.js";
 import { DeployHistoryRepository } from "../modules/sandboxes/deploy-history.repository.js";
+import { UserSandboxRepository } from "../modules/sandboxes/user-sandbox.repository.js";
 import { PgBossService } from "../services/pgboss.service.js";
 import { TaskQueueService } from "../modules/tasks/task-queue.service.js";
 import { AutoScaleService } from "../services/auto-scale.service.js";
@@ -56,6 +58,17 @@ import { InstanceDiscoveryService } from "../modules/sync/instance-discovery.ser
 import { EarlyAccessRepository } from "../modules/early-access/early-access.repository.js";
 import { EarlyAccessService } from "../modules/early-access/early-access.service.js";
 import { EmailTemplatesRepository } from "../modules/email-templates/email-templates.repository.js";
+import { CredentialRepository } from "../modules/credentials/credential.repository.js";
+import { CredentialService } from "../modules/credentials/credential.service.js";
+import { FitLabRepository } from "../modules/fit-lab/fit-lab.repository.js";
+import { FitLabService } from "../modules/fit-lab/fit-lab.service.js";
+import { SubmissionProofRepository } from "../modules/tasks/submission-proof.repository.js";
+import { InsightsService } from "../modules/insights/insights.service.js";
+import { JobLeadRepository } from "../modules/job-leads/job-lead.repository.js";
+import { JobLeadService } from "../modules/job-leads/job-lead.service.js";
+import { LocalWorkerBrokerService } from "../modules/local-workers/local-worker-broker.service.js";
+import { ReferralService } from "../modules/referrals/referral.service.js";
+import { CreditService } from "../modules/credits/credit.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -101,6 +114,7 @@ export interface AppCradle {
   auditLogRepo: AuditLogRepository;
   auditLogService: AuditLogService;
   sandboxAgentClient: SandboxAgentClient;
+  atmFleetClient: AtmFleetClient;
   deepHealthChecker: DeepHealthChecker;
   deployHistoryRepo: DeployHistoryRepository;
   pgBossService: PgBossService;
@@ -112,6 +126,18 @@ export interface AppCradle {
   earlyAccessRepo: EarlyAccessRepository;
   earlyAccessService: EarlyAccessService;
   emailTemplatesRepo: EmailTemplatesRepository;
+  userSandboxRepo: UserSandboxRepository;
+  credentialRepo: CredentialRepository;
+  credentialService: CredentialService;
+  fitLabRepo: FitLabRepository;
+  fitLabService: FitLabService;
+  submissionProofRepo: SubmissionProofRepository;
+  insightsService: InsightsService;
+  jobLeadRepo: JobLeadRepository;
+  jobLeadService: JobLeadService;
+  localWorkerBrokerService: LocalWorkerBrokerService;
+  referralService: ReferralService;
+  creditService: CreditService;
 }
 
 declare module "@fastify/awilix" {
@@ -197,15 +223,17 @@ export default fp(async (fastify: FastifyInstance) => {
       () => new SandboxAgentClient(process.env.GH_DEPLOY_SECRET ?? ""),
       { lifetime: Lifetime.SINGLETON },
     ),
+    atmFleetClient: asClass(AtmFleetClient, { lifetime: Lifetime.SINGLETON }),
     deepHealthChecker: asClass(DeepHealthChecker, { lifetime: Lifetime.SINGLETON }),
     ghosthandsClient: asFunction(
-      ({ logger, sandboxRepo }) => {
+      ({ logger, sandboxRepo, ghJobRepo }) => {
         const client = new GhostHandsClient({
           ghosthandsApiUrl: process.env.GHOSTHANDS_API_URL ?? "http://localhost:3100",
           ghosthandsServiceKey: process.env.GH_SERVICE_SECRET ?? "",
           logger,
         });
         client.setSandboxRepository(sandboxRepo);
+        client.setGhJobRepository(ghJobRepo);
         return client;
       },
       { lifetime: Lifetime.SINGLETON },
@@ -225,5 +253,19 @@ export default fp(async (fastify: FastifyInstance) => {
     earlyAccessRepo: asClass(EarlyAccessRepository, { lifetime: Lifetime.SINGLETON }),
     earlyAccessService: asClass(EarlyAccessService, { lifetime: Lifetime.SINGLETON }),
     emailTemplatesRepo: asClass(EmailTemplatesRepository, { lifetime: Lifetime.SINGLETON }),
+    userSandboxRepo: asClass(UserSandboxRepository, { lifetime: Lifetime.SINGLETON }),
+    credentialRepo: asClass(CredentialRepository, { lifetime: Lifetime.SINGLETON }),
+    credentialService: asClass(CredentialService, { lifetime: Lifetime.SINGLETON }),
+    fitLabRepo: asClass(FitLabRepository, { lifetime: Lifetime.SINGLETON }),
+    fitLabService: asClass(FitLabService, { lifetime: Lifetime.SINGLETON }),
+    submissionProofRepo: asClass(SubmissionProofRepository, { lifetime: Lifetime.SINGLETON }),
+    insightsService: asClass(InsightsService, { lifetime: Lifetime.SINGLETON }),
+    jobLeadRepo: asClass(JobLeadRepository, { lifetime: Lifetime.SINGLETON }),
+    jobLeadService: asClass(JobLeadService, { lifetime: Lifetime.SINGLETON }),
+    localWorkerBrokerService: asClass(LocalWorkerBrokerService, {
+      lifetime: Lifetime.SINGLETON,
+    }),
+    referralService: asClass(ReferralService, { lifetime: Lifetime.SINGLETON }),
+    creditService: asClass(CreditService, { lifetime: Lifetime.SINGLETON }),
   });
 });

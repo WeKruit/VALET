@@ -6,6 +6,12 @@ import { DisclaimerModal } from "@/features/consent/components/disclaimer-modal"
 import { LoadingSpinner } from "./loading-spinner";
 import { api } from "@/lib/api-client";
 
+/** Roles that have active product permissions (not gated behind early access). */
+const ACTIVE_ROLES = new Set(["beta", "developer", "admin", "superadmin"]);
+function isActiveRole(role: string | undefined): boolean {
+  return !!role && ACTIVE_ROLES.has(role);
+}
+
 interface AuthGuardProps {
   children: React.ReactNode;
 }
@@ -13,13 +19,20 @@ interface AuthGuardProps {
 export function AuthGuard({ children }: AuthGuardProps) {
   const { user, isLoading, setUser } = useAuth();
   const location = useLocation();
+
+  // Compute whether user has full product access (ungated role)
+  const isFullUser = !!user && isActiveRole(user.role);
+
+  // Only fire protected queries for users with active roles.
+  // Gated users (user/waitlist) have zero CASL permissions → these queries
+  // would 403 and cause a loading hang. Gate them behind isFullUser.
   const {
     isLoading: consentLoading,
     needsTos,
     copilotAccepted,
     markTosAccepted,
     markCopilotAccepted,
-  } = useConsent();
+  } = useConsent({ enabled: isFullUser });
 
   const currentUserQuery = useCurrentUser();
 
@@ -30,7 +43,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       if (fresh.role !== user.role) {
         setUser({
           ...user,
-          role: fresh.role as "user" | "developer" | "admin" | "superadmin",
+          role: fresh.role as "waitlist" | "beta" | "user" | "developer" | "admin" | "superadmin",
         });
       }
     }
@@ -38,12 +51,22 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   const isOnboardingPath = location.pathname.startsWith("/onboarding");
 
+  // All hooks must be called unconditionally (above any early returns)
   const resumesQuery = api.resumes.list.useQuery({
     queryKey: ["resumes", "list", user?.id],
     queryData: {},
-    enabled: !!user,
+    enabled: isFullUser,
     staleTime: 1000 * 60 * 5,
   });
+
+  const profileQuery = api.users.getProfile.useQuery({
+    queryKey: ["user-profile", "auth-guard", user?.id],
+    queryData: {},
+    enabled: isFullUser,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // ─── Early returns (no hooks below this line) ───
 
   if (isLoading) {
     return (
@@ -62,7 +85,17 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
-  if (consentLoading || resumesQuery.isLoading) {
+  // Early access gate: gated roles go straight to /early-access
+  // MUST be checked BEFORE consent/loading to avoid 403 storm on protected queries
+  const isEarlyAccessPath = location.pathname === "/early-access";
+  if (!isActiveRole(user.role)) {
+    if (!isEarlyAccessPath) {
+      return <Navigate to="/early-access" replace />;
+    }
+    return <>{children}</>;
+  }
+
+  if (consentLoading || resumesQuery.isLoading || profileQuery.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--wk-surface-page)]">
         <LoadingSpinner size="lg" />
@@ -81,28 +114,24 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Early access gate: waitlisted users (role === "user" or no role) can only see /early-access
-  const isEarlyAccessPath = location.pathname === "/early-access";
-  const isWaitlisted = !user.role || user.role === "user";
-  if (isWaitlisted) {
-    if (!isEarlyAccessPath) {
-      return <Navigate to="/early-access" replace />;
-    }
-    return <>{children}</>;
-  }
-
-  // Determine onboarding completion: has at least 1 resume + copilot disclaimer accepted
+  // Onboarding is complete when the user has uploaded a resume, accepted the
+  // copilot disclaimer, AND completed onboarding (server-side timestamp OR
+  // localStorage fallback for same-device continuity).
   const hasResumes = resumesQuery.data?.status === 200 && resumesQuery.data.body.data.length > 0;
-  const onboardingComplete = hasResumes && !!copilotAccepted;
+  const serverOnboardingDone =
+    profileQuery.data?.status === 200 && !!profileQuery.data.body.onboardingCompletedAt;
+  const localOnboardingDone = !!localStorage.getItem(`valet:onboarding:completed:${user.id}`);
+  const onboardingFinished = serverOnboardingDone || localOnboardingDone;
+  const onboardingComplete = hasResumes && !!copilotAccepted && onboardingFinished;
 
   // If onboarding NOT complete and not already on /onboarding → redirect there
   if (!onboardingComplete && !isOnboardingPath) {
     return <Navigate to="/onboarding" replace />;
   }
 
-  // If onboarding IS complete and on /onboarding → redirect to /dashboard
+  // If onboarding IS complete and on /onboarding → redirect to workbench
   if (onboardingComplete && isOnboardingPath) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/apply" replace />;
   }
 
   return <>{children}</>;

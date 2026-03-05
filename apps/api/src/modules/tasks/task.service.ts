@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type {
@@ -11,26 +10,37 @@ import type { TaskRepository } from "./task.repository.js";
 import type { ResumeRepository } from "../resumes/resume.repository.js";
 import type { QaBankRepository } from "../qa-bank/qa-bank.repository.js";
 import type { SandboxRepository } from "../sandboxes/sandbox.repository.js";
+import type { UserSandboxRepository } from "../sandboxes/user-sandbox.repository.js";
+import type { AtmFleetClient } from "../sandboxes/atm-fleet.client.js";
+import type { BrowserSessionResponse } from "@valet/shared/schemas";
+import { browserSessionTokenStore } from "./browser-session-token-store.js";
 import type { GhostHandsClient } from "../ghosthands/ghosthands.client.js";
 import type { GHProfile, GHEducation, GHWorkHistory } from "../ghosthands/ghosthands.types.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { GhBrowserSessionRepository } from "../ghosthands/gh-browser-session.repository.js";
 import { QUEUE_APPLY_JOB, type TaskQueueService } from "./task-queue.service.js";
 import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
-import type { KasmClient } from "../sandboxes/kasm/kasm.client.js";
-import type { SecretsSyncService } from "../secrets/secrets-sync.service.js";
+import type { SubmissionProofRepository } from "./submission-proof.repository.js";
 import {
   TaskNotFoundError,
   TaskNotCancellableError,
   TaskNotResolvableError,
 } from "./task.errors.js";
+import { AppError } from "../../common/errors.js";
 import { publishToUser } from "../../websocket/handler.js";
+import type { CreditService } from "../credits/credit.service.js";
 
 function useQueueDispatch(): boolean {
   return process.env.TASK_DISPATCH_MODE === "queue";
 }
 
-const CANCELLABLE_STATUSES = new Set(["created", "queued", "in_progress", "waiting_human"]);
+const CANCELLABLE_STATUSES = new Set([
+  "created",
+  "queued",
+  "testing",
+  "in_progress",
+  "waiting_human",
+]);
 
 function csvEscape(value: string): string {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -47,7 +57,7 @@ function buildCallbackUrl(): string {
   const token = process.env.GH_SERVICE_SECRET;
   if (!token) return base;
   const sep = base.includes("?") ? "&" : "?";
-  return `${base}${sep}token=${token}`;
+  return `${base}${sep}token=${encodeURIComponent(token)}`;
 }
 
 export class TaskService {
@@ -62,8 +72,10 @@ export class TaskService {
   private redis: Redis;
   private logger: FastifyBaseLogger;
   private sandboxRepo: SandboxRepository;
-  private kasmClient: KasmClient | null;
-  private secretsSyncService: SecretsSyncService;
+  private userSandboxRepo: UserSandboxRepository;
+  private atmFleetClient: AtmFleetClient;
+  private submissionProofRepo: SubmissionProofRepository;
+  private creditService: CreditService;
 
   constructor({
     taskRepo,
@@ -77,8 +89,10 @@ export class TaskService {
     redis,
     logger,
     sandboxRepo,
-    kasmClient,
-    secretsSyncService,
+    userSandboxRepo,
+    atmFleetClient,
+    submissionProofRepo,
+    creditService,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -91,8 +105,10 @@ export class TaskService {
     redis: Redis;
     logger: FastifyBaseLogger;
     sandboxRepo: SandboxRepository;
-    kasmClient?: KasmClient;
-    secretsSyncService: SecretsSyncService;
+    userSandboxRepo: UserSandboxRepository;
+    atmFleetClient: AtmFleetClient;
+    submissionProofRepo: SubmissionProofRepository;
+    creditService: CreditService;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -105,8 +121,48 @@ export class TaskService {
     this.redis = redis;
     this.logger = logger;
     this.sandboxRepo = sandboxRepo;
-    this.kasmClient = kasmClient ?? null;
-    this.secretsSyncService = secretsSyncService;
+    this.userSandboxRepo = userSandboxRepo;
+    this.atmFleetClient = atmFleetClient;
+    this.submissionProofRepo = submissionProofRepo;
+    this.creditService = creditService;
+  }
+
+  /**
+   * Resolve the sandbox assignment for a user. Auto-assigns if no existing assignment.
+   * Returns null when no healthy sandbox is available (falls back to general queue).
+   */
+  private async resolveUserSandbox(userId: string): Promise<string | null> {
+    // 1. Check existing assignment
+    const existing = await this.userSandboxRepo.findByUserId(userId);
+    if (existing) {
+      const sandbox = await this.sandboxRepo.findById(existing.sandboxId);
+      if (sandbox && sandbox.status === "active" && sandbox.healthStatus === "healthy") {
+        return existing.sandboxId;
+      }
+      this.logger.warn(
+        {
+          userId,
+          sandboxId: existing.sandboxId,
+          sandboxStatus: sandbox?.status,
+          sandboxHealth: sandbox?.healthStatus,
+        },
+        "User's assigned sandbox is unavailable — attempting auto-reassign",
+      );
+    }
+
+    // 2. Auto-assign to best available sandbox
+    const bestSandboxId = await this.userSandboxRepo.findBestAvailableSandbox();
+    if (!bestSandboxId) {
+      this.logger.warn(
+        { userId },
+        "No healthy sandbox available for auto-assignment — using general queue",
+      );
+      return null;
+    }
+
+    await this.userSandboxRepo.assign(userId, bestSandboxId);
+    this.logger.info({ userId, sandboxId: bestSandboxId }, "Auto-assigned user to sandbox");
+    return bestSandboxId;
   }
 
   async getById(id: string, userId: string) {
@@ -174,11 +230,98 @@ export class TaskService {
     return { ...enrichedTask, interaction, ghJob };
   }
 
+  async getProof(taskId: string, userId: string) {
+    // Verify user owns the task
+    const task = await this.taskRepo.findById(taskId, userId);
+    if (!task) throw new TaskNotFoundError(taskId);
+
+    // Look up the proof row
+    const proof = await this.submissionProofRepo.findByTaskId(taskId, userId);
+
+    type AnswerSource = "resume" | "qa_bank" | "llm" | "user";
+    const VALID_SOURCES = new Set<string>(["resume", "qa_bank", "llm", "user"]);
+
+    // Build the response — even without a proof row, return aggregated data from the task itself
+    const screenshots: Array<{ url: string; label?: string | null; capturedAt?: Date | null }> = [];
+    const answers: Array<{ field: string; value: string; source?: AnswerSource | null }> = [];
+    const timeline: Array<{
+      step: string;
+      status: "completed" | "skipped" | "failed";
+      timestamp: Date;
+      detail?: string | null;
+    }> = [];
+
+    if (proof) {
+      // Parse structured proof data
+      if (Array.isArray(proof.screenshots)) {
+        for (const s of proof.screenshots as Array<Record<string, unknown>>) {
+          screenshots.push({
+            url: String(s.url ?? ""),
+            label: (s.label as string) ?? null,
+            capturedAt: s.capturedAt ? new Date(s.capturedAt as string) : null,
+          });
+        }
+      }
+      if (Array.isArray(proof.answers)) {
+        for (const a of proof.answers as Array<Record<string, unknown>>) {
+          const rawSource = (a.source as string) ?? null;
+          answers.push({
+            field: String(a.field ?? ""),
+            value: String(a.value ?? ""),
+            source: rawSource && VALID_SOURCES.has(rawSource) ? (rawSource as AnswerSource) : null,
+          });
+        }
+      }
+      if (Array.isArray(proof.timeline)) {
+        for (const t of proof.timeline as Array<Record<string, unknown>>) {
+          timeline.push({
+            step: String(t.step ?? ""),
+            status: (t.status as "completed" | "skipped" | "failed") ?? "completed",
+            timestamp: new Date((t.timestamp as string) ?? Date.now()),
+            detail: (t.detail as string) ?? null,
+          });
+        }
+      }
+    }
+
+    // Fallback: pull screenshots from task.screenshots (ghJobId-based)
+    if (screenshots.length === 0 && task.screenshots) {
+      const ss = task.screenshots as Record<string, unknown>;
+      for (const [key, val] of Object.entries(ss)) {
+        if (key === "ghJobId") continue;
+        if (typeof val === "string") {
+          screenshots.push({ url: val, label: key });
+        }
+      }
+    }
+
+    return {
+      taskId,
+      screenshots,
+      answers,
+      timeline,
+      externalStatus: (proof?.externalStatus ??
+        task.externalStatus ??
+        null) as ExternalStatus | null,
+      confirmationData: (proof?.confirmationData as Record<string, unknown> | null) ?? null,
+      resumeVariantId: proof?.resumeVariantId ?? null,
+      createdAt: proof?.createdAt ?? task.completedAt ?? null,
+    };
+  }
+
   private async fetchGhJobData(workflowRunId: string | null, taskStatus?: TaskStatus) {
     if (!workflowRunId) return null;
 
     const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
-    const GH_NON_TERMINAL = new Set(["pending", "queued", "running", "needs_human"]);
+    const GH_NON_TERMINAL = new Set([
+      "pending",
+      "queued",
+      "running",
+      "paused",
+      "needs_human",
+      "awaiting_review",
+      "resumed", // legacy compatibility
+    ]);
 
     // Map task status -> gh_automation_jobs status for reverse sync
     const taskToGhStatus: Partial<Record<TaskStatus, string>> = {
@@ -237,11 +380,13 @@ export class TaskService {
                 }
               : null,
           timestamps: {
-            createdAt: job.createdAt.toISOString(),
-            startedAt: job.startedAt?.toISOString() ?? null,
-            completedAt: job.completedAt?.toISOString() ?? null,
+            createdAt: new Date(job.createdAt).toISOString(),
+            startedAt: job.startedAt ? new Date(job.startedAt).toISOString() : null,
+            completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : null,
           },
           targetWorkerId: job.targetWorkerId ?? null,
+          browserSessionAvailable:
+            (job.metadata as Record<string, unknown>)?.browser_session_available === true,
         };
       }
     } catch (err) {
@@ -276,6 +421,7 @@ export class TaskService {
           completedAt: ghStatus.timestamps.completed_at ?? null,
         },
         targetWorkerId: ghStatus.target_worker_id ?? null,
+        browserSessionAvailable: (raw.browser_session_available as boolean) === true,
       };
     } catch (err) {
       this.logger.debug({ err, workflowRunId }, "Failed to fetch GH job status (non-critical)");
@@ -318,133 +464,6 @@ export class TaskService {
     }
   }
 
-  /**
-   * Check if Kasm is configured and enabled.
-   * Kasm is used only when KASM_ENABLED=true and KasmClient is available.
-   */
-  private isKasmEnabled(): boolean {
-    return (
-      process.env.KASM_ENABLED === "true" &&
-      this.kasmClient !== null &&
-      this.kasmClient !== undefined
-    );
-  }
-
-  /**
-   * WEK-147: Create a Kasm session for a task (optional).
-   * When Kasm is enabled, creates a live VNC session for browser visibility.
-   * Reads env vars from AWS Secrets Manager and injects them into the Kasm session.
-   *
-   * Throws on failure — callers should catch and fall back to general queue.
-   *
-   * @returns Kasm worker ID (used as targetWorkerId for queue routing) and session info
-   */
-  private async createKasmSession(
-    taskId: string,
-    ghJob: { id: string; metadata?: Record<string, unknown> | null },
-  ): Promise<{ kasmWorkerId: string; kasmId: string; kasmUrl: string }> {
-    if (!this.kasmClient) {
-      throw new Error("KasmClient not configured — cannot create Kasm session");
-    }
-
-    // Read env vars from AWS Secrets Manager (throws if SM unreachable)
-    const smVars = await this.secretsSyncService.readGhWorkerEnvVars();
-
-    const kasmWorkerId = crypto.randomUUID();
-
-    // Build env: SM vars + task-specific overrides
-    const kasmEnv: Record<string, string> = {};
-    for (const [key, value] of smVars) {
-      kasmEnv[key] = value;
-    }
-    // Override with task-specific values
-    kasmEnv.GH_WORKER_ID = kasmWorkerId;
-    kasmEnv.JOB_DISPATCH_MODE = "queue";
-    kasmEnv.MAX_CONCURRENT_JOBS = "1";
-    kasmEnv.GH_HEADLESS = "false";
-    kasmEnv.GHOSTHANDS_CALLBACK_URL = buildCallbackUrl();
-
-    const kasmResponse = await this.kasmClient.requestKasm({
-      image_id: process.env.KASM_DEFAULT_IMAGE_ID ?? "",
-      user_id: process.env.KASM_DEFAULT_USER_ID ?? "",
-      environment: kasmEnv,
-    });
-
-    // EC4: Poll session status to verify boot (up to 3 attempts, 2s delay).
-    // If Kasm doesn't reach "running", destroy the session and fall back.
-    const BOOT_POLL_ATTEMPTS = 5;
-    const BOOT_POLL_DELAY_MS = 2000;
-    let kasmBooted = false;
-
-    for (let attempt = 1; attempt <= BOOT_POLL_ATTEMPTS; attempt++) {
-      try {
-        const statusResp = await this.kasmClient.getKasmStatus(kasmResponse.kasm_id);
-        const opStatus = statusResp.kasm?.operational_status ?? statusResp.kasm?.status;
-        if (opStatus === "running") {
-          kasmBooted = true;
-          break;
-        }
-        this.logger.debug(
-          { taskId, kasmId: kasmResponse.kasm_id, attempt, opStatus },
-          "Kasm session not yet running, polling again",
-        );
-      } catch (err) {
-        this.logger.debug(
-          { err, taskId, kasmId: kasmResponse.kasm_id, attempt },
-          "Failed to poll Kasm session status",
-        );
-      }
-      if (attempt < BOOT_POLL_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, BOOT_POLL_DELAY_MS));
-      }
-    }
-
-    if (!kasmBooted) {
-      this.logger.warn(
-        { taskId, kasmId: kasmResponse.kasm_id },
-        "Kasm session failed to reach running state — destroying and falling back to general queue",
-      );
-      try {
-        await this.kasmClient.destroyKasm(kasmResponse.kasm_id);
-      } catch (destroyErr) {
-        this.logger.warn(
-          { err: destroyErr, kasmId: kasmResponse.kasm_id },
-          "Failed to destroy unbooted Kasm session (may already be gone)",
-        );
-      }
-      // Signal to caller that Kasm is unavailable — fall back to general queue
-      throw new Error("Kasm session failed to boot within timeout");
-    }
-
-    // Store Kasm session info in gh_automation_jobs metadata
-    await this.ghJobRepo.updateStatus(ghJob.id, {
-      status: "queued",
-      metadata: {
-        ...(ghJob.metadata ?? {}),
-        kasm_id: kasmResponse.kasm_id,
-        kasm_url: kasmResponse.kasm_url,
-        kasm_session_token: kasmResponse.session_token,
-        kasm_worker_id: kasmWorkerId,
-      },
-    });
-
-    this.logger.info(
-      {
-        taskId,
-        kasmId: kasmResponse.kasm_id,
-        kasmWorkerId,
-        kasmUrlPrefix: kasmResponse.kasm_url?.slice(0, 30),
-      },
-      "Created Kasm session for task",
-    );
-
-    return {
-      kasmWorkerId,
-      kasmId: kasmResponse.kasm_id,
-      kasmUrl: kasmResponse.kasm_url,
-    };
-  }
-
   async list(
     userId: string,
     query: {
@@ -455,6 +474,7 @@ export class TaskService {
       search?: string;
       sortBy: string;
       sortOrder: string;
+      excludeTest?: boolean;
     },
   ) {
     const { data, total } = await this.taskRepo.findMany(userId, query);
@@ -503,25 +523,20 @@ export class TaskService {
   /**
    * Create a new application task and dispatch it to GhostHands.
    *
-   * ## Worker routing (targetWorkerId)
+   * ## Worker routing
    *
-   * - **Path 1 — Normal user (no targetWorkerId):** Job is enqueued to the
-   *   general pg-boss queue (`gh_apply_job`). Any available GH worker picks it
-   *   up. This works today because the ASG fleet has min=1 (single-worker), so
-   *   all jobs land on the same instance.
+   * - **Path 1 — Admin explicit (targetWorkerId set):** The caller passes a
+   *   sandbox UUID (e.g. from the admin test page). We resolve it to an actual
+   *   GH worker UUID via `sandboxRepo.resolveWorkerId()` and enqueue to the
+   *   worker-specific queue (`gh_apply_job/{resolvedWorkerId}`). Uses "strict"
+   *   affinity. If resolution fails, falls back to the general queue.
    *
-   *   TODO (multi-worker scaling): When the fleet grows beyond 1 worker, normal
-   *   users will need per-user sandbox isolation. Implement a `user_sandboxes`
-   *   join table that maps each user to a dedicated sandbox/worker assignment.
-   *   On task creation, look up the user's assigned sandbox, resolve its worker
-   *   ID, and route via the worker-specific queue (`gh_apply_job/{workerId}`).
-   *
-   * - **Path 2 — Explicit targetWorkerId (sandbox UUID):** The caller passes a
-   *   sandbox UUID (e.g. from the admin test page or future sandbox picker UI).
-   *   We resolve it to an actual GH worker UUID via
-   *   `sandboxRepo.resolveWorkerId()` and enqueue to the worker-specific queue
-   *   (`gh_apply_job/{resolvedWorkerId}`). If resolution fails, falls back to
-   *   the general queue with a warning log.
+   * - **Path 2 — Normal user (no targetWorkerId):** Auto-resolve via the
+   *   `user_sandboxes` table. If the user has an active+healthy assignment,
+   *   route there. Otherwise auto-assign to the best available sandbox. Uses
+   *   "preferred" affinity so jobs still get picked up if the target is
+   *   temporarily unavailable. Falls back to general queue if no sandbox is
+   *   available.
    */
   async create(
     body: {
@@ -536,9 +551,17 @@ export class TaskService {
     },
     userId: string,
   ) {
+    // Resolve sandbox routing
+    let resolvedSandboxId = body.targetWorkerId; // admin explicit override
+    const isAdminExplicit = !!body.targetWorkerId;
+
+    if (!resolvedSandboxId) {
+      resolvedSandboxId = (await this.resolveUserSandbox(userId)) ?? undefined;
+    }
+
     // Tag notes with sandbox ID for tracking
-    const notes = body.targetWorkerId
-      ? `${body.notes ?? ""} [sandbox:${body.targetWorkerId}]`.trim()
+    const notes = resolvedSandboxId
+      ? `${body.notes ?? ""} [sandbox:${resolvedSandboxId}]`.trim()
       : body.notes;
 
     const task = await this.taskRepo.create({
@@ -547,8 +570,45 @@ export class TaskService {
       mode: body.mode,
       resumeId: body.resumeId,
       notes,
-      sandboxId: body.targetWorkerId,
+      sandboxId: resolvedSandboxId,
     });
+
+    // Credit enforcement (feature-flagged) — debit AFTER task creation so we have a real task UUID
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
+      try {
+        const debit = await this.creditService.debitForTask(
+          userId,
+          task.id,
+          `task-create-${task.id}`,
+        );
+        if (!debit.success) {
+          // Insufficient credits — clean up the task row
+          await this.taskRepo.delete(task.id);
+          throw AppError.paymentRequired(
+            "Insufficient credits. Purchase more credits or upgrade your plan.",
+          );
+        }
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        // Infra/DB error during debit — clean up the task row and re-throw
+        await this.taskRepo.delete(task.id).catch(() => {});
+        throw err;
+      }
+    }
+
+    // Resolve sandbox UUID → GH worker UUID for queue routing
+    let queueTargetWorkerId: string | undefined;
+    if (resolvedSandboxId) {
+      const ghWorkerId = await this.sandboxRepo.resolveWorkerId(resolvedSandboxId);
+      if (ghWorkerId) {
+        queueTargetWorkerId = ghWorkerId;
+      } else {
+        this.logger.warn(
+          { sandboxId: resolvedSandboxId },
+          "No active worker for sandbox, using general queue",
+        );
+      }
+    }
 
     // Fetch resume data for the GhostHands profile
     const resume = await this.resumeRepo.findById(body.resumeId, userId);
@@ -589,13 +649,15 @@ export class TaskService {
         },
         completedAt: null,
       });
+      // Refund credit — dispatch never happened
+      await this.refundCreditIfDebited(userId, task.id);
       return task;
     }
 
     if (useQueueDispatch()) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        let ghJob = await this.ghJobRepo.insertPendingJob({
+        let ghJob = await this.ghJobRepo.createJob({
           userId,
           jobType: "apply",
           targetUrl: task.jobUrl,
@@ -620,27 +682,6 @@ export class TaskService {
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Optionally create Kasm session for live VNC view.
-        // Falls back to general queue (ASG worker) if Kasm is disabled or fails.
-        let kasmWorkerId: string | undefined;
-        if (this.isKasmEnabled()) {
-          try {
-            const kasmResult = await this.createKasmSession(task.id, ghJob);
-            kasmWorkerId = kasmResult.kasmWorkerId;
-
-            // Re-fetch ghJob so metadata includes kasm_url/kasm_id written by createKasmSession.
-            const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-            if (refreshedJob) ghJob = refreshedJob;
-          } catch (err) {
-            this.logger.warn(
-              { err, taskId: task.id },
-              "Kasm session creation failed — falling back to general queue",
-            );
-            // Continue without Kasm — job goes to general queue
-          }
-        }
-
-        // Enqueue: targeted queue if Kasm worker is available, general queue otherwise
         const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
           {
             ghJobId: ghJob.id,
@@ -651,20 +692,16 @@ export class TaskService {
             jobType: "apply",
             callbackUrl,
           },
-          { targetWorkerId: kasmWorkerId },
+          { targetWorkerId: queueTargetWorkerId },
         );
 
-        // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = kasmWorkerId
-          ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}`
-          : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
             status: "queued",
             metadata: {
               ...(ghJob.metadata ?? {}),
               pgBossJobId,
-              pgBossQueueName,
+              pgBossQueueName: QUEUE_APPLY_JOB,
             },
           });
         }
@@ -688,6 +725,8 @@ export class TaskService {
           },
           completedAt: null,
         });
+        // Refund credit — dispatch failed before GH received the job
+        await this.refundCreditIfDebited(userId, task.id);
       }
     } else {
       // ── REST dispatch path (legacy, only when TASK_DISPATCH_MODE != queue) ──
@@ -707,8 +746,13 @@ export class TaskService {
           ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
           ...(body.visionModel ? { image_model: body.visionModel } : {}),
           max_retries: 1,
-          ...(body.targetWorkerId
-            ? { target_worker_id: body.targetWorkerId, worker_affinity: "strict" as const }
+          ...(resolvedSandboxId
+            ? {
+                target_worker_id: resolvedSandboxId,
+                worker_affinity: (isAdminExplicit ? "strict" : "preferred") as
+                  | "strict"
+                  | "preferred",
+              }
             : {}),
         });
 
@@ -732,10 +776,28 @@ export class TaskService {
           },
           completedAt: null,
         });
+        // Refund credit — REST dispatch failed before GH received the job
+        await this.refundCreditIfDebited(userId, task.id);
       }
     }
 
     return task;
+  }
+
+  /** Refund one credit if enforcement is on. Swallows errors — dispatch already failed. */
+  private async refundCreditIfDebited(userId: string, taskId: string): Promise<void> {
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") return;
+    try {
+      await this.creditService.refundTask(
+        userId,
+        taskId,
+        `task-refund-dispatch-${taskId}`,
+        "Refund: dispatch failed before job reached worker",
+      );
+      this.logger.info({ userId, taskId }, "Credit refunded for failed dispatch");
+    } catch (err) {
+      this.logger.error({ err, userId, taskId }, "Failed to refund credit after dispatch failure");
+    }
   }
 
   private buildGhosthandsProfile(parsedData: Record<string, unknown> | null): GHProfile {
@@ -817,6 +879,27 @@ export class TaskService {
       sandboxId: body.targetWorkerId,
     });
 
+    // Resolve sandbox UUID → GH worker ID for queue routing
+    let queueTargetWorkerId: string | undefined;
+    if (body.targetWorkerId) {
+      try {
+        const ghWorkerId = await this.sandboxRepo.resolveWorkerId(body.targetWorkerId);
+        if (ghWorkerId) {
+          queueTargetWorkerId = ghWorkerId;
+        } else {
+          this.logger.warn(
+            { sandboxId: body.targetWorkerId },
+            "No active worker for sandbox, using general queue",
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          { sandboxId: body.targetWorkerId, err },
+          "Failed to resolve worker ID, using general queue",
+        );
+      }
+    }
+
     const callbackUrl = buildCallbackUrl();
     const taskDescription = `Google search integration test: ${body.searchQuery}`;
 
@@ -841,7 +924,7 @@ export class TaskService {
     if (useQueueDispatch()) {
       // ── Queue dispatch path (pg-boss) ──
       try {
-        let ghJob = await this.ghJobRepo.insertPendingJob({
+        let ghJob = await this.ghJobRepo.createJob({
           userId,
           jobType: "custom",
           targetUrl: "https://www.google.com",
@@ -855,27 +938,13 @@ export class TaskService {
           },
           callbackUrl,
           valetTaskId: task.id,
+          targetWorkerId: queueTargetWorkerId,
+          workerAffinity: queueTargetWorkerId ? "strict" : undefined,
         });
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
 
-        // WEK-147: Optionally create Kasm session for live VNC view.
-        let kasmWorkerId: string | undefined;
-        if (this.isKasmEnabled()) {
-          try {
-            const kasmResult = await this.createKasmSession(task.id, ghJob);
-            kasmWorkerId = kasmResult.kasmWorkerId;
-
-            const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-            if (refreshedJob) ghJob = refreshedJob;
-          } catch (err) {
-            this.logger.warn(
-              { err, taskId: task.id },
-              "Kasm session creation failed for test task — falling back to general queue",
-            );
-          }
-        }
-
+        // Dispatch to targeted queue if sandbox has active worker, general queue otherwise
         const pgBossJobId = await this.taskQueueService.enqueueGenericTask(
           {
             ghJobId: ghJob.id,
@@ -886,30 +955,26 @@ export class TaskService {
             taskDescription,
             callbackUrl,
           },
-          { targetWorkerId: kasmWorkerId },
+          { targetWorkerId: queueTargetWorkerId },
         );
 
-        // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-        const pgBossQueueName = kasmWorkerId
-          ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}`
-          : QUEUE_APPLY_JOB;
         if (pgBossJobId) {
           await this.ghJobRepo.updateStatus(ghJob.id, {
             status: "queued",
             metadata: {
               ...(ghJob.metadata ?? {}),
               pgBossJobId,
-              pgBossQueueName,
+              pgBossQueueName: QUEUE_APPLY_JOB,
             },
           });
         }
 
-        await this.taskRepo.updateStatus(task.id, "queued");
+        await this.taskRepo.updateStatus(task.id, "testing");
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
           taskId: task.id,
-          status: "queued",
+          status: "testing",
         });
       } catch (err) {
         this.logger.error({ err, taskId: task.id }, "Failed to enqueue test task via pg-boss");
@@ -935,19 +1000,19 @@ export class TaskService {
           task_description: taskDescription,
           callback_url: callbackUrl,
           max_retries: 1,
-          target_worker_id: body.targetWorkerId,
-          worker_affinity: "strict",
+          target_worker_id: queueTargetWorkerId,
+          worker_affinity: queueTargetWorkerId ? "strict" : undefined,
           ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
           ...(body.visionModel ? { image_model: body.visionModel } : {}),
         });
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
-        await this.taskRepo.updateStatus(task.id, "queued");
+        await this.taskRepo.updateStatus(task.id, "testing");
 
         await publishToUser(this.redis, userId, {
           type: "task_update",
           taskId: task.id,
-          status: "queued",
+          status: "testing",
         });
       } catch (err) {
         this.logger.error({ err, taskId: task.id }, "Failed to submit test task to GhostHands");
@@ -994,7 +1059,7 @@ export class TaskService {
       }
 
       const callbackUrl = buildCallbackUrl();
-      let ghJob = await this.ghJobRepo.insertPendingJob({
+      let ghJob = await this.ghJobRepo.createJob({
         userId,
         jobType: originalGhJob.jobType ?? "apply",
         targetUrl: task.jobUrl,
@@ -1006,31 +1071,13 @@ export class TaskService {
         tags: ["retry", "valet"],
         valetTaskId: id,
         callbackUrl,
-        targetWorkerId: originalGhJob.targetWorkerId ?? undefined,
-        workerAffinity: originalGhJob.targetWorkerId ? "strict" : undefined,
         metadata: {
           retryOf: task.workflowRunId,
           quality_preset: originalGhJob.metadata?.quality_preset ?? "quality",
         },
       });
 
-      // WEK-147: Optionally create Kasm session for live VNC view.
-      let kasmWorkerId: string | undefined;
-      if (this.isKasmEnabled()) {
-        try {
-          const kasmResult = await this.createKasmSession(id, ghJob);
-          kasmWorkerId = kasmResult.kasmWorkerId;
-
-          const refreshedJob = await this.ghJobRepo.findById(ghJob.id);
-          if (refreshedJob) ghJob = refreshedJob;
-        } catch (err) {
-          this.logger.warn(
-            { err, taskId: id },
-            "Kasm session creation failed on retry — falling back to general queue",
-          );
-        }
-      }
-
+      // Retry to general queue — any available worker picks it up (no affinity guarantee on retry)
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
           ghJobId: ghJob.id,
@@ -1041,22 +1088,19 @@ export class TaskService {
           jobType: "apply",
           callbackUrl,
         },
-        { targetWorkerId: kasmWorkerId },
+        {},
       );
 
-      // Store pg-boss job ID and queue name in gh_automation_jobs metadata for cancellation
-      const pgBossQueueName = kasmWorkerId ? `${QUEUE_APPLY_JOB}/${kasmWorkerId}` : QUEUE_APPLY_JOB;
       if (pgBossJobId) {
         await this.ghJobRepo.updateStatus(ghJob.id, {
           status: "queued",
-          targetWorkerId: kasmWorkerId,
           metadata: {
             ...(((ghJob as unknown as Record<string, unknown>).metadata as Record<
               string,
               unknown
             >) ?? {}),
             pgBossJobId,
-            pgBossQueueName,
+            pgBossQueueName: QUEUE_APPLY_JOB,
           },
         });
       }
@@ -1143,25 +1187,6 @@ export class TaskService {
           "Failed to cancel GhostHands job (may have already completed)",
         );
       }
-
-      // WEK-147: Destroy Kasm session on cancel
-      if (this.kasmClient) {
-        try {
-          const ghJob = useQueueDispatch()
-            ? await this.ghJobRepo.findById(task.workflowRunId)
-            : null;
-          const kasmId = ghJob?.metadata?.kasm_id as string | undefined;
-          if (kasmId) {
-            await this.kasmClient.destroyKasm(kasmId);
-            this.logger.info({ kasmId, taskId: id }, "Destroyed Kasm session on cancel");
-          }
-        } catch (err) {
-          this.logger.warn(
-            { err, taskId: id },
-            "Failed to destroy Kasm session on cancel (may already be gone)",
-          );
-        }
-      }
     }
 
     // Cancel the task record AFTER GH job is marked cancelled
@@ -1209,8 +1234,8 @@ export class TaskService {
     return updated;
   }
 
-  async stats(userId: string) {
-    return this.taskRepo.getStats(userId);
+  async stats(userId: string, excludeTest?: boolean) {
+    return this.taskRepo.getStats(userId, excludeTest);
   }
 
   async captchaSolved(id: string, userId: string) {
@@ -1255,6 +1280,9 @@ export class TaskService {
       throw new TaskNotResolvableError(taskId, "no workflowRunId");
     }
 
+    // Invalidate browser-session tokens immediately — the task is about to resume
+    browserSessionTokenStore.invalidateByTaskId(taskId);
+
     await this.ghosthandsClient.resumeJob(task.workflowRunId, {
       resolved_by: resolvedBy,
       notes,
@@ -1262,7 +1290,7 @@ export class TaskService {
       resolution_data: resolutionData,
     });
 
-    // Do NOT update task status here — wait for GH resumed callback
+    // Do NOT update task status here — wait for GH status callback (running/resumed)
     return {
       taskId,
       status: "waiting_human" as const,
@@ -1354,16 +1382,28 @@ export class TaskService {
 
     // GH status -> task status mapping
     const ghToTaskStatus: Record<string, TaskStatus> = {
+      pending: "queued",
+      queued: "queued",
       running: "in_progress",
+      paused: "waiting_human",
+      awaiting_review: "waiting_human",
+      needs_human: "waiting_human",
       completed: "completed",
       failed: "failed",
       cancelled: "cancelled",
-      needs_human: "waiting_human",
+      expired: "failed",
+      resumed: "in_progress", // legacy compatibility
     };
 
     try {
       const ghApiStatus = await this.ghosthandsClient.getJobStatus(task.workflowRunId);
-      const mappedTaskStatus = ghToTaskStatus[ghApiStatus.status];
+      let mappedTaskStatus = ghToTaskStatus[ghApiStatus.status];
+      if (
+        task.status === "testing" &&
+        (mappedTaskStatus === "queued" || mappedTaskStatus === "in_progress")
+      ) {
+        mappedTaskStatus = "testing";
+      }
 
       let taskUpdated = false;
       const previousTaskStatus = task.status;
@@ -1486,66 +1526,166 @@ export class TaskService {
   }
 
   /**
-   * WEK-134: Get the VNC live-view URL for the sandbox running this task.
-   * Returns the noVNC URL from the sandbox record, or null if unavailable.
+   * WEK-147: Compatibility alias for /api/v1/tasks/:id/vnc-url.
+   *
+   * Now returns a browser-session page URL (type "browser_session") for
+   * paused tasks with an available browser session. Falls through to null
+   * if unavailable — no raw worker IPs are ever returned.
    */
   async getVncUrl(
     taskId: string,
     userId: string,
-  ): Promise<{ url: string; readOnly: boolean; type: "novnc" | "kasm" } | null> {
+  ): Promise<{
+    url: string;
+    readOnly: boolean;
+    type: "browser_session" | "novnc" | "kasm" | "kasmvnc";
+  } | null> {
     const task = await this.taskRepo.findById(taskId, userId);
     if (!task) throw new TaskNotFoundError(taskId);
 
-    // Allow interactive control when task is waiting for human intervention
-    const readOnly = task.status !== "waiting_human";
-
-    // WEK-147: Check for Kasm session URL in gh_automation_jobs metadata
-    if (task.workflowRunId) {
+    // Only offer browser session for paused-for-human tasks
+    if (task.status === "waiting_human") {
       try {
-        const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
-        const kasmUrl = ghJob?.metadata?.kasm_url as string | undefined;
-        if (kasmUrl) {
-          // WEK-183: Ensure kasm_url is absolute (Kasm API returns relative paths like /#/connect/...)
-          let absoluteUrl = kasmUrl;
-          if (kasmUrl.startsWith("/#/") || kasmUrl.startsWith("/")) {
-            const kasmBase = process.env.KASM_API_URL?.replace(/\/api\/public\/?$/, "");
-            if (!kasmBase) {
-              this.logger.warn(
-                { taskId },
-                "KASM_API_URL not set — cannot resolve relative kasm_url to absolute",
-              );
-              return null;
-            }
-            absoluteUrl = `${kasmBase}${kasmUrl}`;
-          }
-          return { url: absoluteUrl, readOnly, type: "kasm" };
-        }
+        const session = await this.createLiveviewSession(taskId, userId);
+        return { url: session.url, readOnly: false, type: "browser_session" };
       } catch {
-        // Fall through to sandbox-based lookup
+        // Browser session not available — fall through to null
+        this.logger.debug({ taskId }, "Browser session unavailable for compat VNC URL");
       }
     }
 
-    // Fallback: noVNC URL from sandbox record
+    return null;
+  }
+
+  /**
+   * Create a VALET-owned browser liveview session for a paused task.
+   * Resolves the worker IP via ATM, checks GH browser-session availability,
+   * mints a short-lived token, and returns a VALET web page URL.
+   *
+   * IP-churn guard: if the initial GH call fails, invalidates ATM caches
+   * and retries resolution exactly once.
+   */
+  async createLiveviewSession(taskId: string, userId: string): Promise<BrowserSessionResponse> {
+    const task = await this.taskRepo.findById(taskId, userId);
+    if (!task) throw new TaskNotFoundError(taskId);
+
+    if (task.status !== "waiting_human") {
+      throw new TaskNotResolvableError(taskId, task.status);
+    }
+
+    // Resolve worker IP via sandbox + ATM
     if (!task.sandboxId) {
-      this.logger.debug({ taskId }, "Task has no sandboxId, cannot resolve VNC URL");
-      return null;
+      throw new TaskNotFoundError(taskId); // no sandbox = no worker
     }
-
     const sandbox = await this.sandboxRepo.findById(task.sandboxId);
-    if (!sandbox?.novncUrl) {
-      this.logger.debug(
-        { taskId, sandboxId: task.sandboxId },
-        "Sandbox has no novncUrl configured",
-      );
-      return null;
+    if (!sandbox) {
+      throw new TaskNotFoundError(taskId);
     }
 
-    return { url: sandbox.novncUrl, readOnly, type: "novnc" };
+    const ghServiceKey = process.env.GHOSTHANDS_SERVICE_KEY ?? process.env.GH_SERVICE_SECRET ?? "";
+
+    let workerIp: string | null = null;
+    let fleetId: string | undefined;
+
+    // First attempt: resolve via ATM (cached)
+    try {
+      const resolved = await this.atmFleetClient.resolveFleetId(sandbox);
+      if (resolved) {
+        fleetId = resolved;
+        const state = await this.atmFleetClient.getWorkerState(resolved);
+        workerIp = state?.ip ?? sandbox.publicIp ?? null;
+      } else {
+        workerIp = sandbox.publicIp ?? null;
+      }
+    } catch {
+      workerIp = sandbox.publicIp ?? null;
+    }
+
+    if (!workerIp) {
+      throw new AppError(502, "WORKER_UNREACHABLE", "Worker unreachable — no IP available");
+    }
+
+    // Call GH /internal/browser-session
+    let ghSession: Record<string, unknown> | null = null;
+    try {
+      ghSession = await this.callGhBrowserSession(workerIp, ghServiceKey);
+    } catch (err) {
+      // IP-churn guard: invalidate caches, retry ONCE
+      this.logger.info(
+        { taskId, workerIp, err: (err as Error).message },
+        "GH browser-session call failed, retrying with fresh ATM resolution",
+      );
+      this.atmFleetClient.invalidateAllCaches();
+      try {
+        const freshFleetId = await this.atmFleetClient.resolveFleetId(sandbox);
+        if (freshFleetId) {
+          fleetId = freshFleetId;
+          const freshState = await this.atmFleetClient.getWorkerState(freshFleetId);
+          workerIp = freshState?.ip ?? null;
+        } else {
+          workerIp = sandbox.publicIp ?? null;
+        }
+        if (!workerIp) {
+          throw new AppError(502, "WORKER_UNREACHABLE", "Worker unreachable after cache refresh");
+        }
+        ghSession = await this.callGhBrowserSession(workerIp, ghServiceKey);
+      } catch {
+        throw new AppError(502, "WORKER_UNREACHABLE", "Worker unreachable after retry");
+      }
+    }
+
+    if (!ghSession?.available || !ghSession.pausedForHuman) {
+      throw new AppError(
+        503,
+        "BROWSER_SESSION_UNAVAILABLE",
+        "Browser session not available on worker",
+      );
+    }
+
+    // Mint VALET-owned session token
+    const tokenEntry = browserSessionTokenStore.mint({
+      taskId,
+      ghJobId: ghSession.jobId as string,
+      workerIp,
+      fleetId,
+      pageUrl: ghSession.pageUrl as string | undefined,
+      pageTitle: ghSession.pageTitle as string | undefined,
+    });
+
+    // Build page URL from WEB_URL
+    const webUrl = process.env.WEB_URL;
+    if (!webUrl) {
+      throw new AppError(500, "CONFIG_ERROR", "WEB_URL not configured");
+    }
+
+    return {
+      url: `${webUrl.replace(/\/$/, "")}/browser-session/${tokenEntry.token}`,
+      expiresAt: tokenEntry.expiresAt.toISOString(),
+      readOnly: false,
+      type: "browser_session" as const,
+      mode: "simple_browser" as const,
+      pageUrl: (ghSession.pageUrl as string) ?? undefined,
+      pageTitle: (ghSession.pageTitle as string) ?? undefined,
+    };
+  }
+
+  private async callGhBrowserSession(
+    workerIp: string,
+    serviceKey: string,
+  ): Promise<Record<string, unknown>> {
+    const resp = await fetch(`http://${workerIp}:3100/internal/browser-session`, {
+      headers: { "X-GH-Service-Key": serviceKey },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) {
+      throw new Error(`GH browser-session returned ${resp.status}`);
+    }
+    return resp.json() as Promise<Record<string, unknown>>;
   }
 
   /**
    * EC10: Monitor and fail stale tasks.
-   * Finds tasks stuck in "queued" or "in_progress" for more than 2 hours,
+   * Finds tasks stuck in "queued", "testing", or "in_progress" for more than 2 hours,
    * checks if the corresponding GH job has a recent heartbeat (last 5 min),
    * and marks tasks as "failed" with errorCode "STALE_TASK" if no heartbeat.
    */
@@ -1562,7 +1702,7 @@ export class TaskService {
         try {
           const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
           if (ghJob?.lastHeartbeat) {
-            const heartbeatAge = Date.now() - ghJob.lastHeartbeat.getTime();
+            const heartbeatAge = Date.now() - new Date(ghJob.lastHeartbeat).getTime();
             if (heartbeatAge < HEARTBEAT_THRESHOLD_MS) {
               // GH job is still alive — skip
               continue;
@@ -1582,7 +1722,7 @@ export class TaskService {
           taskId: task.id,
           status: task.status,
           workflowRunId: task.workflowRunId,
-          updatedAt: task.updatedAt.toISOString(),
+          updatedAt: new Date(task.updatedAt).toISOString(),
         },
         "Failing stale task — no recent GH job heartbeat",
       );

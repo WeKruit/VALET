@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useWorkbenchStore } from "../stores/workbench.store";
 import { Card, CardContent } from "@valet/ui/components/card";
 import { Input } from "@valet/ui/components/input";
 import { Textarea } from "@valet/ui/components/textarea";
@@ -21,6 +22,7 @@ import {
   StickyNote,
   Briefcase,
   Globe,
+  Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -29,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { QualitySelector } from "./quality-selector";
 import { WorkerSelector } from "./worker-selector";
+import { ModelSelectors } from "./model-selectors";
 
 type PlatformInfo = {
   name: string;
@@ -96,14 +99,19 @@ function isValidUrl(url: string): boolean {
 }
 
 export function ApplyForm() {
-  const [url, setUrl] = useState("");
+  const [searchParams] = useSearchParams();
+  const { setSelectedTaskId } = useWorkbenchStore();
+  const user = useAuth((s) => s.user);
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+
+  // Pre-fill URL from search params (e.g. /apply?url=https://...)
+  const [url, setUrl] = useState(() => searchParams.get("url") ?? "");
   const [notes, setNotes] = useState("");
   const [quality, setQuality] = useState<"speed" | "balanced" | "quality">("balanced");
   const [selectedResumeId, setSelectedResumeId] = useState<string>("");
   const [targetWorkerId, setTargetWorkerId] = useState<string>("");
-  const navigate = useNavigate();
-  const user = useAuth((s) => s.user);
-  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const [reasoningModel, setReasoningModel] = useState<string>("auto");
+  const [visionModel, setVisionModel] = useState<string>("auto");
 
   const { data: resumesData, isLoading: resumesLoading } = api.resumes.list.useQuery({
     queryKey: ["resumes"],
@@ -129,8 +137,10 @@ export function ApplyForm() {
   const createTask = api.tasks.create.useMutation({
     onSuccess: (data) => {
       if (data.status === 201) {
-        toast.success("Application started. Redirecting to task view.");
-        navigate(`/tasks/${data.body.id}`);
+        toast.success("Application started.");
+        setSelectedTaskId(data.body.id);
+        setUrl("");
+        setNotes("");
       }
     },
     onError: () => {
@@ -159,6 +169,8 @@ export function ApplyForm() {
         quality,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
+        ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
+        ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
       },
     });
   }
@@ -336,40 +348,65 @@ export function ApplyForm() {
         <CardContent className="p-6">
           <div className="flex items-center gap-2 mb-3">
             <Zap className="h-4 w-4 text-[var(--wk-text-secondary)]" />
-            <label className="text-sm font-medium text-[var(--wk-text-primary)]">Quality</label>
+            <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+              Effort level
+            </label>
           </div>
           <QualitySelector value={quality} onChange={setQuality} />
         </CardContent>
       </Card>
 
+      {/* Model override (power-user convenience, hidden for simplicity) */}
+      {isAdmin && (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Cpu className="h-4 w-4 text-[var(--wk-text-secondary)]" />
+              <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+                Model Override
+                <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(advanced)</span>
+              </label>
+            </div>
+            <ModelSelectors
+              reasoningModel={reasoningModel}
+              onReasoningModelChange={setReasoningModel}
+              visionModel={visionModel}
+              onVisionModelChange={setVisionModel}
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Worker selector (admin only) */}
       {isAdmin && <WorkerSelector value={targetWorkerId} onChange={setTargetWorkerId} />}
 
       {/* Notes card */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center gap-2 mb-3">
-            <StickyNote className="h-4 w-4 text-[var(--wk-text-secondary)]" />
-            <label className="text-sm font-medium text-[var(--wk-text-primary)]">
-              Notes
-              <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(optional)</span>
-            </label>
-          </div>
-          <Textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes about this application (optional)..."
-            maxLength={1000}
-            rows={3}
-            className="resize-none"
-          />
-          {notes.length > 0 && (
-            <p className="text-xs text-[var(--wk-text-tertiary)] mt-1 text-right">
-              {notes.length}/1000
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {isAdmin && (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <StickyNote className="h-4 w-4 text-[var(--wk-text-secondary)]" />
+              <label className="text-sm font-medium text-[var(--wk-text-primary)]">
+                Notes
+                <span className="font-normal text-[var(--wk-text-tertiary)] ml-1">(optional)</span>
+              </label>
+            </div>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes about this application (optional)..."
+              maxLength={1000}
+              rows={3}
+              className="resize-none"
+            />
+            {notes.length > 0 && (
+              <p className="text-xs text-[var(--wk-text-tertiary)] mt-1 text-right">
+                {notes.length}/1000
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Mode indicator + submit */}
       <Card>

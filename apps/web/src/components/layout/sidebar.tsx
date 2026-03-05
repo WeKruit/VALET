@@ -4,6 +4,7 @@ import {
   ListTodo,
   ClipboardList,
   Send,
+  Inbox,
   Settings,
   Moon,
   Sun,
@@ -17,6 +18,7 @@ import {
   Cpu,
   KeyRound,
   Megaphone,
+  BarChart3,
 } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
 import { useUIStore } from "@/stores/ui.store";
@@ -27,7 +29,9 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/tasks", label: "Applications", icon: ListTodo },
-  { path: "/apply", label: "Apply", icon: Send },
+  { path: "/jobs", label: "Jobs", icon: Inbox },
+  { path: "/apply", label: "Workbench", icon: Send },
+  { path: "/insights", label: "Insights", icon: BarChart3 },
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 

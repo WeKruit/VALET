@@ -15,7 +15,6 @@ const mockTaskRepo = {
   updateStatus: vi.fn(),
   updateWorkflowRunId: vi.fn(),
   updateGhosthandsResult: vi.fn(),
-  updateProgress: vi.fn(),
   cancel: vi.fn(),
   findAllForExport: vi.fn(),
   findMany: vi.fn(),
@@ -111,6 +110,11 @@ function createService() {
     ghSessionRepo: mockGhSessionRepo as any,
     redis: mockRedis,
     logger: mockLogger,
+    userSandboxRepo: {
+      findByUserId: vi.fn().mockResolvedValue(null),
+      findBestAvailableSandbox: vi.fn().mockResolvedValue(null),
+      assign: vi.fn().mockResolvedValue(undefined),
+    },
   });
 }
 
@@ -445,7 +449,6 @@ describe("Worker Dispatch Tests", () => {
 
       mockGhosthandsClient.retryJob.mockResolvedValue(undefined);
       mockTaskRepo.updateStatus.mockResolvedValue(undefined);
-      mockTaskRepo.updateProgress.mockResolvedValue(undefined);
 
       // Return updated task on second findById call
       mockTaskRepo.findById.mockResolvedValueOnce({

@@ -16,6 +16,7 @@ import securityPlugin from "./plugins/security.js";
 import swaggerPlugin from "./plugins/swagger.js";
 import caslPlugin from "./plugins/casl.js";
 import { registerWebSocket } from "./websocket/handler.js";
+import { registerBrowserSessionWs } from "./modules/tasks/browser-session-ws.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { taskRouter } from "./modules/tasks/task.routes.js";
 import { taskEventRouter } from "./modules/task-events/task-event.routes.js";
@@ -42,6 +43,13 @@ import { taskEventsSSERoutes } from "./modules/tasks/task-events-sse.routes.js";
 import { earlyAccessRouter } from "./modules/early-access/early-access.routes.js";
 import { earlyAccessAdminRouter } from "./modules/early-access/early-access.admin-routes.js";
 import { emailTemplatesAdminRouter } from "./modules/email-templates/email-templates.admin-routes.js";
+import { credentialRouter } from "./modules/credentials/credential.routes.js";
+import { fitLabRouter } from "./modules/fit-lab/fit-lab.routes.js";
+import { insightsRouter } from "./modules/insights/insights.routes.js";
+import { jobLeadRouter } from "./modules/job-leads/job-lead.routes.js";
+import { localWorkerRoutes } from "./modules/local-workers/local-worker.routes.js";
+import { referralRouter } from "./modules/referrals/referral.routes.js";
+import { creditRouter } from "./modules/credits/credit.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -135,6 +143,12 @@ export async function buildApp() {
   fastify.register(s.plugin(earlyAccessRouter));
   fastify.register(s.plugin(earlyAccessAdminRouter));
   fastify.register(s.plugin(emailTemplatesAdminRouter));
+  fastify.register(s.plugin(credentialRouter));
+  fastify.register(s.plugin(fitLabRouter));
+  fastify.register(s.plugin(insightsRouter));
+  fastify.register(s.plugin(jobLeadRouter));
+  fastify.register(s.plugin(referralRouter));
+  fastify.register(s.plugin(creditRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
@@ -153,12 +167,16 @@ export async function buildApp() {
 
   // User-facing standalone routes (outside ts-rest, needs auth)
   await fastify.register(taskUserRoutes);
+  await fastify.register(localWorkerRoutes);
 
   // SSE streaming route (handles its own JWT auth via query param)
   await fastify.register(taskEventsSSERoutes);
 
   // WebSocket
   await registerWebSocket(fastify);
+
+  // Browser session WebSocket (must be after @fastify/websocket registration)
+  await registerBrowserSessionWs(fastify);
 
   // Start monitors after server is ready
   fastify.addHook("onReady", async () => {

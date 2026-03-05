@@ -8,7 +8,11 @@ async function fetchWithAuth(url: string) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
   const res = await fetch(url, { headers, credentials: "include" });
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const msg = (body as Record<string, unknown> | null)?.error;
+    throw new Error(typeof msg === "string" ? msg : `Request failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -24,7 +28,11 @@ async function postWithAuth(url: string, body?: unknown) {
     credentials: "include",
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    const msg = (data as Record<string, unknown> | null)?.error;
+    throw new Error(typeof msg === "string" ? msg : `Request failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -34,7 +42,7 @@ export interface WorkerEntry {
   sandbox_name: string | null;
   environment: string | null;
   ec2_ip: string | null;
-  status: "active" | "draining" | "offline";
+  status: string;
   current_job_id: string | null;
   valet_task_id: string | null;
   registered_at: string;
@@ -42,11 +50,17 @@ export interface WorkerEntry {
   jobs_completed: number;
   jobs_failed: number;
   uptime_seconds: number | null;
+  ec2_state: string | null;
+  active_jobs: number | null;
+  transitioning: boolean;
+  source: "atm" | "gh";
+  atm_unverified?: boolean;
 }
 
 export interface WorkerFleetResponse {
   workers: WorkerEntry[];
   total: number;
+  source: "atm" | "gh";
 }
 
 export function useWorkerFleet() {

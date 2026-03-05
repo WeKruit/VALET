@@ -185,7 +185,18 @@ export interface GHCallbackCostBreakdown {
 export interface GHCallbackPayload {
   job_id: string;
   valet_task_id: string | null;
-  status: "running" | "completed" | "failed" | "cancelled" | "needs_human" | "resumed";
+  status:
+    | "pending"
+    | "queued"
+    | "running"
+    | "paused"
+    | "needs_human"
+    | "awaiting_review"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "expired"
+    | "resumed"; // legacy compatibility
   worker_id?: string;
   completed_at?: string;
   progress?: number;
@@ -203,6 +214,8 @@ export interface GHCallbackPayload {
   interaction?: GHInteractionData;
   /** Kasm session URL for live browser view (WEK-162) */
   kasm_url?: string;
+  /** Whether a browser liveview session is available for takeover */
+  browser_session_available?: boolean;
   // Legacy format support (if GH is updated to match original spec)
   result?: GHJobResult;
   error?: GHJobError;

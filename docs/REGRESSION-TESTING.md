@@ -325,9 +325,9 @@ test.describe("P0: Frontend Smoke", () => {
 
 ---
 
-## 3. Worker Regression Tests (apps/worker)
+## 3. GhostHands Dispatch Regression Tests (apps/api)
 
-The worker is a GhostHands browser automation client. It dispatches jobs via HTTP POST to GH and handles callbacks. Tests mock the GhostHands API.
+The API dispatches browser automation jobs to GhostHands via HTTP POST and handles callbacks. Tests mock the GhostHands API.
 
 ### P0
 
@@ -698,10 +698,10 @@ GhostHands workers run on EC2 instances managed via the sandbox system.
 
 ```bash
 # 1. Check current deploy status
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<sandbox-ip> "cat /opt/ghost-hands/DEPLOY_VERSION"
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<sandbox-ip> "cat /opt/ghost-hands/DEPLOY_VERSION"
 
 # 2. If the latest deploy broke things, roll back the Docker image
-ssh -i ~/.ssh/valet-worker.pem ubuntu@<sandbox-ip> \
+ssh -i ~/.ssh/wekruit-atm-server.pem ubuntu@<sandbox-ip> \
   "cd /opt/ghost-hands && docker compose down && \
    docker tag ghost-hands:latest ghost-hands:broken && \
    docker tag ghost-hands:previous ghost-hands:latest && \

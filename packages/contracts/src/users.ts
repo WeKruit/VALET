@@ -119,4 +119,14 @@ export const userContract = c.router({
     },
     summary: "Clear all browser sessions for the current user",
   },
+  completeOnboarding: {
+    method: "POST",
+    path: "/api/v1/users/me/onboarding/complete",
+    body: z.object({}),
+    responses: {
+      200: z.object({ onboardingCompletedAt: z.coerce.date() }),
+      400: errorResponse,
+    },
+    summary: "Mark onboarding as complete",
+  },
 });

@@ -1,10 +1,14 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import * as jose from "jose";
+import { eq } from "drizzle-orm";
+import { users } from "@valet/db";
 import { AppError } from "../errors.js";
 import {
   SECURITY_EVENT_TYPES,
   type SecurityEventType,
 } from "../../services/security-logger.service.js";
+
+const ROLE_CACHE_TTL_SECONDS = 60;
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -23,6 +27,10 @@ const PUBLIC_EXACT_PATHS = [
   "/api/v1/auth/verify-email",
   "/api/v1/auth/forgot-password",
   "/api/v1/auth/reset-password",
+  "/api/v1/auth/desktop/exchange-supabase",
+  "/api/v1/auth/desktop/google",
+  "/api/v1/auth/desktop/refresh",
+  "/api/v1/auth/desktop/logout",
   "/api/v1/health",
   "/api/v1/health/version",
   "/api/v1/billing/webhook",
@@ -35,8 +43,18 @@ const PUBLIC_EXACT_PATHS = [
 
 const PUBLIC_PREFIX_PATHS = ["/api/v1/ws", "/docs"];
 
-/** Routes that handle their own JWT auth (e.g. via query-param token). */
-const SELF_AUTH_PATTERNS = [/^\/api\/v1\/tasks\/[^/]+\/events\/stream$/];
+/** Routes that bypass JWT auth and authenticate with X-Local-Worker-Session tokens instead. */
+const SELF_AUTH_PATTERNS = [
+  /^\/api\/v1\/tasks\/[^/]+\/events\/stream$/,
+  /^\/api\/v1\/local-workers\/claim$/,
+  /^\/api\/v1\/local-workers\/[^/]+\/heartbeat$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/events$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/awaiting-review$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/complete$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/fail$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/release$/,
+  /^\/api\/v1\/local-workers\/jobs\/[^/]+\/cancel$/,
+];
 
 export async function authMiddleware(request: FastifyRequest, _reply: FastifyReply) {
   const path = request.url.split("?")[0];
@@ -87,7 +105,10 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
 
     request.userId = payload.sub;
     request.userEmail = payload.email as string;
-    request.userRole = (payload.role as string) ?? "user";
+
+    // Resolve role from Redis cache or DB to avoid stale JWT roles after promotion
+    const jwtRole = (payload.role as string) ?? "user";
+    request.userRole = await resolveCurrentRole(request, payload.sub, jwtRole);
   } catch (err) {
     if (err instanceof AppError) throw err;
     logSecurityEvent(request, SECURITY_EVENT_TYPES.AUTH_FAILURE, {
@@ -95,6 +116,36 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
       reason: "Invalid or expired token",
     });
     throw AppError.unauthorized("Invalid or expired token");
+  }
+}
+
+async function resolveCurrentRole(
+  request: FastifyRequest,
+  userId: string,
+  jwtRole: string,
+): Promise<string> {
+  try {
+    const redis = request.server.redis;
+    const cacheKey = `role:cache:${userId}`;
+
+    // Check Redis cache first
+    const cached = await redis.get(cacheKey);
+    if (cached) return cached;
+
+    // Cache miss — query DB
+    const db = request.server.db;
+    const rows = await db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const dbRole = rows[0]?.role ?? jwtRole;
+    await redis.set(cacheKey, dbRole, "EX", ROLE_CACHE_TTL_SECONDS);
+    return dbRole;
+  } catch {
+    // Graceful degradation — fall back to JWT role
+    return jwtRole;
   }
 }
 

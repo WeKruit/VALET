@@ -9,7 +9,7 @@ function makeMockProvider(type: "ec2" | "macos" | "local_docker"): SandboxProvid
     startMachine: async () => ({ success: true, message: "started" }),
     stopMachine: async () => ({ success: true, message: "stopped" }),
     getMachineStatus: async () => ({ state: "running" as const }),
-    getAgentUrl: () => `http://127.0.0.1:8000`,
+    getAgentUrl: () => `http://127.0.0.1:8080`,
     pingAgent: async () => true,
   };
 }
@@ -37,6 +37,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   lastStartedAt: null,
   lastStoppedAt: null,
   autoStopEnabled: false,
+  autoStopOwner: "none",
   idleMinutesBeforeStop: 30,
   machineType: "ec2",
   agentVersion: null,
@@ -45,6 +46,7 @@ const SANDBOX_FIXTURE: SandboxRecord = {
   ghImageUpdatedAt: null,
   deployedCommitSha: null,
   healthCheckFailureCount: 0,
+  lastBecameIdleAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

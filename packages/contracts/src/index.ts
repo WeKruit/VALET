@@ -17,6 +17,12 @@ import { earlyAccessContract } from "./early-access.js";
 import { desktopReleaseContract } from "./desktop-release.js";
 import { earlyAccessAdminContract } from "./admin/early-access-admin.js";
 import { emailTemplatesAdminContract } from "./admin/email-templates-admin.js";
+import { credentialContract } from "./credentials.js";
+import { fitLabContract } from "./fit-lab.js";
+import { insightsContract } from "./insights.js";
+import { jobLeadContract } from "./job-leads.js";
+import { referralContract } from "./referrals.js";
+import { creditContract } from "./credits.js";
 
 const c = initContract();
 
@@ -39,6 +45,12 @@ export const apiContract = c.router({
   earlyAccess: earlyAccessContract,
   earlyAccessAdmin: earlyAccessAdminContract,
   emailTemplatesAdmin: emailTemplatesAdminContract,
+  credentials: credentialContract,
+  fitLab: fitLabContract,
+  insights: insightsContract,
+  jobLeads: jobLeadContract,
+  referrals: referralContract,
+  credits: creditContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -62,4 +74,10 @@ export {
   earlyAccessContract,
   earlyAccessAdminContract,
   emailTemplatesAdminContract,
+  credentialContract,
+  fitLabContract,
+  insightsContract,
+  jobLeadContract,
+  referralContract,
+  creditContract,
 };

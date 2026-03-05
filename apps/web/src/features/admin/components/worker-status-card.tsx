@@ -1,12 +1,28 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
 import { Badge } from "@valet/ui/components/badge";
-import { Activity, Server, Clock, CheckCircle, XCircle, Container, Zap, Inbox } from "lucide-react";
+import {
+  Activity,
+  Server,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Container,
+  Zap,
+  Inbox,
+  Loader2,
+} from "lucide-react";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useWorkerStatus } from "../hooks/use-sandboxes";
+import { Ec2StatusBadge } from "./ec2-status-badge";
+import type { Ec2Status } from "../types";
 
 interface WorkerStatusCardProps {
   sandboxId: string;
   ec2Running: boolean;
+  /** EC2 state from ATM fleet (e.g. "running", "stopped", "pending") */
+  ec2State?: string | null;
+  /** Whether the EC2 instance is transitioning (starting/stopping via ATM) */
+  transitioning?: boolean;
 }
 
 function StatusDot({ status }: { status: "healthy" | "degraded" | "unhealthy" | "unreachable" }) {
@@ -61,7 +77,12 @@ function OverallStatusBadge({
   );
 }
 
-export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProps) {
+export function WorkerStatusCard({
+  sandboxId,
+  ec2Running,
+  ec2State,
+  transitioning,
+}: WorkerStatusCardProps) {
   const { data, isLoading, isError } = useWorkerStatus(sandboxId, ec2Running);
   const ws = data?.status === 200 ? data.body : null;
 
@@ -132,6 +153,10 @@ export function WorkerStatusCard({ sandboxId, ec2Running }: WorkerStatusCardProp
           <Activity className="h-5 w-5" />
           Worker Status
           {ws && <OverallStatusBadge status={ws.worker.status} />}
+          {ec2State && <Ec2StatusBadge status={ec2State as Ec2Status} className="text-xs" />}
+          {transitioning && (
+            <Loader2 className="h-4 w-4 animate-spin text-[var(--wk-status-warning)]" />
+          )}
           {ws?.uptime != null && (
             <span className="ml-auto text-xs font-normal text-[var(--wk-text-tertiary)]">
               Uptime: {formatUptime(ws.uptime)}

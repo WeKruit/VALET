@@ -450,6 +450,28 @@ export const deployStatusResponse = z.object({
   updatedAt: z.coerce.date(),
 });
 
+// ─── User Sandbox Assignments ───
+
+export const userSandboxAssignmentResponse = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  sandboxId: z.string().uuid(),
+  assignedAt: z.coerce.date(),
+  assignedBy: z.string().uuid().nullable(),
+  userName: z.string().nullable().optional(),
+  userEmail: z.string().nullable().optional(),
+  sandboxName: z.string().nullable().optional(),
+});
+
+export const userSandboxAssignRequest = z.object({
+  userId: z.string().uuid(),
+  sandboxId: z.string().uuid(),
+});
+
+export const userSandboxListResponse = z.object({
+  data: z.array(userSandboxAssignmentResponse),
+});
+
 // ─── Inferred Types (NEVER hand-write these) ───
 export type Ec2Status = z.infer<typeof ec2Status>;
 export type BrowserEngine = z.infer<typeof browserEngine>;
@@ -495,3 +517,6 @@ export type AgentHealthResponseType = z.infer<typeof agentHealthResponse>;
 export type PaginationMeta = z.infer<typeof paginationMeta>;
 export type PortCheckResult = z.infer<typeof portCheckResult>;
 export type DeepHealthCheckResponse = z.infer<typeof deepHealthCheckResponse>;
+export type UserSandboxAssignmentResponse = z.infer<typeof userSandboxAssignmentResponse>;
+export type UserSandboxAssignRequest = z.infer<typeof userSandboxAssignRequest>;
+export type UserSandboxListResponse = z.infer<typeof userSandboxListResponse>;
