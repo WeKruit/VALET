@@ -39,6 +39,9 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       return;
     }
 
+    if (res.status !== 201) {
+      console.log(`[e2e] Task create returned ${res.status}:`, JSON.stringify(res.data));
+    }
     expect(res.status).toBe(201);
     const data = res.data as any;
     expect(data.id).toBeDefined();
@@ -61,6 +64,12 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       return;
     }
 
+    if (createRes.status !== 201) {
+      console.log(
+        `[e2e] Task create returned ${createRes.status}:`,
+        JSON.stringify(createRes.data),
+      );
+    }
     expect(createRes.status).toBe(201);
     const taskId = (createRes.data as any).id;
 
@@ -91,6 +100,12 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       return;
     }
 
+    if (createRes.status !== 201) {
+      console.log(
+        `[e2e] Task create returned ${createRes.status}:`,
+        JSON.stringify(createRes.data),
+      );
+    }
     expect(createRes.status).toBe(201);
     const taskId = (createRes.data as any).id;
 
@@ -121,6 +136,12 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       return;
     }
 
+    if (createRes.status !== 201) {
+      console.log(
+        `[e2e] Task create returned ${createRes.status}:`,
+        JSON.stringify(createRes.data),
+      );
+    }
     expect(createRes.status).toBe(201);
     const taskId = (createRes.data as any).id;
 

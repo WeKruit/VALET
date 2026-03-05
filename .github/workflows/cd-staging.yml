@@ -11,9 +11,14 @@ on:
         type: boolean
         default: false
 
+# Queue deploys instead of cancelling mid-flight. cancel-in-progress: true
+# was killing Fly.io deploys after the release_command (migration) had already
+# run, leaving GH Actions as "cancelled" and sending failure emails.
+# Tradeoff: a stale queued run blocks urgent fixes. Use workflow_dispatch with
+# deploy-all: true to jump the queue if needed.
 concurrency:
   group: deploy-staging
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   detect-changes:

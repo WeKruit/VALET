@@ -559,19 +559,37 @@ export class TaskService {
       resolvedSandboxId = (await this.resolveUserSandbox(userId)) ?? undefined;
     }
 
+    // Validate resume exists before insert
+    const resume = await this.resumeRepo.findById(body.resumeId, userId);
+    if (!resume) {
+      throw AppError.notFound(`Resume ${body.resumeId} not found`);
+    }
+
     // Tag notes with sandbox ID for tracking
     const notes = resolvedSandboxId
       ? `${body.notes ?? ""} [sandbox:${resolvedSandboxId}]`.trim()
       : body.notes;
 
-    const task = await this.taskRepo.create({
-      userId,
-      jobUrl: body.jobUrl,
-      mode: body.mode,
-      resumeId: body.resumeId,
-      notes,
-      sandboxId: resolvedSandboxId,
-    });
+    let task: Awaited<ReturnType<typeof this.taskRepo.create>>;
+    try {
+      task = await this.taskRepo.create({
+        userId,
+        jobUrl: body.jobUrl,
+        mode: body.mode,
+        resumeId: body.resumeId,
+        notes,
+        sandboxId: resolvedSandboxId,
+      });
+    } catch (err: unknown) {
+      // Postgres 23503 = foreign_key_violation. Only catch the resume FK specifically;
+      // other FK failures (e.g. sandbox_id) should bubble as 500.
+      const pgCode = (err as { code?: string }).code;
+      const pgConstraint = (err as { constraint?: string }).constraint;
+      if (pgCode === "23503" && pgConstraint === "tasks_resume_id_resumes_id_fk") {
+        throw AppError.notFound(`Resume ${body.resumeId} no longer exists`);
+      }
+      throw err;
+    }
 
     // Credit enforcement (feature-flagged) — debit AFTER task creation so we have a real task UUID
     if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
@@ -610,15 +628,9 @@ export class TaskService {
       }
     }
 
-    // Fetch resume data for the GhostHands profile
-    const resume = await this.resumeRepo.findById(body.resumeId, userId);
-    if (!resume) {
-      this.logger.warn({ resumeId: body.resumeId }, "Resume not found for task creation");
-    }
-
-    // Build profile from parsed resume data
+    // Build profile from parsed resume data (resume was already validated above)
     const profile = this.buildGhosthandsProfile(
-      resume?.parsedData as Record<string, unknown> | null,
+      resume.parsedData as Record<string, unknown> | null,
     );
 
     // Fetch QA bank answers for the user
