@@ -11,8 +11,7 @@ const defaultSearchParams = new URLSearchParams();
 let currentSearchParams = defaultSearchParams;
 
 vi.mock("react-router-dom", async () => {
-  const actual =
-    await vi.importActual<typeof ReactRouterDom>("react-router-dom");
+  const actual = await vi.importActual<typeof ReactRouterDom>("react-router-dom");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -41,6 +40,14 @@ vi.mock("@/lib/api-client", () => ({
         }),
       },
     },
+    referrals: {
+      claim: {
+        useMutation: (_opts?: any) => ({
+          mutate: vi.fn(),
+          isPending: false,
+        }),
+      },
+    },
   },
   setAccessToken: vi.fn(),
   clearAccessToken: vi.fn(),
@@ -66,7 +73,7 @@ function renderLoginPage() {
   return render(
     <MemoryRouter>
       <LoginPage />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -80,15 +87,13 @@ describe("LoginPage", () => {
     renderLoginPage();
     expect(screen.getByText("WeKruit Valet")).toBeInTheDocument();
     expect(
-      screen.getByText("Verified Automation. Limitless Execution. Trust.")
+      screen.getByText("Verified Automation. Limitless Execution. Trust."),
     ).toBeInTheDocument();
   });
 
   it("renders the Google sign-in button", () => {
     renderLoginPage();
-    expect(
-      screen.getByRole("button", { name: /sign in with google/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign in with google/i })).toBeInTheDocument();
   });
 
   it("renders trust signals", () => {
@@ -101,16 +106,12 @@ describe("LoginPage", () => {
   it("renders the welcome heading", () => {
     renderLoginPage();
     expect(screen.getByText("Welcome back")).toBeInTheDocument();
-    expect(
-      screen.getByText("Sign in to manage your applications")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Sign in to manage your applications")).toBeInTheDocument();
   });
 
   it("renders the ToS notice", () => {
     renderLoginPage();
-    expect(
-      screen.getByText(/by signing in, you agree to our/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/by signing in, you agree to our/i)).toBeInTheDocument();
   });
 
   it("shows error toast when Google client ID is not set", async () => {
@@ -126,12 +127,10 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     renderLoginPage();
 
-    await user.click(
-      screen.getByRole("button", { name: /sign in with google/i })
-    );
+    await user.click(screen.getByRole("button", { name: /sign in with google/i }));
 
     expect(toast.error).toHaveBeenCalledWith(
-      "Google OAuth is not configured. Set VITE_GOOGLE_CLIENT_ID."
+      "Google OAuth is not configured. Set VITE_GOOGLE_CLIENT_ID.",
     );
   });
 
