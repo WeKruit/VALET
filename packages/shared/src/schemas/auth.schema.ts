@@ -59,6 +59,47 @@ export const messageResponse = z.object({
   message: z.string(),
 });
 
+// ─── Desktop Auth Schemas ───
+
+export const desktopExchangeSupabaseRequest = z.object({
+  supabaseAccessToken: z.string().min(1),
+});
+
+export const desktopGoogleAuthRequest = z.object({
+  code: z.string().min(1),
+  redirectUri: z.string().url(),
+  codeVerifier: z.string().min(43).max(128).optional(),
+});
+
+export const desktopRefreshRequest = z.object({
+  refreshToken: z.string().min(1),
+});
+
+export const desktopLogoutRequest = z.object({
+  refreshToken: z.string().min(1),
+});
+
+export const desktopAuthTokenResponse = z.object({
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  tokenType: z.literal("Bearer"),
+  expiresIn: z.number(),
+  user: z.object({
+    id: z.string(),
+    email: z.string(),
+    name: z.string(),
+    avatarUrl: z.string().nullable(),
+    role: z.string(),
+  }),
+});
+
+export const desktopRefreshTokenResponse = z.object({
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  tokenType: z.literal("Bearer"),
+  expiresIn: z.number(),
+});
+
 // ─── Inferred Types ───
 export type GoogleAuthRequest = z.infer<typeof googleAuthRequest>;
 export type RefreshTokenRequest = z.infer<typeof refreshTokenRequest>;
@@ -72,3 +113,9 @@ export type ForgotPasswordRequest = z.infer<typeof forgotPasswordRequest>;
 export type ResetPasswordRequest = z.infer<typeof resetPasswordRequest>;
 export type VerifyEmailRequest = z.infer<typeof verifyEmailRequest>;
 export type MessageResponse = z.infer<typeof messageResponse>;
+export type DesktopExchangeSupabaseRequest = z.infer<typeof desktopExchangeSupabaseRequest>;
+export type DesktopGoogleAuthRequest = z.infer<typeof desktopGoogleAuthRequest>;
+export type DesktopRefreshRequest = z.infer<typeof desktopRefreshRequest>;
+export type DesktopLogoutRequest = z.infer<typeof desktopLogoutRequest>;
+export type DesktopAuthTokenResponse = z.infer<typeof desktopAuthTokenResponse>;
+export type DesktopRefreshTokenResponse = z.infer<typeof desktopRefreshTokenResponse>;

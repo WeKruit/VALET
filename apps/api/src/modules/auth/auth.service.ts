@@ -48,10 +48,13 @@ const EMAIL_VERIFICATION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PASSWORD_RESET_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 // Google's JWKS endpoint for verifying ID tokens
-const googleJWKS = jose.createRemoteJWKSet(
-  new URL("https://www.googleapis.com/oauth2/v3/certs"),
-);
+const googleJWKS = jose.createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 
+// Supabase JWKS endpoint for verifying Supabase access tokens
+const supabaseProjectRef = process.env.SUPABASE_PROJECT_REF ?? "unistzvhgvgjyzotwzxr";
+const supabaseJWKS = jose.createRemoteJWKSet(
+  new URL(`https://${supabaseProjectRef}.supabase.co/auth/v1/.well-known/jwks.json`),
+);
 
 export class AuthService {
   private db: Database;
@@ -88,11 +91,7 @@ export class AuthService {
 
   // ─── Email/Password Auth ───
 
-  async registerWithEmail(
-    email: string,
-    password: string,
-    name: string,
-  ): Promise<void> {
+  async registerWithEmail(email: string, password: string, name: string): Promise<void> {
     const existing = await this.db
       .select({ id: users.id })
       .from(users)
@@ -120,18 +119,12 @@ export class AuthService {
       .returning({ id: users.id, name: users.name });
 
     if (created[0]) {
-      this.emailService
-        .sendVerificationEmail(email, name, verificationToken)
-        .catch(() => {});
+      this.emailService.sendVerificationEmail(email, name, verificationToken).catch(() => {});
     }
   }
 
   async loginWithEmail(email: string, password: string): Promise<AuthResult> {
-    const rows = await this.db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+    const rows = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
 
     const user = rows[0];
     if (!user || !user.passwordHash) {
@@ -153,7 +146,11 @@ export class AuthService {
       throw AppError.unauthorized("Account is deactivated");
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, (user as unknown as Record<string, unknown>).role as string ?? "user");
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      ((user as unknown as Record<string, unknown>).role as string) ?? "user",
+    );
 
     return {
       tokens,
@@ -174,10 +171,7 @@ export class AuthService {
       throw AppError.badRequest("Invalid or expired verification token");
     }
 
-    if (
-      user.emailVerificationExpiry &&
-      user.emailVerificationExpiry < new Date()
-    ) {
+    if (user.emailVerificationExpiry && user.emailVerificationExpiry < new Date()) {
       throw AppError.badRequest("Verification token has expired. Please register again.");
     }
 
@@ -217,9 +211,7 @@ export class AuthService {
       })
       .where(eq(users.id, user.id));
 
-    this.emailService
-      .sendPasswordReset(email, user.name, resetToken)
-      .catch(() => {});
+    this.emailService.sendPasswordReset(email, user.name, resetToken).catch(() => {});
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
@@ -256,10 +248,7 @@ export class AuthService {
 
   // ─── Google OAuth ───
 
-  async authenticateWithGoogle(
-    code: string,
-    redirectUri: string,
-  ): Promise<AuthResult> {
+  async authenticateWithGoogle(code: string, redirectUri: string): Promise<AuthResult> {
     const googleUser = await this.exchangeGoogleCode(code, redirectUri);
 
     const { user, isNew } = await this.findOrCreateGoogleUser(googleUser);
@@ -277,11 +266,9 @@ export class AuthService {
 
   async refreshTokens(refreshToken: string): Promise<TokenPair> {
     try {
-      const { payload } = await jose.jwtVerify(
-        refreshToken,
-        this.jwtRefreshSecret,
-        { algorithms: ["HS256"] },
-      );
+      const { payload } = await jose.jwtVerify(refreshToken, this.jwtRefreshSecret, {
+        algorithms: ["HS256"],
+      });
 
       if (!payload.sub || !payload.email) {
         throw new Error("Invalid refresh token payload");
@@ -325,9 +312,7 @@ export class AuthService {
     return createHash("sha256").update(token).digest("hex");
   }
 
-  async verifyAccessToken(
-    token: string,
-  ): Promise<{ userId: string; email: string; role: string }> {
+  async verifyAccessToken(token: string): Promise<{ userId: string; email: string; role: string }> {
     const { payload } = await jose.jwtVerify(token, this.jwtSecret, {
       algorithms: ["HS256"],
     });
@@ -342,6 +327,7 @@ export class AuthService {
   private async exchangeGoogleCode(
     code: string,
     redirectUri: string,
+    codeVerifier?: string,
   ): Promise<GoogleTokenPayload> {
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -352,6 +338,7 @@ export class AuthService {
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
+        ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
       }),
     });
 
@@ -431,6 +418,94 @@ export class AuthService {
       .returning();
 
     return { user: created[0] as unknown as UserData, isNew: true };
+  }
+
+  // ─── Desktop / Supabase Bridge Auth ───
+
+  async authenticateWithSupabaseToken(supabaseAccessToken: string): Promise<AuthResult> {
+    let payload: jose.JWTPayload;
+    try {
+      const result = await jose.jwtVerify(supabaseAccessToken, supabaseJWKS, {
+        issuer: `https://${supabaseProjectRef}.supabase.co/auth/v1`,
+      });
+      payload = result.payload;
+    } catch {
+      throw AppError.unauthorized("Invalid or expired Supabase token");
+    }
+
+    const email = payload.email as string | undefined;
+    if (!email) {
+      throw AppError.unauthorized("Supabase token missing email claim");
+    }
+
+    const name =
+      ((payload.user_metadata as Record<string, unknown> | undefined)?.full_name as string) ??
+      ((payload.user_metadata as Record<string, unknown> | undefined)?.name as string) ??
+      email.split("@")[0] ??
+      "User";
+    const avatarUrl =
+      ((payload.user_metadata as Record<string, unknown> | undefined)?.avatar_url as
+        | string
+        | null) ?? null;
+
+    const { user, isNew } = await this.findOrCreateSupabaseBridgeUser(
+      payload.sub!,
+      email,
+      name,
+      avatarUrl,
+    );
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role ?? "user");
+
+    return { tokens, user, isNewUser: isNew };
+  }
+
+  private async findOrCreateSupabaseBridgeUser(
+    supabaseUserId: string,
+    email: string,
+    name: string,
+    avatarUrl: string | null,
+  ): Promise<{ user: UserData; isNew: boolean }> {
+    // Look up by email (Supabase users and VALET users share the same email)
+    const existing = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
+
+    if (existing[0]) {
+      // Link Supabase ID if not already set
+      if (!existing[0].googleId) {
+        await this.db
+          .update(users)
+          .set({
+            avatarUrl: existing[0].avatarUrl ?? avatarUrl,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, existing[0].id));
+      }
+      return { user: existing[0] as unknown as UserData, isNew: false };
+    }
+
+    // Create a new VALET user for this Supabase user
+    const created = await this.db
+      .insert(users)
+      .values({
+        email,
+        name,
+        avatarUrl,
+        emailVerified: true,
+      })
+      .returning();
+
+    return { user: created[0] as unknown as UserData, isNew: true };
+  }
+
+  async authenticateDesktopGoogle(
+    code: string,
+    redirectUri: string,
+    codeVerifier?: string,
+  ): Promise<AuthResult> {
+    const googleUser = await this.exchangeGoogleCode(code, redirectUri, codeVerifier);
+    const { user, isNew } = await this.findOrCreateGoogleUser(googleUser);
+    const tokens = await this.generateTokens(user.id, user.email, user.role ?? "user");
+    return { tokens, user, isNewUser: isNew };
   }
 
   private async generateTokens(
