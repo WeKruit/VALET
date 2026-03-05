@@ -34,6 +34,12 @@ export function PublicHeader() {
           >
             Contact
           </Link>
+          <Link
+            to="/download"
+            className="text-sm text-[var(--wk-text-secondary)] transition-colors hover:text-[var(--wk-text-primary)]"
+          >
+            Download
+          </Link>
         </nav>
 
         <div className="flex items-center gap-3">

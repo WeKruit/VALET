@@ -274,13 +274,6 @@ export class AuthService {
         throw new Error("Invalid refresh token payload");
       }
 
-      // Check if this specific token has been blacklisted
-      const tokenHash = this.hashToken(refreshToken);
-      const isBlacklisted = await this.redis.get(`token:blacklist:${tokenHash}`);
-      if (isBlacklisted) {
-        throw new Error("Token has been revoked");
-      }
-
       // Check if all tokens for this user have been revoked
       const currentVersion = await this.redis.get(`token:version:${payload.sub}`);
       if (currentVersion && payload.tokenVersion !== undefined) {
@@ -289,12 +282,23 @@ export class AuthService {
         }
       }
 
+      // Atomic consume: SET NX returns "OK" for the first consumer, null for replays.
+      // Fail-closed: if Redis is unreachable, SET throws → caught by outer catch → 401.
+      const tokenHash = this.hashToken(refreshToken);
+      const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+      const ttl = Math.max(exp - Math.floor(Date.now() / 1000), 1);
+      const claimed = await this.redis.set(`token:blacklist:${tokenHash}`, "1", "EX", ttl, "NX");
+      if (!claimed) {
+        throw new Error("Token has been revoked");
+      }
+
       return this.generateTokens(
         payload.sub,
         payload.email as string,
         (payload.role as string) ?? "user",
       );
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message === "Token has been revoked") throw err;
       throw new Error("Invalid or expired refresh token");
     }
   }
@@ -394,6 +398,9 @@ export class AuthService {
       .limit(1);
 
     if (existing[0]) {
+      if (!(existing[0] as unknown as Record<string, unknown>).isActive) {
+        throw AppError.unauthorized("Account is deactivated");
+      }
       return { user: existing[0] as unknown as UserData, isNew: false };
     }
 
@@ -405,6 +412,9 @@ export class AuthService {
       .limit(1);
 
     if (byEmail[0]) {
+      if (!(byEmail[0] as unknown as Record<string, unknown>).isActive) {
+        throw AppError.unauthorized("Account is deactivated");
+      }
       await this.db
         .update(users)
         .set({
@@ -485,6 +495,10 @@ export class AuthService {
     const existing = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
 
     if (existing[0]) {
+      // Block deactivated accounts
+      if (!(existing[0] as unknown as Record<string, unknown>).isActive) {
+        throw AppError.unauthorized("Account is deactivated");
+      }
       // Link Supabase ID if not already set
       if (!existing[0].googleId) {
         await this.db

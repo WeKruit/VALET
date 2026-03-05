@@ -27,6 +27,7 @@ import { consentRouter } from "./modules/consent/consent.routes.js";
 import { gdprRouter } from "./modules/gdpr/gdpr.routes.js";
 import { billingRouter, billingWebhookRoute } from "./modules/billing/billing.routes.js";
 import { ghosthandsWebhookRoute } from "./modules/ghosthands/ghosthands.webhook.js";
+import { desktopReleaseRouter } from "./modules/ghosthands/desktop-release.routes.js";
 import { ghosthandsMonitoringRoutes } from "./modules/ghosthands/ghosthands.monitoring.js";
 import { workerAdminRoutes } from "./modules/ghosthands/worker.admin-routes.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
@@ -56,6 +57,7 @@ export async function buildApp() {
       level: process.env.LOG_LEVEL ?? "info",
       transport: process.env.NODE_ENV === "development" ? { target: "pino-pretty" } : undefined,
     },
+    trustProxy: true,
   });
 
   // Global error handler
@@ -137,6 +139,7 @@ export async function buildApp() {
   fastify.register(s.plugin(notificationRouter));
   fastify.register(s.plugin(sandboxRouter));
   fastify.register(s.plugin(modelRouter));
+  fastify.register(s.plugin(desktopReleaseRouter));
   fastify.register(s.plugin(earlyAccessRouter));
   fastify.register(s.plugin(earlyAccessAdminRouter));
   fastify.register(s.plugin(emailTemplatesAdminRouter));

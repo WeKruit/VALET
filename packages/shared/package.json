@@ -35,10 +35,10 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@casl/ability": "^6.8.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@casl/ability": "^6.8.0",
     "@types/node": "^22.19.11",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

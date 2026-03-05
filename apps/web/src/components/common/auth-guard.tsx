@@ -77,6 +77,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
   }
 
   if (!user) {
+    // Preserve redirect_uri (from GhostHands Desktop) across the auth round-trip
+    const redirectUri = new URLSearchParams(location.search).get("redirect_uri");
+    if (redirectUri) {
+      localStorage.setItem("gh_redirect_uri", redirectUri);
+    }
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 

@@ -74,7 +74,7 @@ export function GhJobCard({ ghJob }: GhJobCardProps) {
                       ? (ghJob.statusMessage ?? "Paused for human action")
                       : ghJob.ghStatus === "awaiting_review"
                         ? (ghJob.statusMessage ?? "Awaiting review")
-                    : (ghJob.statusMessage ?? "Processing...")}
+                        : (ghJob.statusMessage ?? "Processing...")}
               </span>
               <span className="text-xs font-medium">
                 {ghJob.ghStatus === "completed" ? 100 : (ghJob.progress ?? 0)}%
