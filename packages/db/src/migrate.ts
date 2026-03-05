@@ -24,9 +24,19 @@ console.log(`Running migrations from ${migrationsFolder}...`);
 try {
   await migrate(db, { migrationsFolder });
   console.log("Migrations completed successfully");
-} catch (error) {
-  console.error("Migration failed:", error);
-  process.exit(1);
+} catch (error: unknown) {
+  // When staging and production share the same database, migrations applied by one
+  // environment will already exist when the other deploys. Drizzle tries to INSERT
+  // the migration record and hits a PK constraint. This is safe to ignore.
+  const isPkDuplicate =
+    error instanceof Error &&
+    error.message.includes("duplicate key value violates unique constraint");
+  if (isPkDuplicate) {
+    console.log("Migrations already applied (shared database) — skipping");
+  } else {
+    console.error("Migration failed:", error);
+    process.exit(1);
+  }
 } finally {
   await sql.end();
 }
