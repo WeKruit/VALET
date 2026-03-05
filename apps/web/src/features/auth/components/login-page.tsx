@@ -65,10 +65,14 @@ export function LoginPage() {
     });
 
     // Claim referral code if one was captured (fire-and-forget)
-    const storedRef = localStorage.getItem(REFERRAL_STORAGE_KEY);
-    if (storedRef) {
-      localStorage.removeItem(REFERRAL_STORAGE_KEY);
-      claimReferral.mutate({ body: { referralCode: storedRef } });
+    if (import.meta.env.VITE_FEATURE_REFERRALS === "true") {
+      const storedRef = localStorage.getItem(REFERRAL_STORAGE_KEY);
+      if (storedRef) {
+        claimReferral.mutate(
+          { body: { referralCode: storedRef } },
+          { onSuccess: () => localStorage.removeItem(REFERRAL_STORAGE_KEY) },
+        );
+      }
     }
 
     navigate("/onboarding");

@@ -74,7 +74,8 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
 
-      const { taskRepo, ghJobRepo, sandboxRepo, redis } = request.diScope.cradle;
+      const { taskRepo, ghJobRepo, sandboxRepo, redis, referralService, creditService } =
+        request.diScope.cradle;
       const payload = request.body as GHCallbackPayload;
 
       if (!payload?.job_id || !payload?.status) {
@@ -472,6 +473,62 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
           result: resultObj,
           error: errorObj,
         });
+      }
+
+      // ── Referral activation on first completed task ─────────────
+      if (taskStatus === "completed" && process.env.FEATURE_REFERRALS === "true") {
+        try {
+          const referrerUserId = await referralService.activateReferral(task.userId);
+          if (referrerUserId) {
+            await creditService.grantCredits(referrerUserId, 25, "referral_reward", {
+              description: "Referral reward: referred user completed first task",
+              referenceType: "referral",
+              referenceId: valetTaskId,
+              idempotencyKey: `referral-activate-${valetTaskId}`,
+            });
+            request.log.info(
+              { referrerUserId, referredUserId: task.userId, taskId: valetTaskId },
+              "Referral activated and reward credits granted",
+            );
+          }
+        } catch (err) {
+          request.log.error(
+            { err, userId: task.userId, taskId: valetTaskId },
+            "Failed to process referral activation (non-critical)",
+          );
+        }
+      }
+
+      // ── Credit refund on early task failure ─────────────────────
+      if (
+        taskStatus === "failed" &&
+        process.env.FEATURE_CREDITS_ENFORCEMENT === "true" &&
+        existingTask
+      ) {
+        const ageMs = Date.now() - existingTask.createdAt.getTime();
+        const fiveMinutes = 5 * 60 * 1000;
+        const neverStarted = !existingTask.startedAt;
+        if (ageMs < fiveMinutes || neverStarted) {
+          try {
+            await creditService.refundTask(
+              task.userId,
+              valetTaskId,
+              `task-refund-${valetTaskId}`,
+              neverStarted
+                ? "Refund: task failed before starting"
+                : "Refund: task failed within 5 minutes",
+            );
+            request.log.info(
+              { userId: task.userId, taskId: valetTaskId, ageMs, neverStarted },
+              "Credit refunded for early task failure",
+            );
+          } catch (err) {
+            request.log.error(
+              { err, userId: task.userId, taskId: valetTaskId },
+              "Failed to refund credit for early failure (non-critical)",
+            );
+          }
+        }
       }
 
       return reply.status(200).send({ received: true });
