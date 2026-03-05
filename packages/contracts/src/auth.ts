@@ -1,4 +1,5 @@
 import { initContract } from "@ts-rest/core";
+import { z } from "zod";
 import {
   googleAuthRequest,
   refreshTokenRequest,
@@ -14,6 +15,12 @@ import {
   resetPasswordRequest,
   verifyEmailRequest,
   messageResponse,
+  desktopExchangeSupabaseRequest,
+  desktopGoogleAuthRequest,
+  desktopRefreshRequest,
+  desktopLogoutRequest,
+  desktopAuthTokenResponse,
+  desktopRefreshTokenResponse,
 } from "@valet/shared/schemas";
 
 const c = initContract();
@@ -120,5 +127,48 @@ export const authContract = c.router({
       401: errorResponse,
     },
     summary: "Revoke all tokens for the current user",
+  },
+
+  // ─── Desktop Auth Endpoints ───
+
+  desktopExchangeSupabase: {
+    method: "POST",
+    path: "/api/v1/auth/desktop/exchange-supabase",
+    body: desktopExchangeSupabaseRequest,
+    responses: {
+      200: desktopAuthTokenResponse,
+      401: z.object({ message: z.string() }),
+    },
+    summary: "Exchange Supabase token for VALET tokens (Desktop bridge auth)",
+  },
+  desktopGoogle: {
+    method: "POST",
+    path: "/api/v1/auth/desktop/google",
+    body: desktopGoogleAuthRequest,
+    responses: {
+      200: desktopAuthTokenResponse,
+      401: z.object({ message: z.string() }),
+    },
+    summary: "Desktop Google OAuth (native mode with optional PKCE)",
+  },
+  desktopRefresh: {
+    method: "POST",
+    path: "/api/v1/auth/desktop/refresh",
+    body: desktopRefreshRequest,
+    responses: {
+      200: desktopRefreshTokenResponse,
+      401: z.object({ message: z.string() }),
+    },
+    summary: "Refresh VALET tokens (Desktop)",
+  },
+  desktopLogout: {
+    method: "POST",
+    path: "/api/v1/auth/desktop/logout",
+    body: desktopLogoutRequest,
+    responses: {
+      200: z.object({ message: z.string() }),
+      401: z.object({ message: z.string() }),
+    },
+    summary: "Revoke refresh token and logout (Desktop)",
   },
 });

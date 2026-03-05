@@ -194,4 +194,100 @@ export const authRouter = s.router(authContract, {
 
     return { status: 200, body: { success: true } };
   },
+
+  // ─── Desktop Auth Endpoints ───
+
+  desktopExchangeSupabase: async ({ body, request }) => {
+    const { authService } = request.diScope.cradle;
+
+    try {
+      const result = await authService.authenticateWithSupabaseToken(body.supabaseAccessToken);
+
+      return {
+        status: 200 as const,
+        body: {
+          accessToken: result.tokens.accessToken,
+          refreshToken: result.tokens.refreshToken,
+          tokenType: "Bearer" as const,
+          expiresIn: result.tokens.expiresIn,
+          user: {
+            id: result.user.id,
+            email: result.user.email,
+            name: result.user.name,
+            avatarUrl: result.user.avatarUrl,
+            role: result.user.role,
+          },
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      request.log.error({ err }, "Desktop Supabase exchange failed");
+      return { status: 401 as const, body: { message: "Invalid Supabase token" } };
+    }
+  },
+
+  desktopGoogle: async ({ body, request }) => {
+    const { authService } = request.diScope.cradle;
+
+    try {
+      const result = await authService.authenticateDesktopGoogle(
+        body.code,
+        body.redirectUri,
+        body.codeVerifier,
+      );
+
+      return {
+        status: 200 as const,
+        body: {
+          accessToken: result.tokens.accessToken,
+          refreshToken: result.tokens.refreshToken,
+          tokenType: "Bearer" as const,
+          expiresIn: result.tokens.expiresIn,
+          user: {
+            id: result.user.id,
+            email: result.user.email,
+            name: result.user.name,
+            avatarUrl: result.user.avatarUrl,
+            role: result.user.role,
+          },
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      request.log.error({ err }, "Desktop Google auth failed");
+      return { status: 401 as const, body: { message: "Google authentication failed" } };
+    }
+  },
+
+  desktopRefresh: async ({ body, request }) => {
+    const { authService } = request.diScope.cradle;
+
+    try {
+      const tokens = await authService.refreshTokens(body.refreshToken);
+
+      return {
+        status: 200 as const,
+        body: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          tokenType: "Bearer" as const,
+          expiresIn: tokens.expiresIn,
+        },
+      };
+    } catch {
+      return { status: 401 as const, body: { message: "Invalid or expired refresh token" } };
+    }
+  },
+
+  desktopLogout: async ({ body, request }) => {
+    const { authService } = request.diScope.cradle;
+
+    try {
+      await authService.logoutRefreshToken(body.refreshToken);
+      return { status: 200 as const, body: { message: "Logged out successfully" } };
+    } catch {
+      // Always return 200 to not reveal token validity
+      return { status: 200 as const, body: { message: "Logged out" } };
+    }
+  },
 });
