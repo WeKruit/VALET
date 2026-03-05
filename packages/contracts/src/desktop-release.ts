@@ -12,6 +12,7 @@ export const desktopReleaseContract = c.router({
         version: z.string(),
         dmgArm64Url: z.string(),
         dmgX64Url: z.string().nullable(),
+        exeX64Url: z.string().nullable(),
         releaseUrl: z.string(),
         releasedAt: z.string(),
       }),

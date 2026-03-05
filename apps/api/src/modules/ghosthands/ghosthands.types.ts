@@ -148,6 +148,7 @@ export interface GHDesktopReleasePayload {
   release_url: string;
   dmg_arm64: string;
   dmg_x64: string;
+  exe_x64?: string;
   /** @deprecated Legacy single-URL field. Use dmg_arm64/dmg_x64 instead. */
   dmg_url?: string;
   commit_sha: string;

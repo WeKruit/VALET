@@ -19,6 +19,7 @@ export const desktopReleaseRouter = s.router(desktopReleaseContract, {
       version: string;
       dmgArm64Url?: string;
       dmgX64Url?: string | null;
+      exeX64Url?: string | null;
       dmgUrl?: string; // legacy field
       releaseUrl: string;
       releasedAt: string;
@@ -30,6 +31,7 @@ export const desktopReleaseRouter = s.router(desktopReleaseContract, {
         version: data.version,
         dmgArm64Url: data.dmgArm64Url ?? data.dmgUrl ?? "",
         dmgX64Url: data.dmgX64Url ?? null,
+        exeX64Url: data.exeX64Url ?? null,
         releaseUrl: data.releaseUrl,
         releasedAt: data.releasedAt,
       },

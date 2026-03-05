@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Button } from "@valet/ui/components/button";
 import { Badge } from "@valet/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
-import { Download, Shield, Cpu, RefreshCw } from "lucide-react";
+import { Download, Shield, Cpu, RefreshCw, Monitor } from "lucide-react";
 import { PublicHeader } from "../../landing/components/public-header";
 import { PublicFooter } from "../../landing/components/public-footer";
 import { api } from "@/lib/api-client";
@@ -30,12 +30,12 @@ export function DownloadPage() {
         <div className="mx-auto max-w-[var(--wk-content-width)] text-center">
           {release && (
             <Badge variant="default" className="mb-4">
-              v{release.version} &middot; macOS
+              v{release.version} &middot; macOS / Windows
             </Badge>
           )}
           <h1 className="wk-display-lg mt-4 text-[var(--wk-text-primary)]">Download GhostHands</h1>
           <p className="wk-body-lg mx-auto mt-6 max-w-2xl text-[var(--wk-text-secondary)]">
-            The GhostHands desktop app automates job applications directly from your Mac.
+            The GhostHands desktop app automates job applications from your Mac or Windows PC.
           </p>
         </div>
       </section>
@@ -71,7 +71,7 @@ export function DownloadPage() {
 
           {release && (
             <div className="mx-auto max-w-2xl space-y-8">
-              <div className="grid gap-6 md:grid-cols-2">
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {/* Apple Silicon (ARM64) */}
                 <Card>
                   <CardHeader>
@@ -129,11 +129,42 @@ export function DownloadPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Windows (x64) — only shown when available */}
+                {release.exeX64Url && (
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-[var(--wk-radius-xl)] bg-[var(--wk-surface-sunken)]">
+                          <Monitor className="h-5 w-5 text-[var(--wk-accent-amber)]" />
+                        </div>
+                        <CardTitle>Windows</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-[var(--wk-text-secondary)]">
+                        For Windows 10 or Windows 11 (64-bit)
+                      </p>
+                      <div className="flex flex-wrap gap-2 text-xs text-[var(--wk-text-tertiary)]">
+                        <span>Windows 10+</span>
+                        <span>&middot;</span>
+                        <span>.exe</span>
+                      </div>
+                      <Button asChild variant="secondary" className="w-full">
+                        <a href={release.exeX64Url}>
+                          <Download className="mr-2 h-4 w-4" />
+                          Download for Windows
+                        </a>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               <p className="text-center text-xs text-[var(--wk-text-tertiary)]">
-                Not sure which version? Click the Apple menu &rarr; About This Mac. If you see
-                "Chip: Apple M1/M2/M3/M4", choose Apple Silicon. Otherwise, choose Intel.
+                On Mac, click the Apple menu &rarr; About This Mac. If you see "Chip: Apple
+                M1/M2/M3/M4", choose Apple Silicon; otherwise choose Intel. On Windows, choose the
+                Windows installer.
               </p>
             </div>
           )}
