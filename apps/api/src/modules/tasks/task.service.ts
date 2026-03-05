@@ -649,6 +649,8 @@ export class TaskService {
         },
         completedAt: null,
       });
+      // Refund credit — dispatch never happened
+      await this.refundCreditIfDebited(userId, task.id);
       return task;
     }
 
@@ -723,6 +725,8 @@ export class TaskService {
           },
           completedAt: null,
         });
+        // Refund credit — dispatch failed before GH received the job
+        await this.refundCreditIfDebited(userId, task.id);
       }
     } else {
       // ── REST dispatch path (legacy, only when TASK_DISPATCH_MODE != queue) ──
@@ -772,10 +776,28 @@ export class TaskService {
           },
           completedAt: null,
         });
+        // Refund credit — REST dispatch failed before GH received the job
+        await this.refundCreditIfDebited(userId, task.id);
       }
     }
 
     return task;
+  }
+
+  /** Refund one credit if enforcement is on. Swallows errors — dispatch already failed. */
+  private async refundCreditIfDebited(userId: string, taskId: string): Promise<void> {
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") return;
+    try {
+      await this.creditService.refundTask(
+        userId,
+        taskId,
+        `task-refund-dispatch-${taskId}`,
+        "Refund: dispatch failed before job reached worker",
+      );
+      this.logger.info({ userId, taskId }, "Credit refunded for failed dispatch");
+    } catch (err) {
+      this.logger.error({ err, userId, taskId }, "Failed to refund credit after dispatch failure");
+    }
   }
 
   private buildGhosthandsProfile(parsedData: Record<string, unknown> | null): GHProfile {

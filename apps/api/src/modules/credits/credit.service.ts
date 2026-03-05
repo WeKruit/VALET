@@ -29,7 +29,16 @@ export class CreditService {
 
     const [entries, countResult] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: creditLedger.id,
+          delta: creditLedger.delta,
+          balanceAfter: creditLedger.balanceAfter,
+          reason: creditLedger.reason,
+          description: creditLedger.description,
+          referenceType: creditLedger.referenceType,
+          referenceId: creditLedger.referenceId,
+          createdAt: creditLedger.createdAt,
+        })
         .from(creditLedger)
         .where(eq(creditLedger.userId, userId))
         .orderBy(desc(creditLedger.createdAt))
@@ -61,20 +70,37 @@ export class CreditService {
       trialExpiresAt?: Date;
     } = {},
   ): Promise<{ balance: number }> {
-    // Idempotency check
     if (opts.idempotencyKey) {
-      const existing = await this.db
-        .select({ id: creditLedger.id })
-        .from(creditLedger)
-        .where(eq(creditLedger.idempotencyKey, opts.idempotencyKey))
-        .limit(1);
-      if (existing[0]) {
-        const bal = await this.getBalance(userId);
-        return { balance: bal.balance };
+      // Single-statement atomic grant with ON CONFLICT for idempotency.
+      // If the idempotency_key already exists, the INSERT is skipped (no row returned),
+      // and we fall through to read the current balance.
+      const result = await this.db.execute(sql`
+        WITH updated AS (
+          UPDATE users
+          SET credit_balance = credit_balance + ${amount},
+              trial_credits_expire_at = COALESCE(${opts.trialExpiresAt ?? null}::timestamptz, trial_credits_expire_at),
+              updated_at = NOW()
+          WHERE id = ${userId}::uuid
+            AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE idempotency_key = ${opts.idempotencyKey})
+          RETURNING credit_balance
+        )
+        INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
+        SELECT ${userId}::uuid, ${amount}, credit_balance, ${reason}, ${opts.description ?? null}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${opts.idempotencyKey}
+        FROM updated
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING balance_after
+      `);
+
+      const rows = (result as unknown as { rows: Array<{ balance_after: number }> }).rows;
+      if (rows[0]) {
+        return { balance: rows[0].balance_after };
       }
+      // Idempotent duplicate — read current balance
+      const bal = await this.getBalance(userId);
+      return { balance: bal.balance };
     }
 
-    // Use raw SQL for atomic update + insert
+    // No idempotency key — simple grant (e.g. admin manual adjustment)
     const result = await this.db.execute(sql`
       WITH updated AS (
         UPDATE users
@@ -85,7 +111,7 @@ export class CreditService {
         RETURNING credit_balance
       )
       INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
-      SELECT ${userId}::uuid, ${amount}, credit_balance, ${reason}, ${opts.description ?? null}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${opts.idempotencyKey ?? null}
+      SELECT ${userId}::uuid, ${amount}, credit_balance, ${reason}, ${opts.description ?? null}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${null}
       FROM updated
       RETURNING balance_after
     `);
