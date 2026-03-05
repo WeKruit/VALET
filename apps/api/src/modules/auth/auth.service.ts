@@ -427,6 +427,7 @@ export class AuthService {
     try {
       const result = await jose.jwtVerify(supabaseAccessToken, supabaseJWKS, {
         issuer: `https://${supabaseProjectRef}.supabase.co/auth/v1`,
+        audience: "authenticated",
       });
       payload = result.payload;
     } catch {
@@ -434,8 +435,9 @@ export class AuthService {
     }
 
     const email = payload.email as string | undefined;
-    if (!email) {
-      throw AppError.unauthorized("Supabase token missing email claim");
+    const sub = payload.sub;
+    if (!email || !sub) {
+      throw AppError.unauthorized("Supabase token missing required claims");
     }
 
     const name =
@@ -448,12 +450,7 @@ export class AuthService {
         | string
         | null) ?? null;
 
-    const { user, isNew } = await this.findOrCreateSupabaseBridgeUser(
-      payload.sub!,
-      email,
-      name,
-      avatarUrl,
-    );
+    const { user, isNew } = await this.findOrCreateSupabaseBridgeUser(sub, email, name, avatarUrl);
 
     const tokens = await this.generateTokens(user.id, user.email, user.role ?? "user");
 
