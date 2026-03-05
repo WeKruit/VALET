@@ -515,6 +515,14 @@ export function OnboardingPage() {
 
   function finishOnboarding() {
     setIsSubmitting(true);
+
+    // Quick start skips the explicit consent step, so mark copilot accepted
+    // here. Without this the auth-guard's onboardingComplete check fails
+    // (requires copilotAccepted) and the user loops back to /onboarding.
+    if (!copilotAccepted) {
+      markCopilotAccepted();
+    }
+
     completeOnboarding.mutate(
       { body: {} },
       {
