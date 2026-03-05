@@ -34,6 +34,9 @@ export function LoginPage() {
       avatarUrl: string | null;
       role?: string;
       subscriptionTier?: string;
+      onboardingComplete?: boolean;
+      copilotAppsCompleted?: number;
+      autopilotUnlocked?: boolean;
     };
   }) {
     setAccessToken(data.accessToken);
@@ -47,9 +50,9 @@ export function LoginPage() {
         "user",
       subscriptionTier:
         (data.user.subscriptionTier as "free" | "starter" | "pro" | "enterprise") ?? undefined,
-      onboardingComplete: false,
-      copilotAppsCompleted: 0,
-      autopilotUnlocked: false,
+      onboardingComplete: data.user.onboardingComplete ?? false,
+      copilotAppsCompleted: data.user.copilotAppsCompleted ?? 0,
+      autopilotUnlocked: data.user.autopilotUnlocked ?? false,
     });
     navigate("/onboarding");
   }
