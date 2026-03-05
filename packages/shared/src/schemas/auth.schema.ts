@@ -72,11 +72,11 @@ export const desktopGoogleAuthRequest = z.object({
 });
 
 export const desktopRefreshRequest = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().min(1).max(4096), // JWTs shouldn't exceed this
 });
 
 export const desktopLogoutRequest = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().min(1).max(4096), // JWTs shouldn't exceed this
 });
 
 export const desktopAuthTokenResponse = z.object({

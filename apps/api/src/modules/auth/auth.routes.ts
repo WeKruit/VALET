@@ -283,10 +283,11 @@ export const authRouter = s.router(authContract, {
     const { authService } = request.diScope.cradle;
 
     try {
-      await authService.blacklistToken(body.refreshToken, REFRESH_TOKEN_MAX_AGE_S);
+      await authService.logoutRefreshToken(body.refreshToken);
       return { status: 200 as const, body: { message: "Logged out successfully" } };
     } catch {
-      return { status: 401 as const, body: { message: "Logout failed" } };
+      // Always return 200 to not reveal token validity
+      return { status: 200 as const, body: { message: "Logged out" } };
     }
   },
 });

@@ -304,6 +304,22 @@ export class AuthService {
     await this.redis.set(`token:blacklist:${tokenHash}`, "1", "EX", expiresInSeconds);
   }
 
+  async logoutRefreshToken(refreshToken: string): Promise<void> {
+    // Verify it's actually a valid refresh token before blacklisting
+    const { payload } = await jose.jwtVerify(refreshToken, this.jwtRefreshSecret, {
+      algorithms: ["HS256"],
+    });
+    if (!payload.sub) {
+      throw new Error("Invalid token");
+    }
+    // Blacklist for remaining lifetime (7 days max)
+    const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+    const ttl = Math.max(exp - Math.floor(Date.now() / 1000), 0);
+    if (ttl > 0) {
+      await this.blacklistToken(refreshToken, ttl);
+    }
+  }
+
   async revokeAllUserTokens(userId: string): Promise<void> {
     await this.redis.incr(`token:version:${userId}`);
   }
