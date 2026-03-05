@@ -20,10 +20,22 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
+const REFERRAL_STORAGE_KEY = "valet:referral-code";
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setUser } = useAuth();
+
+  const claimReferral = api.referrals.claim.useMutation();
+
+  // Capture referral code from URL and persist to localStorage
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) {
+      localStorage.setItem(REFERRAL_STORAGE_KEY, refCode);
+    }
+  }, [searchParams]);
 
   function handleAuthSuccess(data: {
     accessToken: string;
@@ -51,6 +63,14 @@ export function LoginPage() {
       copilotAppsCompleted: 0,
       autopilotUnlocked: false,
     });
+
+    // Claim referral code if one was captured (fire-and-forget)
+    const storedRef = localStorage.getItem(REFERRAL_STORAGE_KEY);
+    if (storedRef) {
+      localStorage.removeItem(REFERRAL_STORAGE_KEY);
+      claimReferral.mutate({ body: { referralCode: storedRef } });
+    }
+
     navigate("/onboarding");
   }
 

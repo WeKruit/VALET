@@ -28,6 +28,7 @@ import {
 } from "./task.errors.js";
 import { AppError } from "../../common/errors.js";
 import { publishToUser } from "../../websocket/handler.js";
+import type { CreditService } from "../credits/credit.service.js";
 
 function useQueueDispatch(): boolean {
   return process.env.TASK_DISPATCH_MODE === "queue";
@@ -74,6 +75,7 @@ export class TaskService {
   private userSandboxRepo: UserSandboxRepository;
   private atmFleetClient: AtmFleetClient;
   private submissionProofRepo: SubmissionProofRepository;
+  private creditService: CreditService;
 
   constructor({
     taskRepo,
@@ -90,6 +92,7 @@ export class TaskService {
     userSandboxRepo,
     atmFleetClient,
     submissionProofRepo,
+    creditService,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -105,6 +108,7 @@ export class TaskService {
     userSandboxRepo: UserSandboxRepository;
     atmFleetClient: AtmFleetClient;
     submissionProofRepo: SubmissionProofRepository;
+    creditService: CreditService;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -120,6 +124,7 @@ export class TaskService {
     this.userSandboxRepo = userSandboxRepo;
     this.atmFleetClient = atmFleetClient;
     this.submissionProofRepo = submissionProofRepo;
+    this.creditService = creditService;
   }
 
   /**
@@ -558,6 +563,21 @@ export class TaskService {
     const notes = resolvedSandboxId
       ? `${body.notes ?? ""} [sandbox:${resolvedSandboxId}]`.trim()
       : body.notes;
+
+    // Credit enforcement (feature-flagged)
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
+      const preTaskId = `pre-${Date.now()}`;
+      const debit = await this.creditService.debitForTask(
+        userId,
+        preTaskId,
+        `task-create-${preTaskId}`,
+      );
+      if (!debit.success) {
+        throw AppError.paymentRequired(
+          "Insufficient credits. Purchase more credits or upgrade your plan.",
+        );
+      }
+    }
 
     const task = await this.taskRepo.create({
       userId,

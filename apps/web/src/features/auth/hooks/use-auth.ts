@@ -12,6 +12,7 @@ interface User {
   onboardingComplete?: boolean;
   copilotAppsCompleted?: number;
   autopilotUnlocked?: boolean;
+  creditBalance?: number;
 }
 
 interface AuthStore {

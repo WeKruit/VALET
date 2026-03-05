@@ -89,6 +89,7 @@ export const taskContract = c.router({
     responses: {
       201: taskResponse,
       400: errorResponse,
+      402: errorResponse,
     },
     summary: "Create a new application task",
   },

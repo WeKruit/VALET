@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/features/auth/hooks/use-auth";
-import {
-  LAYER_1_REGISTRATION,
-  LAYER_2_COPILOT_DISCLAIMER,
-} from "@/content/legal/consent-text";
+import { LAYER_1_REGISTRATION, LAYER_2_COPILOT_DISCLAIMER } from "@/content/legal/consent-text";
 
 const CONSENT_CACHE_KEY = "wk-consent-status";
 
@@ -30,8 +27,9 @@ function setCachedConsent(cache: ConsentCache) {
   localStorage.setItem(CONSENT_CACHE_KEY, JSON.stringify(cache));
 }
 
-export function useConsent() {
+export function useConsent(options?: { enabled?: boolean }) {
   const user = useAuth((s) => s.user);
+  const queryEnabled = !!user && options?.enabled !== false;
   const [tosAccepted, setTosAccepted] = useState<boolean | null>(null);
   const [copilotAccepted, setCopilotAccepted] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,7 +42,7 @@ export function useConsent() {
         version: LAYER_1_REGISTRATION.version,
       },
     },
-    enabled: !!user,
+    enabled: queryEnabled,
     staleTime: 1000 * 60 * 10,
   });
 
@@ -56,7 +54,7 @@ export function useConsent() {
         version: LAYER_2_COPILOT_DISCLAIMER.version,
       },
     },
-    enabled: !!user,
+    enabled: queryEnabled,
     staleTime: 1000 * 60 * 10,
   });
 

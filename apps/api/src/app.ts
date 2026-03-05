@@ -47,6 +47,8 @@ import { fitLabRouter } from "./modules/fit-lab/fit-lab.routes.js";
 import { insightsRouter } from "./modules/insights/insights.routes.js";
 import { jobLeadRouter } from "./modules/job-leads/job-lead.routes.js";
 import { localWorkerRoutes } from "./modules/local-workers/local-worker.routes.js";
+import { referralRouter } from "./modules/referrals/referral.routes.js";
+import { creditRouter } from "./modules/credits/credit.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -142,6 +144,8 @@ export async function buildApp() {
   fastify.register(s.plugin(fitLabRouter));
   fastify.register(s.plugin(insightsRouter));
   fastify.register(s.plugin(jobLeadRouter));
+  fastify.register(s.plugin(referralRouter));
+  fastify.register(s.plugin(creditRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
