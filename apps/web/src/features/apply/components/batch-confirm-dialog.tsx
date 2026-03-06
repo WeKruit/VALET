@@ -101,6 +101,7 @@ export function BatchConfirmDialog({
           resumeId,
           mode: "copilot",
           quality,
+          executionTarget: "cloud",
           ...(notes?.trim() ? { notes: notes.trim() } : {}),
           ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
           ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),

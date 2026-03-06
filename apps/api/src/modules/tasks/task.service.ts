@@ -791,6 +791,8 @@ export class TaskService {
         });
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghJob.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (task as any).workflowRunId = ghJob.id;
 
         const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
           {
@@ -867,6 +869,8 @@ export class TaskService {
         });
 
         await this.taskRepo.updateWorkflowRunId(task.id, ghResponse.job_id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (task as any).workflowRunId = ghResponse.job_id;
         await this.taskRepo.updateStatus(task.id, "queued");
 
         await publishToUser(this.redis, userId, {

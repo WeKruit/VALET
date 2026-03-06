@@ -198,6 +198,7 @@ export function ApplyForm() {
           mode: "copilot",
           resumeId: activeResume.id,
           quality,
+          executionTarget: "cloud",
           ...(notes.trim() ? { notes: notes.trim() } : {}),
           ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
           ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),

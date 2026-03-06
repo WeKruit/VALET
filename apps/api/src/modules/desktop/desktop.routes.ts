@@ -15,7 +15,7 @@ export const desktopRouter = s.router(desktopContract, {
   },
   consumeHandoff: async ({ request, params }) => {
     const { desktopService } = request.diScope.cradle;
-    const data = await desktopService.consumeHandoff(params.token);
+    const data = await desktopService.consumeHandoff(params.token, request.userId);
     if (!data) {
       return {
         status: 404 as const,

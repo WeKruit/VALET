@@ -81,13 +81,15 @@ export class DesktopService {
     };
   }
 
-  async consumeHandoff(token: string): Promise<HandoffData | null> {
+  async consumeHandoff(token: string, userId: string): Promise<HandoffData | null> {
     const key = `${HANDOFF_PREFIX}${token}`;
-    const raw = await this.redis.get(key);
+    const raw = await this.redis.getdel(key);
     if (!raw) return null;
 
-    await this.redis.del(key);
-    return JSON.parse(raw) as HandoffData;
+    const data = JSON.parse(raw) as HandoffData;
+    if (data.createdBy !== userId) return null;
+
+    return data;
   }
 
   async bootstrap(userId: string): Promise<DesktopBootstrapResponse> {
@@ -127,7 +129,7 @@ export class DesktopService {
       },
       onboarding: {
         completed: userRecord.onboardingCompletedAt != null,
-        hasDefaultResume: defaultResumeData != null,
+        hasDefaultResume: defaultResumeData != null && defaultResumeData.parsedAt != null,
       },
       credits: {
         balance: credits.balance,

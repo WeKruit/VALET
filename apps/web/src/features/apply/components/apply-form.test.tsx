@@ -260,6 +260,7 @@ describe("ApplyForm", () => {
         mode: "copilot",
         quality: "balanced",
         resumeId: "resume-1",
+        executionTarget: "cloud",
       },
     });
   });

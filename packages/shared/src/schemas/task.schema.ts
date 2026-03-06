@@ -122,7 +122,7 @@ export const createTaskRequest = z.object({
   /** UUID of the mailbox credential for email verifications. */
   mailboxCredentialId: z.string().uuid().optional(),
   /** Where the task should execute: cloud (GH EC2) or desktop (local worker). */
-  executionTarget: executionTarget.default("desktop"),
+  executionTarget: executionTarget.optional(),
   /** Desktop worker ID — required when executionTarget is "desktop". */
   desktopWorkerId: z.string().optional(),
 });
@@ -383,7 +383,7 @@ const batchSharedOptions = z.object({
   targetWorkerId: z.string().uuid().optional(),
   reasoningModel: z.string().max(100).optional(),
   visionModel: z.string().max(100).optional(),
-  executionTarget: executionTarget.default("desktop"),
+  executionTarget: executionTarget.optional(),
   desktopWorkerId: z.string().optional(),
 });
 
