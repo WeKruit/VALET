@@ -43,7 +43,7 @@ export function useConsent(options?: { enabled?: boolean }) {
       },
     },
     enabled: queryEnabled,
-    staleTime: 1000 * 60 * 10,
+    staleTime: 60_000,
   });
 
   const copilotCheck = api.consent.check.useQuery({
@@ -55,7 +55,7 @@ export function useConsent(options?: { enabled?: boolean }) {
       },
     },
     enabled: queryEnabled,
-    staleTime: 1000 * 60 * 10,
+    staleTime: 60_000,
   });
 
   // Initialize from cache

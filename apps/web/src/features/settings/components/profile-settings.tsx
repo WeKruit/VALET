@@ -73,7 +73,7 @@ export function ProfileSettings() {
   const { data, isLoading } = api.users.getProfile.useQuery({
     queryKey: ["users", "profile"],
     queryData: {},
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
   });
 
   const updateProfile = api.users.updateProfile.useMutation({
@@ -92,7 +92,7 @@ export function ProfileSettings() {
   const { data: resumesData } = api.resumes.list.useQuery({
     queryKey: ["resumes"],
     queryData: {},
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
   });
 
   const resumeSkills = useMemo(() => {
@@ -293,23 +293,14 @@ export function ProfileSettings() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="text-sm font-medium">Full Name</label>
-              <Input
-                className="mt-1"
-                value={profile?.name ?? ""}
-                disabled
-              />
+              <Input className="mt-1" value={profile?.name ?? ""} disabled />
               <p className="mt-1 text-xs text-[var(--wk-text-tertiary)]">
                 Managed by your Google account
               </p>
             </div>
             <div>
               <label className="text-sm font-medium">Email</label>
-              <Input
-                className="mt-1"
-                type="email"
-                value={profile?.email ?? ""}
-                disabled
-              />
+              <Input className="mt-1" type="email" value={profile?.email ?? ""} disabled />
             </div>
             <div>
               <label className="text-sm font-medium">Phone</label>
@@ -455,11 +446,7 @@ export function ProfileSettings() {
                 })}
               </div>
               <div className="flex justify-end gap-2 pt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowImportPicker(false)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setShowImportPicker(false)}>
                   Cancel
                 </Button>
                 <Button
@@ -469,7 +456,9 @@ export function ProfileSettings() {
                   onClick={() => {
                     setSkills((prev) => [...prev, ...Array.from(selectedImportSkills)]);
                     setShowImportPicker(false);
-                    toast.success(`${selectedImportSkills.size} skill${selectedImportSkills.size === 1 ? "" : "s"} imported. Click Save to persist.`);
+                    toast.success(
+                      `${selectedImportSkills.size} skill${selectedImportSkills.size === 1 ? "" : "s"} imported. Click Save to persist.`,
+                    );
                   }}
                 >
                   Import {selectedImportSkills.size > 0 ? `(${selectedImportSkills.size})` : ""}
@@ -499,11 +488,7 @@ export function ProfileSettings() {
           )}
 
           <div className="flex justify-end">
-            <Button
-              variant="primary"
-              disabled={updateProfile.isPending}
-              onClick={handleSaveSkills}
-            >
+            <Button variant="primary" disabled={updateProfile.isPending} onClick={handleSaveSkills}>
               {updateProfile.isPending ? "Saving..." : "Save Skills"}
             </Button>
           </div>
@@ -525,9 +510,7 @@ export function ProfileSettings() {
               <div className="flex h-12 w-12 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-surface-sunken)]">
                 <Briefcase className="h-6 w-6 text-[var(--wk-text-tertiary)]" />
               </div>
-              <h3 className="mt-4 font-display text-lg font-semibold">
-                No work history
-              </h3>
+              <h3 className="mt-4 font-display text-lg font-semibold">No work history</h3>
               <p className="mt-1 max-w-sm text-sm text-[var(--wk-text-secondary)]">
                 Add your work experience to help VALET tailor your applications.
               </p>
@@ -545,9 +528,7 @@ export function ProfileSettings() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{entry.title}</p>
-                      <p className="text-sm text-[var(--wk-text-secondary)]">
-                        {entry.company}
-                      </p>
+                      <p className="text-sm text-[var(--wk-text-secondary)]">{entry.company}</p>
                       <p className="text-xs text-[var(--wk-text-tertiary)]">
                         {entry.startDate}
                         {entry.endDate ? ` - ${entry.endDate}` : " - Present"}
@@ -588,7 +569,11 @@ export function ProfileSettings() {
               <Button
                 variant="primary"
                 disabled={updateProfile.isPending}
-                onClick={() => updateProfile.mutate({ body: { workHistory: workHistory as WorkHistorySchema[] } })}
+                onClick={() =>
+                  updateProfile.mutate({
+                    body: { workHistory: workHistory as WorkHistorySchema[] },
+                  })
+                }
               >
                 {updateProfile.isPending ? "Saving..." : "Save Work History"}
               </Button>
@@ -612,9 +597,7 @@ export function ProfileSettings() {
               <div className="flex h-12 w-12 items-center justify-center rounded-[var(--wk-radius-2xl)] bg-[var(--wk-surface-sunken)]">
                 <GraduationCap className="h-6 w-6 text-[var(--wk-text-tertiary)]" />
               </div>
-              <h3 className="mt-4 font-display text-lg font-semibold">
-                No education entries
-              </h3>
+              <h3 className="mt-4 font-display text-lg font-semibold">No education entries</h3>
               <p className="mt-1 max-w-sm text-sm text-[var(--wk-text-secondary)]">
                 Add your education to improve application accuracy.
               </p>
@@ -632,11 +615,10 @@ export function ProfileSettings() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">
-                        {entry.degree}{entry.field ? `, ${entry.field}` : ""}
+                        {entry.degree}
+                        {entry.field ? `, ${entry.field}` : ""}
                       </p>
-                      <p className="text-sm text-[var(--wk-text-secondary)]">
-                        {entry.school}
-                      </p>
+                      <p className="text-sm text-[var(--wk-text-secondary)]">{entry.school}</p>
                       <p className="text-xs text-[var(--wk-text-tertiary)]">
                         {entry.startDate}
                         {entry.endDate ? ` - ${entry.endDate}` : " - Present"}
@@ -673,7 +655,9 @@ export function ProfileSettings() {
               <Button
                 variant="primary"
                 disabled={updateProfile.isPending}
-                onClick={() => updateProfile.mutate({ body: { education: education as EducationSchema[] } })}
+                onClick={() =>
+                  updateProfile.mutate({ body: { education: education as EducationSchema[] } })
+                }
               >
                 {updateProfile.isPending ? "Saving..." : "Save Education"}
               </Button>
@@ -703,9 +687,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   placeholder="Software Engineer"
                   value={workForm.title}
-                  onChange={(e) =>
-                    setWorkForm((f) => ({ ...f, title: e.target.value }))
-                  }
+                  onChange={(e) => setWorkForm((f) => ({ ...f, title: e.target.value }))}
                 />
               </div>
               <div>
@@ -714,9 +696,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   placeholder="Acme Inc."
                   value={workForm.company}
-                  onChange={(e) =>
-                    setWorkForm((f) => ({ ...f, company: e.target.value }))
-                  }
+                  onChange={(e) => setWorkForm((f) => ({ ...f, company: e.target.value }))}
                 />
               </div>
               <div>
@@ -725,9 +705,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   type="month"
                   value={workForm.startDate}
-                  onChange={(e) =>
-                    setWorkForm((f) => ({ ...f, startDate: e.target.value }))
-                  }
+                  onChange={(e) => setWorkForm((f) => ({ ...f, startDate: e.target.value }))}
                 />
               </div>
               <div>
@@ -737,9 +715,7 @@ export function ProfileSettings() {
                   type="month"
                   placeholder="Leave blank if current"
                   value={workForm.endDate}
-                  onChange={(e) =>
-                    setWorkForm((f) => ({ ...f, endDate: e.target.value }))
-                  }
+                  onChange={(e) => setWorkForm((f) => ({ ...f, endDate: e.target.value }))}
                 />
               </div>
             </div>
@@ -749,9 +725,7 @@ export function ProfileSettings() {
                 className="mt-1"
                 placeholder="Describe your responsibilities and achievements..."
                 value={workForm.description}
-                onChange={(e) =>
-                  setWorkForm((f) => ({ ...f, description: e.target.value }))
-                }
+                onChange={(e) => setWorkForm((f) => ({ ...f, description: e.target.value }))}
               />
             </div>
           </div>
@@ -787,9 +761,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   placeholder="University of Example"
                   value={eduForm.school}
-                  onChange={(e) =>
-                    setEduForm((f) => ({ ...f, school: e.target.value }))
-                  }
+                  onChange={(e) => setEduForm((f) => ({ ...f, school: e.target.value }))}
                 />
               </div>
               <div>
@@ -798,9 +770,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   placeholder="B.S."
                   value={eduForm.degree}
-                  onChange={(e) =>
-                    setEduForm((f) => ({ ...f, degree: e.target.value }))
-                  }
+                  onChange={(e) => setEduForm((f) => ({ ...f, degree: e.target.value }))}
                 />
               </div>
               <div>
@@ -809,9 +779,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   placeholder="Computer Science"
                   value={eduForm.field}
-                  onChange={(e) =>
-                    setEduForm((f) => ({ ...f, field: e.target.value }))
-                  }
+                  onChange={(e) => setEduForm((f) => ({ ...f, field: e.target.value }))}
                 />
               </div>
               <div>
@@ -820,9 +788,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   type="month"
                   value={eduForm.startDate}
-                  onChange={(e) =>
-                    setEduForm((f) => ({ ...f, startDate: e.target.value }))
-                  }
+                  onChange={(e) => setEduForm((f) => ({ ...f, startDate: e.target.value }))}
                 />
               </div>
               <div>
@@ -832,9 +798,7 @@ export function ProfileSettings() {
                   type="month"
                   placeholder="Leave blank if current"
                   value={eduForm.endDate}
-                  onChange={(e) =>
-                    setEduForm((f) => ({ ...f, endDate: e.target.value }))
-                  }
+                  onChange={(e) => setEduForm((f) => ({ ...f, endDate: e.target.value }))}
                 />
               </div>
               <div>
@@ -843,9 +807,7 @@ export function ProfileSettings() {
                   className="mt-1"
                   placeholder="3.8"
                   value={eduForm.gpa}
-                  onChange={(e) =>
-                    setEduForm((f) => ({ ...f, gpa: e.target.value }))
-                  }
+                  onChange={(e) => setEduForm((f) => ({ ...f, gpa: e.target.value }))}
                 />
               </div>
             </div>
