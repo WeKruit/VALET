@@ -77,6 +77,6 @@ export function useCurrentUser() {
     queryKey: ["auth", "me"],
     queryData: {},
     retry: false,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
   });
 }

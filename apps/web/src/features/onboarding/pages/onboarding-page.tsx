@@ -209,14 +209,15 @@ export function OnboardingPage() {
   // ─── Server state queries ───
 
   const resumesQuery = api.resumes.list.useQuery({
-    queryKey: ["resumes", "onboarding"],
+    queryKey: ["resumes"],
     queryData: {},
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
   });
 
   const { data: profileData, isLoading: profileLoading } = api.users.getProfile.useQuery({
-    queryKey: ["user-profile", "onboarding"],
+    queryKey: ["users", "profile"],
     queryData: {},
+    staleTime: 30_000,
   });
 
   const qaListQuery = api.qaBank.list.useQuery({

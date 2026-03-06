@@ -105,9 +105,9 @@ export function TriggerTaskDialog({
   );
 
   const { data: resumesData, isLoading: resumesLoading } = api.resumes.list.useQuery({
-    queryKey: ["resumes", "trigger-task"],
+    queryKey: ["resumes"],
     queryData: {},
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
   });
 
   const resumes = resumesData?.status === 200 ? resumesData.body.data : [];

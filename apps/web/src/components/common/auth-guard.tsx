@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useCurrentUser } from "@/features/auth/hooks/use-auth";
 import { useConsent } from "@/features/consent/hooks/use-consent";
 import { DisclaimerModal } from "@/features/consent/components/disclaimer-modal";
@@ -19,6 +20,7 @@ interface AuthGuardProps {
 export function AuthGuard({ children }: AuthGuardProps) {
   const { user, isLoading, setUser } = useAuth();
   const location = useLocation();
+  const queryClient = useQueryClient();
 
   // Compute whether user has full product access (ungated role)
   const isFullUser = !!user && isActiveRole(user.role);
@@ -53,18 +55,34 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   // All hooks must be called unconditionally (above any early returns)
   const resumesQuery = api.resumes.list.useQuery({
-    queryKey: ["resumes", "list", user?.id],
+    queryKey: ["resumes"],
     queryData: {},
     enabled: isFullUser,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   const profileQuery = api.users.getProfile.useQuery({
-    queryKey: ["user-profile", "auth-guard", user?.id],
+    queryKey: ["users", "profile"],
     queryData: {},
     enabled: isFullUser,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
+
+  // Sequenced focus refresh: auth/me first, then protected queries
+  React.useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState !== "visible") return;
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["resumes"] });
+        queryClient.invalidateQueries({ queryKey: ["users", "profile"] });
+        queryClient.invalidateQueries({ queryKey: ["consent"] });
+      });
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [queryClient]);
 
   // ─── Early returns (no hooks below this line) ───
 
@@ -132,7 +150,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const serverOnboardingDone =
     profileQuery.data?.status === 200 && !!profileQuery.data.body.onboardingCompletedAt;
   const localOnboardingDone = !!localStorage.getItem(`valet:onboarding:completed:${user.id}`);
-  const onboardingFinished = serverOnboardingDone || localOnboardingDone;
+  const serverHasResponded = profileQuery.data?.status === 200;
+  // Server is authoritative once it responds. localStorage only gates the loading state.
+  const onboardingFinished = serverHasResponded ? serverOnboardingDone : localOnboardingDone;
   const onboardingComplete = hasResumes && !!copilotAccepted && onboardingFinished;
 
   // If onboarding NOT complete and not already on /onboarding → redirect there

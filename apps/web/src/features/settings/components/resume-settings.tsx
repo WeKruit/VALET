@@ -40,7 +40,7 @@ export function ResumeSettings() {
   const { data, isLoading } = api.resumes.list.useQuery({
     queryKey: ["resumes"],
     queryData: {},
-    staleTime: 1000 * 60 * 5,
+    staleTime: 30_000,
     refetchInterval: (query) => {
       const resumes = query.state.data?.status === 200 ? query.state.data.body.data : [];
       return resumes.some((r) => r.status === "parsing" || r.status === "uploading") ? 3000 : false;
