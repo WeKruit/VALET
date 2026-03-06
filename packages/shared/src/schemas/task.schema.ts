@@ -398,6 +398,7 @@ export const batchTaskResultItem = z.object({
   jobUrl: z.string(),
   status: z.enum(["created", "duplicate", "failed", "skipped"]),
   taskId: z.string().uuid().optional(),
+  workflowRunId: z.string().optional(),
   error: z.string().optional(),
 });
 

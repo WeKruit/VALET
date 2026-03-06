@@ -83,13 +83,31 @@ export class DesktopService {
 
   async consumeHandoff(token: string, userId: string): Promise<HandoffData | null> {
     const key = `${HANDOFF_PREFIX}${token}`;
-    const raw = await this.redis.getdel(key);
-    if (!raw) return null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await this.redis.watch(key);
+      const raw = await this.redis.get(key);
 
-    const data = JSON.parse(raw) as HandoffData;
-    if (data.createdBy !== userId) return null;
+      if (!raw) {
+        await this.redis.unwatch();
+        return null;
+      }
 
-    return data;
+      const data = JSON.parse(raw) as HandoffData;
+      if (data.createdBy !== userId) {
+        await this.redis.unwatch();
+        return null;
+      }
+
+      const tx = this.redis.multi();
+      tx.del(key);
+      const result = await tx.exec();
+
+      if (result) {
+        return data;
+      }
+    }
+
+    return null;
   }
 
   async bootstrap(userId: string): Promise<DesktopBootstrapResponse> {

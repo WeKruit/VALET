@@ -934,6 +934,7 @@ export class TaskService {
       jobUrl: string;
       status: "created" | "duplicate" | "failed" | "skipped";
       taskId?: string;
+      workflowRunId?: string;
       error?: string;
     }> = [];
     let created = 0;
@@ -1009,7 +1010,12 @@ export class TaskService {
           userId,
           userRole,
         );
-        results.push({ jobUrl: entry.original, status: "created", taskId: task.id });
+        results.push({
+          jobUrl: entry.original,
+          status: "created",
+          taskId: task.id,
+          workflowRunId: task.workflowRunId ?? undefined,
+        });
         created++;
       } catch (err) {
         if (err instanceof AppError) {
