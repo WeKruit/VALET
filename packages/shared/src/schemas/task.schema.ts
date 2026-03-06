@@ -304,6 +304,81 @@ export const submissionProofResponse = z.object({
   createdAt: z.coerce.date().nullable().optional(),
 });
 
+// ─── Batch Task Creation ───
+
+/**
+ * Normalize a job URL for deduplication: lowercase host, strip trailing slash, drop utm_* params.
+ * Uses regex to avoid dependency on global URL (not available in all TS lib targets).
+ */
+export function normalizeJobUrl(raw: string): string {
+  let url = raw.trim();
+
+  // Lowercase the scheme + host portion (everything before the first '/' after '://')
+  url = url.replace(/^(https?:\/\/)([^/]+)/i, (_m, scheme: string, host: string) => {
+    return scheme.toLowerCase() + host.toLowerCase();
+  });
+
+  // Strip trailing slash(es) from path (before query/hash)
+  url = url.replace(/\/+(?=\?|#|$)/, "");
+
+  // Remove tracking query params (utm_*, ref, source)
+  url = url.replace(
+    /([?&])(utm_[^&]*|ref=[^&]*|source=[^&]*)(&?)/g,
+    (_m, prefix: string, _param: string, suffix: string) => {
+      // If this was the first param (?), keep the ? for remaining params
+      if (prefix === "?" && suffix === "&") return "?";
+      // If there's a following param, drop this one
+      if (suffix === "&") return prefix;
+      // Last param — drop the separator
+      return "";
+    },
+  );
+
+  // Clean up trailing ? or & with no params
+  url = url.replace(/[?&]$/, "");
+
+  return url || raw.trim();
+}
+
+const BATCH_MAX_URLS = 25;
+
+/** Shared options applied to every URL in the batch. */
+const batchSharedOptions = z.object({
+  resumeId: z.string().uuid(),
+  mode: applicationMode.default("copilot"),
+  notes: z.string().max(1000).optional(),
+  quality: qualityPreset.optional(),
+  targetWorkerId: z.string().uuid().optional(),
+  reasoningModel: z.string().max(100).optional(),
+  visionModel: z.string().max(100).optional(),
+});
+
+export const createBatchTaskRequest = batchSharedOptions.extend({
+  jobUrls: z
+    .array(z.string().url())
+    .min(1, "At least one URL is required")
+    .max(BATCH_MAX_URLS, `Maximum ${BATCH_MAX_URLS} URLs per batch`),
+});
+
+export const batchTaskResultItem = z.object({
+  jobUrl: z.string(),
+  status: z.enum(["created", "duplicate", "failed", "skipped"]),
+  taskId: z.string().uuid().optional(),
+  error: z.string().optional(),
+});
+
+export const createBatchTaskResponse = z.object({
+  results: z.array(batchTaskResultItem),
+  summary: z.object({
+    total: z.number(),
+    created: z.number(),
+    duplicates: z.number(),
+    failed: z.number(),
+    skipped: z.number(),
+  }),
+  balanceAfter: z.number().nullable(),
+});
+
 // ─── Inferred Types (NEVER hand-write these) ───
 export type TaskStatus = z.infer<typeof taskStatus>;
 export type Platform = z.infer<typeof platform>;
@@ -330,3 +405,6 @@ export type SubmissionProofResponse = z.infer<typeof submissionProofResponse>;
 export type ScreenshotEntry = z.infer<typeof screenshotEntry>;
 export type TimelineEntry = z.infer<typeof timelineEntry>;
 export type AnswerEntry = z.infer<typeof answerEntry>;
+export type CreateBatchTaskRequest = z.infer<typeof createBatchTaskRequest>;
+export type BatchTaskResultItem = z.infer<typeof batchTaskResultItem>;
+export type CreateBatchTaskResponse = z.infer<typeof createBatchTaskResponse>;

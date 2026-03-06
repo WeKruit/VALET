@@ -2,6 +2,8 @@ import { initContract } from "@ts-rest/core";
 import { z } from "zod";
 import {
   createTaskRequest,
+  createBatchTaskRequest,
+  createBatchTaskResponse,
   taskResponse,
   taskListResponse,
   taskListQuery,
@@ -81,6 +83,17 @@ export const taskContract = c.router({
       404: errorResponse,
     },
     summary: "Get submission proof pack for a completed task",
+  },
+  createBatch: {
+    method: "POST",
+    path: "/api/v1/tasks/batch",
+    body: createBatchTaskRequest,
+    responses: {
+      200: createBatchTaskResponse,
+      400: errorResponse,
+      402: errorResponse,
+    },
+    summary: "Create multiple application tasks in a single batch",
   },
   create: {
     method: "POST",

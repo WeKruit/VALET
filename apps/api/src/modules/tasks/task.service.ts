@@ -796,6 +796,142 @@ export class TaskService {
     return task;
   }
 
+  /**
+   * Create multiple tasks in a batch. Wraps the existing create() path per-URL.
+   * - Normalizes and deduplicates URLs
+   * - Preflight credit check if enforcement is on
+   * - Per-item error handling: continue on expected errors, abort on infra errors
+   */
+  async createBatch(
+    body: {
+      jobUrls: string[];
+      resumeId: string;
+      mode?: "copilot" | "autopilot";
+      notes?: string;
+      quality?: "speed" | "balanced" | "quality";
+      targetWorkerId?: string;
+      reasoningModel?: string;
+      visionModel?: string;
+    },
+    userId: string,
+  ) {
+    const { normalizeJobUrl } = await import("@valet/shared/schemas");
+    const results: Array<{
+      jobUrl: string;
+      status: "created" | "duplicate" | "failed" | "skipped";
+      taskId?: string;
+      error?: string;
+    }> = [];
+    let created = 0;
+    let duplicates = 0;
+    let failed = 0;
+    let skipped = 0;
+    let aborted = false;
+
+    // 1. Normalize and deduplicate URLs
+    const seenNormalized = new Map<string, number>();
+    const urlEntries: Array<{ original: string; normalized: string; isDuplicate: boolean }> = [];
+
+    for (let i = 0; i < body.jobUrls.length; i++) {
+      const original = body.jobUrls[i]!;
+      const normalized = normalizeJobUrl(original);
+      const existingIdx = seenNormalized.get(normalized);
+      if (existingIdx !== undefined) {
+        urlEntries.push({ original, normalized, isDuplicate: true });
+      } else {
+        seenNormalized.set(normalized, i);
+        urlEntries.push({ original, normalized, isDuplicate: false });
+      }
+    }
+
+    const uniqueCount = urlEntries.filter((e) => !e.isDuplicate).length;
+
+    // 2. Preflight credit check
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
+      const { balance } = await this.creditService.getBalance(userId);
+      if (balance < uniqueCount) {
+        throw AppError.paymentRequired(
+          `Insufficient credits: ${balance} available, ${uniqueCount} required for this batch.`,
+        );
+      }
+    }
+
+    // 3. Process each URL sequentially (create() handles debit per-task)
+    for (const entry of urlEntries) {
+      if (aborted) {
+        results.push({
+          jobUrl: entry.original,
+          status: "skipped",
+          error: "Batch aborted due to infrastructure error",
+        });
+        skipped++;
+        continue;
+      }
+
+      if (entry.isDuplicate) {
+        results.push({
+          jobUrl: entry.original,
+          status: "duplicate",
+          error: "Duplicate URL in batch",
+        });
+        duplicates++;
+        continue;
+      }
+
+      try {
+        const task = await this.create(
+          {
+            jobUrl: entry.normalized,
+            mode: body.mode ?? "copilot",
+            resumeId: body.resumeId,
+            notes: body.notes,
+            quality: body.quality,
+            targetWorkerId: body.targetWorkerId,
+            reasoningModel: body.reasoningModel,
+            visionModel: body.visionModel,
+          },
+          userId,
+        );
+        results.push({ jobUrl: entry.original, status: "created", taskId: task.id });
+        created++;
+      } catch (err) {
+        if (err instanceof AppError) {
+          // Expected user/input/payment error — record and continue
+          results.push({ jobUrl: entry.original, status: "failed", error: err.message });
+          failed++;
+        } else {
+          // Infrastructure error — abort the remainder
+          this.logger.error(
+            { err, jobUrl: entry.original },
+            "Infra error in batch — aborting remaining",
+          );
+          results.push({
+            jobUrl: entry.original,
+            status: "failed",
+            error: err instanceof Error ? err.message : "Internal error",
+          });
+          failed++;
+          aborted = true;
+        }
+      }
+    }
+
+    // 4. Post-run balance snapshot
+    let balanceAfter: number | null = null;
+    try {
+      const { balance } = await this.creditService.getBalance(userId);
+      balanceAfter = balance;
+    } catch {
+      // Non-critical — return null
+    }
+
+    return {
+      results,
+      summary: { total: body.jobUrls.length, created, duplicates, failed, skipped },
+      balanceAfter,
+    };
+  }
+
   /** Refund one credit if enforcement is on. Swallows errors — dispatch already failed. */
   private async refundCreditIfDebited(userId: string, taskId: string): Promise<void> {
     if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") return;

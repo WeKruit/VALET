@@ -108,7 +108,9 @@ export class ReferralService {
     }
   }
 
-  async activateReferral(referredUserId: string): Promise<string | null> {
+  async activateReferral(
+    referredUserId: string,
+  ): Promise<{ id: string; referrerUserId: string } | null> {
     // Find pending referral for this user
     const ref = await this.db
       .select()
@@ -124,7 +126,14 @@ export class ReferralService {
       .set({ status: "completed", completedAt: new Date() })
       .where(eq(referrals.id, ref[0].id));
 
-    return ref[0].referrerUserId;
+    return { id: ref[0].id, referrerUserId: ref[0].referrerUserId };
+  }
+
+  async updateRewardCreditsIssued(referralId: string, amount: number): Promise<void> {
+    await this.db
+      .update(referrals)
+      .set({ rewardCreditsIssued: amount })
+      .where(eq(referrals.id, referralId));
   }
 
   async getStats(userId: string) {
@@ -139,19 +148,28 @@ export class ReferralService {
       .where(eq(referrals.referrerUserId, userId))
       .groupBy(referrals.status);
 
+    const [rewardedResult] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(referrals)
+      .where(and(eq(referrals.referrerUserId, userId), sql`${referrals.rewardCreditsIssued} > 0`));
+
     let totalReferred = 0;
     let pendingCount = 0;
     let activatedCount = 0;
-    let rewardedCount = 0;
 
     for (const row of rows) {
       const count = Number(row.count);
       totalReferred += count;
       if (row.status === "pending") pendingCount = count;
       if (row.status === "completed") activatedCount = count;
-      if (row.status === "rewarded") rewardedCount = count;
     }
 
-    return { code, totalReferred, pendingCount, activatedCount, rewardedCount };
+    return {
+      code,
+      totalReferred,
+      pendingCount,
+      activatedCount,
+      rewardedCount: Number(rewardedResult?.count ?? 0),
+    };
   }
 }

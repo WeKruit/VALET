@@ -57,6 +57,13 @@ export const taskRouter = s.router(taskContract, {
     }
   },
 
+  createBatch: async ({ body, request }) => {
+    await requireAbility("create", "Task")(request);
+    const { taskService } = request.diScope.cradle;
+    const result = await taskService.createBatch(body, request.userId);
+    return { status: 200 as const, body: result };
+  },
+
   create: async ({ body, request }) => {
     await requireAbility("create", "Task")(request);
     const { taskService } = request.diScope.cradle;

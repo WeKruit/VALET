@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type * as ReactRouterDom from "react-router-dom";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApplyForm } from "./apply-form";
 
 vi.mock("react-router-dom", async () => {
@@ -60,6 +61,17 @@ vi.mock("@/lib/api-client", () => ({
         }),
       },
     },
+    credits: {
+      getBalance: {
+        useQuery: () => ({
+          data: {
+            status: 200,
+            body: { balance: 50, trialExpiry: null, enforcementEnabled: false },
+          },
+          isLoading: false,
+        }),
+      },
+    },
   },
 }));
 
@@ -67,14 +79,23 @@ vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   },
 }));
 
+// Mock batch components to avoid QueryClient dependency in tests
+vi.mock("./batch-queue-panel", () => ({
+  BatchQueuePanel: () => null,
+}));
+
 function renderApplyForm() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <ApplyForm />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ApplyForm />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
