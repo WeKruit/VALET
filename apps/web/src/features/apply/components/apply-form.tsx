@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { useWorkbenchStore } from "../stores/workbench.store";
 import { Card, CardContent } from "@valet/ui/components/card";
@@ -23,15 +24,21 @@ import {
   Briefcase,
   Globe,
   Cpu,
+  ListPlus,
+  Monitor,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useCreditBalance } from "../hooks/use-credit-balance";
 import { QualitySelector } from "./quality-selector";
 import { WorkerSelector } from "./worker-selector";
 import { ModelSelectors } from "./model-selectors";
+import { BatchQueuePanel } from "./batch-queue-panel";
+import { useBatchQueueStore } from "../stores/batch-queue.store";
+import { launchProtocolOrFallback } from "../utils/protocol-launch";
 
 type PlatformInfo = {
   name: string;
@@ -99,10 +106,15 @@ function isValidUrl(url: string): boolean {
 }
 
 export function ApplyForm() {
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { setSelectedTaskId } = useWorkbenchStore();
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const { balance, enforcementEnabled } = useCreditBalance();
+  const insufficientCredits = enforcementEnabled && balance < 1;
+  const addToQueue = useBatchQueueStore((s) => s.addUrl);
+  const queueHasItems = useBatchQueueStore((s) => s.items.length > 0);
 
   // Pre-fill URL from search params (e.g. /apply?url=https://...)
   const [url, setUrl] = useState(() => searchParams.get("url") ?? "");
@@ -141,12 +153,29 @@ export function ApplyForm() {
         setSelectedTaskId(data.body.id);
         setUrl("");
         setNotes("");
+        queryClient.invalidateQueries({ queryKey: ["credits", "balance"] });
       }
     },
     onError: () => {
       toast.error("Failed to create application. Please try again.");
     },
   });
+
+  const createHandoff = api.desktop.createHandoff.useMutation({
+    onSuccess: (data) => {
+      if (data.status === 201) {
+        toast.success("Sending to desktop app...");
+        setUrl("");
+        setNotes("");
+        launchProtocolOrFallback(data.body.deepLink, data.body.token);
+      }
+    },
+    onError: () => {
+      toast.error("Failed to create handoff. Please try again.");
+    },
+  });
+
+  const isSubmitting = createTask.isPending || createHandoff.isPending;
 
   const platform = url ? detectPlatform(url) : null;
   const platformInfo = platform ? PLATFORM_MAP[platform] : null;
@@ -161,18 +190,32 @@ export function ApplyForm() {
       return;
     }
 
-    createTask.mutate({
-      body: {
-        jobUrl: url,
-        mode: "copilot",
-        resumeId: activeResume.id,
-        quality,
-        ...(notes.trim() ? { notes: notes.trim() } : {}),
-        ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
-        ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
-        ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
-      },
-    });
+    if (isAdmin) {
+      // Admin: cloud dispatch
+      createTask.mutate({
+        body: {
+          jobUrl: url,
+          mode: "copilot",
+          resumeId: activeResume.id,
+          quality,
+          executionTarget: "cloud",
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
+          ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
+          ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
+          ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
+        },
+      });
+    } else {
+      // Non-admin: desktop handoff
+      createHandoff.mutate({
+        body: {
+          urls: [url],
+          resumeId: activeResume.id,
+          quality,
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
+        },
+      });
+    }
   }
 
   return (
@@ -408,7 +451,7 @@ export function ApplyForm() {
         </Card>
       )}
 
-      {/* Mode indicator + submit */}
+      {/* Mode indicator + credit cost + submit */}
       <Card>
         <CardContent className="p-6 space-y-4">
           <div className="flex items-center gap-2 text-sm text-[var(--wk-text-secondary)]">
@@ -420,25 +463,85 @@ export function ApplyForm() {
             </span>
           </div>
 
-          <Button
-            variant="cta"
-            size="lg"
-            className="w-full"
-            disabled={!isValid || createTask.isPending || resumesLoading || !activeResume}
-            onClick={handleSubmit}
-          >
-            {resumesLoading ? (
-              <span className="flex items-center gap-2">
-                <LoadingSpinner size="sm" /> Loading...
+          {/* Credit cost info */}
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-[var(--wk-text-secondary)]">
+              This will use{" "}
+              <span className="font-medium text-[var(--wk-text-primary)]">1 credit</span>
+            </span>
+            <span className="text-[var(--wk-text-tertiary)]">Balance: {balance}</span>
+          </div>
+
+          {insufficientCredits && (
+            <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] bg-[color-mix(in_srgb,var(--wk-status-error)_8%,transparent)] border border-[color-mix(in_srgb,var(--wk-status-error)_20%,transparent)] px-3 py-2">
+              <AlertTriangle className="h-4 w-4 text-[var(--wk-status-error)] shrink-0" />
+              <span className="text-sm text-[var(--wk-status-error)]">
+                Insufficient credits. Add more credits to continue.
               </span>
-            ) : createTask.isPending ? (
-              "Starting..."
-            ) : (
-              "Start Application"
-            )}
-          </Button>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              variant="cta"
+              size="lg"
+              className="flex-1"
+              disabled={
+                !isValid || isSubmitting || resumesLoading || !activeResume || insufficientCredits
+              }
+              onClick={handleSubmit}
+            >
+              {resumesLoading ? (
+                <span className="flex items-center gap-2">
+                  <LoadingSpinner size="sm" /> Loading...
+                </span>
+              ) : isSubmitting ? (
+                isAdmin ? (
+                  "Starting..."
+                ) : (
+                  "Sending..."
+                )
+              ) : insufficientCredits ? (
+                "Insufficient Credits"
+              ) : isAdmin ? (
+                "Start Application"
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Monitor className="h-4 w-4" />
+                  Send to Desktop
+                </span>
+              )}
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              disabled={!isValid}
+              onClick={() => {
+                if (isValid) {
+                  addToQueue(url);
+                  setUrl("");
+                }
+              }}
+              title="Add to batch queue"
+            >
+              <ListPlus className="h-4 w-4" />
+            </Button>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Batch queue panel — always visible when queue has items */}
+      {(activeResume || queueHasItems) && (
+        <BatchQueuePanel
+          resumeId={activeResumeId}
+          quality={quality}
+          notes={notes}
+          targetWorkerId={targetWorkerId !== "auto" ? targetWorkerId : undefined}
+          reasoningModel={reasoningModel !== "auto" ? reasoningModel : undefined}
+          visionModel={visionModel !== "auto" ? visionModel : undefined}
+          resumeReady={!!activeResume}
+        />
+      )}
 
       {/* Sample jobs */}
       <Card>

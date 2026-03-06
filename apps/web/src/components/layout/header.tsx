@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { User, LogOut, Settings, ChevronDown, Menu } from "lucide-react";
+import { User, LogOut, Settings, ChevronDown, Menu, Coins } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@valet/ui/components/avatar";
+import { Badge } from "@valet/ui/components/badge";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useCreditBalance } from "@/features/apply/hooks/use-credit-balance";
 import { useUIStore } from "@/stores/ui.store";
 import { cn } from "@/lib/utils";
 import { NotificationPanel } from "@/features/notifications/components/notification-panel";
@@ -57,6 +59,8 @@ export function Header() {
     }
   }, [menuOpen]);
 
+  const { balance, isLoading: creditsLoading } = useCreditBalance();
+
   return (
     <header className="flex items-center justify-between h-14 px-4 md:px-6 border-b border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)]">
       <div className="flex items-center gap-3">
@@ -74,6 +78,14 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Credit balance pill */}
+        {!creditsLoading && (
+          <Badge variant="default" className="gap-1 text-[11px] px-2 py-0.5">
+            <Coins className="h-3 w-3 text-[var(--wk-accent-amber)]" />
+            {balance} credits
+          </Badge>
+        )}
+
         {/* Notification bell */}
         <NotificationPanel />
 

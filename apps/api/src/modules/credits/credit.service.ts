@@ -21,6 +21,7 @@ export class CreditService {
     return {
       balance: row[0]?.creditBalance ?? 0,
       trialExpiry: row[0]?.trialCreditsExpireAt?.toISOString() ?? null,
+      enforcementEnabled: process.env.FEATURE_CREDITS_ENFORCEMENT === "true",
     };
   }
 

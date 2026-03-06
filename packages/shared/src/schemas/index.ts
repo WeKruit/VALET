@@ -22,3 +22,4 @@ export * from "./insights.schema.js";
 export * from "./job-lead.schema.js";
 export * from "./referral.schema.js";
 export * from "./credit.schema.js";
+export * from "./desktop.schema.js";

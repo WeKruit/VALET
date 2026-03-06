@@ -3,6 +3,7 @@ import { z } from "zod";
 export const creditBalanceResponse = z.object({
   balance: z.number(),
   trialExpiry: z.string().nullable(),
+  enforcementEnabled: z.boolean(),
 });
 
 export const creditLedgerEntry = z.object({

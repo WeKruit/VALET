@@ -50,6 +50,7 @@ import { jobLeadRouter } from "./modules/job-leads/job-lead.routes.js";
 import { localWorkerRoutes } from "./modules/local-workers/local-worker.routes.js";
 import { referralRouter } from "./modules/referrals/referral.routes.js";
 import { creditRouter } from "./modules/credits/credit.routes.js";
+import { desktopRouter, resumeDownloadRoute } from "./modules/desktop/desktop.routes.js";
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -149,9 +150,13 @@ export async function buildApp() {
   fastify.register(s.plugin(jobLeadRouter));
   fastify.register(s.plugin(referralRouter));
   fastify.register(s.plugin(creditRouter));
+  fastify.register(s.plugin(desktopRouter));
 
   // Standalone multipart upload route (outside ts-rest to avoid body-parsing conflicts)
   await fastify.register(resumeUploadRoute);
+
+  // Standalone binary download route (outside ts-rest — streams file from S3)
+  await fastify.register(resumeDownloadRoute);
 
   // Standalone webhook routes (outside ts-rest — needs raw body + no auth)
   await fastify.register(billingWebhookRoute);

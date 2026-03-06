@@ -163,8 +163,10 @@ describe("Worker Dispatch Tests", () => {
           mode: "autopilot",
           resumeId: "resume-1",
           notes: "Test application",
+          executionTarget: "cloud",
         },
         "user-1",
+        "admin",
       );
 
       expect(mockGhosthandsClient.submitApplication).toHaveBeenCalledOnce();
@@ -187,7 +189,7 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.create.mockResolvedValue({
         id: "task-2",
         userId: "user-1",
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "unknown",
         status: "created",
       });
@@ -203,8 +205,14 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.updateStatus.mockResolvedValue(undefined);
 
       await service.create(
-        { jobUrl: "https://example.com/job", mode: "copilot", resumeId: "r1" },
+        {
+          jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+          mode: "copilot",
+          resumeId: "r1",
+          executionTarget: "cloud",
+        },
         "user-1",
+        "admin",
       );
 
       expect(mockTaskRepo.updateWorkflowRunId).toHaveBeenCalledWith("task-2", "gh-workflow-run-99");
@@ -219,7 +227,7 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.create.mockResolvedValue({
         id: "task-3",
         userId: "user-1",
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "unknown",
         status: "created",
       });
@@ -230,8 +238,14 @@ describe("Worker Dispatch Tests", () => {
       );
 
       await service.create(
-        { jobUrl: "https://example.com/job", mode: "autopilot", resumeId: "r1" },
+        {
+          jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+          mode: "autopilot",
+          resumeId: "r1",
+          executionTarget: "cloud",
+        },
         "user-1",
+        "admin",
       );
 
       expect(mockTaskRepo.updateStatus).toHaveBeenCalledWith("task-3", "failed");
@@ -252,7 +266,7 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.create.mockResolvedValue({
         id: "task-10",
         userId: "user-1",
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "unknown",
         status: "created",
       });
@@ -268,8 +282,14 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.updateStatus.mockResolvedValue(undefined);
 
       await service.create(
-        { jobUrl: "https://example.com/job", mode: "autopilot", resumeId: "r1" },
+        {
+          jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+          mode: "autopilot",
+          resumeId: "r1",
+          executionTarget: "cloud",
+        },
         "user-1",
+        "admin",
       );
 
       const callArgs = mockGhosthandsClient.submitApplication.mock.calls[0]![0];
@@ -285,7 +305,7 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.create.mockResolvedValue({
         id: "task-11",
         userId: "user-1",
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "unknown",
         status: "created",
       });
@@ -323,8 +343,14 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.updateStatus.mockResolvedValue(undefined);
 
       await service.create(
-        { jobUrl: "https://example.com/job", mode: "autopilot", resumeId: "r1" },
+        {
+          jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+          mode: "autopilot",
+          resumeId: "r1",
+          executionTarget: "cloud",
+        },
         "user-1",
+        "admin",
       );
 
       const callArgs = mockGhosthandsClient.submitApplication.mock.calls[0]![0];
@@ -354,7 +380,7 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.create.mockResolvedValue({
         id: "task-12",
         userId: "user-1",
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "unknown",
         status: "created",
       });
@@ -376,8 +402,14 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.updateStatus.mockResolvedValue(undefined);
 
       await service.create(
-        { jobUrl: "https://example.com/job", mode: "autopilot", resumeId: "r1" },
+        {
+          jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+          mode: "autopilot",
+          resumeId: "r1",
+          executionTarget: "cloud",
+        },
         "user-1",
+        "admin",
       );
 
       const callArgs = mockGhosthandsClient.submitApplication.mock.calls[0]![0];
@@ -397,7 +429,7 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.create.mockResolvedValue({
         id: "task-13",
         userId: "user-1",
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "unknown",
         status: "created",
       });
@@ -420,8 +452,14 @@ describe("Worker Dispatch Tests", () => {
       mockTaskRepo.updateStatus.mockResolvedValue(undefined);
 
       await service.create(
-        { jobUrl: "https://example.com/job", mode: "autopilot", resumeId: "r1" },
+        {
+          jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+          mode: "autopilot",
+          resumeId: "r1",
+          executionTarget: "cloud",
+        },
         "user-1",
+        "admin",
       );
 
       const callArgs = mockGhosthandsClient.submitApplication.mock.calls[0]![0];

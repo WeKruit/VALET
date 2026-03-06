@@ -69,6 +69,7 @@ import { JobLeadService } from "../modules/job-leads/job-lead.service.js";
 import { LocalWorkerBrokerService } from "../modules/local-workers/local-worker-broker.service.js";
 import { ReferralService } from "../modules/referrals/referral.service.js";
 import { CreditService } from "../modules/credits/credit.service.js";
+import { DesktopService } from "../modules/desktop/desktop.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -138,6 +139,7 @@ export interface AppCradle {
   localWorkerBrokerService: LocalWorkerBrokerService;
   referralService: ReferralService;
   creditService: CreditService;
+  desktopService: DesktopService;
 }
 
 declare module "@fastify/awilix" {
@@ -267,5 +269,6 @@ export default fp(async (fastify: FastifyInstance) => {
     }),
     referralService: asClass(ReferralService, { lifetime: Lifetime.SINGLETON }),
     creditService: asClass(CreditService, { lifetime: Lifetime.SINGLETON }),
+    desktopService: asClass(DesktopService, { lifetime: Lifetime.SINGLETON }),
   });
 });

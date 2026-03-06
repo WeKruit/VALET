@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type * as ReactRouterDom from "react-router-dom";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApplyForm } from "./apply-form";
 
 vi.mock("react-router-dom", async () => {
@@ -60,6 +61,25 @@ vi.mock("@/lib/api-client", () => ({
         }),
       },
     },
+    credits: {
+      getBalance: {
+        useQuery: () => ({
+          data: {
+            status: 200,
+            body: { balance: 50, trialExpiry: null, enforcementEnabled: false },
+          },
+          isLoading: false,
+        }),
+      },
+    },
+    desktop: {
+      createHandoff: {
+        useMutation: () => ({
+          mutate: vi.fn(),
+          isPending: false,
+        }),
+      },
+    },
   },
 }));
 
@@ -67,14 +87,40 @@ vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   },
 }));
 
+// Mock useAuth to return admin user for testing admin path
+vi.mock("@/features/auth/hooks/use-auth", () => ({
+  useAuth: (selector: (state: any) => any) =>
+    selector({
+      user: { id: "user-1", email: "admin@test.com", name: "Admin", role: "admin" },
+      isLoading: false,
+    }),
+}));
+
+// Mock batch components to avoid QueryClient dependency in tests
+vi.mock("./batch-queue-panel", () => ({
+  BatchQueuePanel: () => null,
+}));
+
+// Mock admin-only components that use additional API queries
+vi.mock("./worker-selector", () => ({
+  WorkerSelector: () => null,
+}));
+vi.mock("./model-selectors", () => ({
+  ModelSelectors: () => null,
+}));
+
 function renderApplyForm() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <ApplyForm />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ApplyForm />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -214,6 +260,7 @@ describe("ApplyForm", () => {
         mode: "copilot",
         quality: "balanced",
         resumeId: "resume-1",
+        executionTarget: "cloud",
       },
     });
   });

@@ -482,16 +482,28 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
       // ── Referral activation on first completed task ─────────────
       if (taskStatus === "completed" && process.env.FEATURE_REFERRALS === "true") {
         try {
-          const referrerUserId = await referralService.activateReferral(task.userId);
-          if (referrerUserId) {
-            await creditService.grantCredits(referrerUserId, 25, "referral_reward", {
-              description: "Referral reward: referred user completed first task",
-              referenceType: "referral",
-              referenceId: valetTaskId,
-              idempotencyKey: `referral-activate-${valetTaskId}`,
-            });
+          const activated = await referralService.activateReferral(task.userId);
+          if (activated) {
+            const rewardAmount = 25;
+            await creditService.grantCredits(
+              activated.referrerUserId,
+              rewardAmount,
+              "referral_reward",
+              {
+                description: "Referral reward: referred user completed first task",
+                referenceType: "referral",
+                referenceId: valetTaskId,
+                idempotencyKey: `referral-activate-${valetTaskId}`,
+              },
+            );
+            await referralService.updateRewardCreditsIssued(activated.id, rewardAmount);
             request.log.info(
-              { referrerUserId, referredUserId: task.userId, taskId: valetTaskId },
+              {
+                referrerUserId: activated.referrerUserId,
+                referralId: activated.id,
+                referredUserId: task.userId,
+                taskId: valetTaskId,
+              },
               "Referral activated and reward credits granted",
             );
           }

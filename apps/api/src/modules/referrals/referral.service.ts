@@ -108,23 +108,39 @@ export class ReferralService {
     }
   }
 
-  async activateReferral(referredUserId: string): Promise<string | null> {
-    // Find pending referral for this user
+  async activateReferral(
+    referredUserId: string,
+  ): Promise<{ id: string; referrerUserId: string } | null> {
+    // Find pending referral, or a completed-but-unrewarded referral (crash recovery)
     const ref = await this.db
       .select()
       .from(referrals)
-      .where(and(eq(referrals.referredUserId, referredUserId), eq(referrals.status, "pending")))
+      .where(
+        and(
+          eq(referrals.referredUserId, referredUserId),
+          sql`(${referrals.status} = 'pending' OR (${referrals.status} = 'completed' AND ${referrals.rewardCreditsIssued} = 0))`,
+        ),
+      )
       .limit(1);
 
     if (!ref[0]) return null;
 
-    // Mark as completed
+    // Mark as completed (idempotent — already completed in crash recovery case)
+    if (ref[0].status === "pending") {
+      await this.db
+        .update(referrals)
+        .set({ status: "completed", completedAt: new Date() })
+        .where(eq(referrals.id, ref[0].id));
+    }
+
+    return { id: ref[0].id, referrerUserId: ref[0].referrerUserId };
+  }
+
+  async updateRewardCreditsIssued(referralId: string, amount: number): Promise<void> {
     await this.db
       .update(referrals)
-      .set({ status: "completed", completedAt: new Date() })
-      .where(eq(referrals.id, ref[0].id));
-
-    return ref[0].referrerUserId;
+      .set({ rewardCreditsIssued: amount })
+      .where(eq(referrals.id, referralId));
   }
 
   async getStats(userId: string) {
@@ -139,19 +155,28 @@ export class ReferralService {
       .where(eq(referrals.referrerUserId, userId))
       .groupBy(referrals.status);
 
+    const [rewardedResult] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(referrals)
+      .where(and(eq(referrals.referrerUserId, userId), sql`${referrals.rewardCreditsIssued} > 0`));
+
     let totalReferred = 0;
     let pendingCount = 0;
     let activatedCount = 0;
-    let rewardedCount = 0;
 
     for (const row of rows) {
       const count = Number(row.count);
       totalReferred += count;
       if (row.status === "pending") pendingCount = count;
       if (row.status === "completed") activatedCount = count;
-      if (row.status === "rewarded") rewardedCount = count;
     }
 
-    return { code, totalReferred, pendingCount, activatedCount, rewardedCount };
+    return {
+      code,
+      totalReferred,
+      pendingCount,
+      activatedCount,
+      rewardedCount: Number(rewardedResult?.count ?? 0),
+    };
   }
 }
