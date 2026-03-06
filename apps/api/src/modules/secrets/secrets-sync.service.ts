@@ -94,6 +94,7 @@ const WORKER_VAR_PATTERNS = [
   "JWT_SECRET",
   "JWT_REFRESH_SECRET",
   "S3_",
+  "ATM_DEPLOY_SECRET",
   "GH_SERVICE_SECRET",
   "GH_DEPLOY_SECRET",
   "VALET_DEPLOY_WEBHOOK_SECRET",
@@ -109,6 +110,8 @@ const WORKER_VAR_PATTERNS = [
 ];
 
 const CI_VAR_PATTERNS = [
+  "ATM_DEPLOY_SECRET",
+  "ATM_HOST",
   "SUPABASE_URL",
   "SUPABASE_SECRET_KEY",
   "SUPABASE_PUBLISHABLE_KEY",
@@ -119,6 +122,24 @@ const CI_VAR_PATTERNS = [
   "ECR_REGISTRY",
   "ECR_REPOSITORY",
 ];
+
+const GH_ACTIONS_TARGETS = ["WeKruit/GHOST-HANDS", "WeKruit/GH-Desktop-App"] as const;
+
+function ensureDeploySecretParity(vars: Map<string, string>): Map<string, string> {
+  const mirrored = new Map(vars);
+  const atmSecret = mirrored.get("ATM_DEPLOY_SECRET");
+  const ghSecret = mirrored.get("GH_DEPLOY_SECRET");
+
+  if (atmSecret && !ghSecret) {
+    mirrored.set("GH_DEPLOY_SECRET", atmSecret);
+  }
+
+  if (ghSecret && !atmSecret) {
+    mirrored.set("ATM_DEPLOY_SECRET", ghSecret);
+  }
+
+  return mirrored;
+}
 
 // --- Helper: filter by role ---
 function filterByRole(vars: Map<string, string>, role: string): Map<string, string> {
@@ -145,6 +166,11 @@ function filterByRole(vars: Map<string, string>, role: string): Map<string, stri
         filtered.set(key, value);
     }
   }
+
+  if (role === "worker" || role === "ci") {
+    return ensureDeploySecretParity(filtered);
+  }
+
   return filtered;
 }
 
@@ -192,6 +218,60 @@ export class SecretsSyncService {
           }
         : {}),
     });
+  }
+
+  private getAtmCanonicalConfig(): { baseUrl: string; deploySecret: string } | null {
+    const baseUrl = process.env.ATM_BASE_URL ?? process.env.ATM_HOST;
+    const deploySecret = process.env.ATM_DEPLOY_SECRET ?? process.env.GH_DEPLOY_SECRET;
+    if (!baseUrl || !deploySecret) {
+      return null;
+    }
+    return {
+      baseUrl: baseUrl.replace(/\/$/, ""),
+      deploySecret,
+    };
+  }
+
+  private async readCanonicalVars(
+    project: "valet" | "ghosthands",
+    env: "staging" | "production",
+  ): Promise<Map<string, string>> {
+    const atmConfig = this.getAtmCanonicalConfig();
+    if (!atmConfig) {
+      this.logger.warn({ project, env }, "ATM canonical config missing, falling back to AWS SM");
+      return this.readFromSm(`${project}/${env}`);
+    }
+
+    try {
+      const params = new URLSearchParams({
+        app: project,
+        environment: env,
+      });
+      const response = await fetch(`${atmConfig.baseUrl}/admin/secrets/vars?${params.toString()}`, {
+        headers: {
+          "X-Deploy-Secret": atmConfig.deploySecret,
+        },
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`ATM ${response.status}: ${body}`);
+      }
+
+      const payload = (await response.json()) as {
+        vars?: Array<{ key: string; value: string; isRuntime?: boolean }>;
+      };
+      const result = new Map<string, string>();
+      for (const entry of payload.vars ?? []) {
+        if (entry.isRuntime) continue;
+        if (typeof entry.key === "string" && typeof entry.value === "string" && entry.value) {
+          result.set(entry.key, entry.value);
+        }
+      }
+      return result;
+    } catch (err) {
+      this.logger.warn({ err, project, env }, "ATM canonical read failed, falling back to AWS SM");
+      return this.readFromSm(`${project}/${env}`);
+    }
   }
 
   // ─── Read from AWS Secrets Manager ──────────────────────────────────
@@ -243,8 +323,8 @@ export class SecretsSyncService {
   // ─── Diff ──────────────────────────────────────────────────────────
 
   async getDiff(env: "staging" | "production"): Promise<SecretsDiffResponse> {
-    const valetVars = await this.readFromSm(`valet/${env}`);
-    const ghVars = await this.readFromSm(`ghosthands/${env}`);
+    const valetVars = await this.readCanonicalVars("valet", env);
+    const ghVars = await this.readCanonicalVars("ghosthands", env);
 
     this.logger.info(
       { env, valetKeyCount: valetVars.size, ghKeyCount: ghVars.size },
@@ -255,7 +335,7 @@ export class SecretsSyncService {
 
     const results = await Promise.allSettled([
       ...flyApps.map((app) => this.diffFlyApp(env, valetVars, app.name, app.role)),
-      this.diffGhActions(env, ghVars),
+      ...GH_ACTIONS_TARGETS.map((repo) => this.diffGhActionsTarget(env, repo, ghVars)),
       this.diffAwsSm(env, ghVars),
     ]);
 
@@ -263,7 +343,11 @@ export class SecretsSyncService {
       if (r.status === "fulfilled") return r.value;
       const allTargets = [
         ...flyApps.map((a) => ({ target: a.name, targetType: "fly" as const, role: a.role })),
-        { target: "WeKruit/GHOST-HANDS", targetType: "gh-actions" as const, role: "ci" },
+        ...GH_ACTIONS_TARGETS.map((repo) => ({
+          target: repo,
+          targetType: "gh-actions" as const,
+          role: "ci",
+        })),
         { target: `ghosthands/${env}`, targetType: "aws-sm" as const, role: "all" },
       ];
       const info = allTargets[i]!;
@@ -304,8 +388,8 @@ export class SecretsSyncService {
     const startTime = Date.now();
     this.logger.info({ env, userId, targets }, "Starting secrets sync");
 
-    const valetVars = await this.readFromSm(`valet/${env}`);
-    const ghVars = await this.readFromSm(`ghosthands/${env}`);
+    const valetVars = await this.readCanonicalVars("valet", env);
+    const ghVars = await this.readCanonicalVars("ghosthands", env);
 
     // Get diff to know what's drifted
     const diff = await this.getDiff(env);
@@ -436,7 +520,7 @@ export class SecretsSyncService {
       case "fly":
         return this.syncFlyApp(valetVars, target);
       case "gh-actions":
-        return this.syncGhActions(ghVars, target);
+        return this.syncGhActions(env, ghVars, target);
       case "aws-sm":
         return this.syncAwsSm(env, ghVars, target);
       default:
@@ -541,6 +625,7 @@ export class SecretsSyncService {
   // ─── GitHub Actions sync ───────────────────────────────────────────
 
   private async syncGhActions(
+    env: string,
     refVars: Map<string, string>,
     target: TargetDiff,
   ): Promise<SyncTargetResult> {
@@ -571,9 +656,10 @@ export class SecretsSyncService {
 
     // Get repo public key for encryption
     const repo = target.target; // e.g. "WeKruit/GHOST-HANDS"
+    const environmentPath = `https://api.github.com/repos/${repo}/environments/${env}/secrets`;
     let publicKey: { key: string; key_id: string };
     try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/public-key`, {
+      const res = await fetch(`${environmentPath}/public-key`, {
         headers: {
           Authorization: `Bearer ${ghToken}`,
           Accept: "application/vnd.github+json",
@@ -589,7 +675,7 @@ export class SecretsSyncService {
         skipped: 0,
         failed: keysToPush.length,
         errors: [
-          `Failed to get repo public key: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to get GitHub environment public key (${env}): ${err instanceof Error ? err.message : String(err)}`,
         ],
       };
     }
@@ -612,7 +698,7 @@ export class SecretsSyncService {
         const encryptedValue = sodium.to_base64(encryptedBytes, sodium.base64_variants.ORIGINAL);
 
         // Push encrypted secret
-        const res = await fetch(`https://api.github.com/repos/${repo}/actions/secrets/${key}`, {
+        const res = await fetch(`${environmentPath}/${key}`, {
           method: "PUT",
           headers: {
             Authorization: `Bearer ${ghToken}`,
@@ -810,11 +896,15 @@ export class SecretsSyncService {
     }
   }
 
-  private async diffGhActions(_env: string, refVars: Map<string, string>): Promise<TargetDiff> {
+  private async diffGhActionsTarget(
+    env: string,
+    repo: string,
+    refVars: Map<string, string>,
+  ): Promise<TargetDiff> {
     const ghToken = process.env.GITHUB_TOKEN;
     if (!ghToken) {
       return {
-        target: "WeKruit/GHOST-HANDS",
+        target: repo,
         targetType: "gh-actions",
         role: "ci",
         totalRefKeys: 0,
@@ -830,7 +920,7 @@ export class SecretsSyncService {
     }
     const filtered = filterByRole(refVars, "ci");
     try {
-      const res = await fetch("https://api.github.com/repos/WeKruit/GHOST-HANDS/actions/secrets", {
+      const res = await fetch(`https://api.github.com/repos/${repo}/environments/${env}/secrets`, {
         headers: {
           Authorization: `Bearer ${ghToken}`,
           Accept: "application/vnd.github+json",
@@ -844,7 +934,7 @@ export class SecretsSyncService {
       const refKeys = new Set(filtered.keys());
       const { missing, extra, matched } = computeDiff(refKeys, deployedKeys);
       return {
-        target: "WeKruit/GHOST-HANDS",
+        target: repo,
         targetType: "gh-actions",
         role: "ci",
         totalRefKeys: refKeys.size,
@@ -857,9 +947,9 @@ export class SecretsSyncService {
         lastChecked: new Date().toISOString(),
       };
     } catch (err) {
-      this.logger.error({ err }, "GitHub Actions diff failed");
+      this.logger.error({ err, repo, env }, "GitHub Actions diff failed");
       return {
-        target: "WeKruit/GHOST-HANDS",
+        target: repo,
         targetType: "gh-actions",
         role: "ci",
         totalRefKeys: filtered.size,

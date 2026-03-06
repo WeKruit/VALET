@@ -3,6 +3,42 @@ import { AppError } from "../../common/errors.js";
 import { adminOnly } from "../../common/middleware/admin.js";
 import { SANDBOX_AGENT_PORT } from "../sandboxes/agent/sandbox-agent.client.js";
 
+function getAtmSecretsBaseUrl(): string {
+  const baseUrl = process.env.ATM_BASE_URL ?? process.env.ATM_HOST;
+  if (!baseUrl) {
+    throw new Error("ATM_BASE_URL or ATM_HOST is required to proxy canonical secrets writes");
+  }
+  return baseUrl.replace(/\/$/, "");
+}
+
+function getAtmDeploySecret(): string {
+  const secret = process.env.ATM_DEPLOY_SECRET ?? process.env.GH_DEPLOY_SECRET;
+  if (!secret) {
+    throw new Error(
+      "ATM_DEPLOY_SECRET or GH_DEPLOY_SECRET is required to proxy canonical secrets writes",
+    );
+  }
+  return secret;
+}
+
+async function proxyCanonicalSecrets<T>(path: string, init?: globalThis.RequestInit): Promise<T> {
+  const response = await fetch(`${getAtmSecretsBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Deploy-Secret": getAtmDeploySecret(),
+      ...(init?.headers as Record<string, string> | undefined),
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`ATM canonical secrets proxy failed (${response.status}): ${body}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 export async function secretsAdminRoutes(fastify: FastifyInstance) {
   // GET /api/v1/admin/secrets/diff?env=staging
   fastify.get(
@@ -98,8 +134,11 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
         if (!project || (project !== "valet" && project !== "ghosthands")) {
           return reply.status(400).send({ error: "project must be 'valet' or 'ghosthands'" });
         }
-        const { secretsSyncService } = request.diScope.cradle;
-        const result = await secretsSyncService.listVars(env, project);
+        const params = new URLSearchParams({
+          app: project,
+          environment: env,
+        });
+        const result = await proxyCanonicalSecrets(`/admin/secrets/vars?${params.toString()}`);
         return reply.send(result);
       } catch (err) {
         if (err instanceof AppError) throw err;
@@ -143,13 +182,14 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
             .status(400)
             .send({ error: "vars must be a non-empty array of { key, value }" });
         }
-        const { secretsSyncService } = request.diScope.cradle;
-        const result = await secretsSyncService.upsertVars(
-          env,
-          project,
-          body.vars,
-          request.userId ?? "unknown",
-        );
+        const result = await proxyCanonicalSecrets(`/admin/secrets/vars`, {
+          method: "PUT",
+          body: JSON.stringify({
+            app: project,
+            environment: env,
+            vars: body.vars,
+          }),
+        });
         return reply.send(result);
       } catch (err) {
         if (err instanceof AppError) throw err;
@@ -193,13 +233,14 @@ export async function secretsAdminRoutes(fastify: FastifyInstance) {
         if (!Array.isArray(body.keys) || body.keys.length === 0) {
           return reply.status(400).send({ error: "keys must be a non-empty array" });
         }
-        const { secretsSyncService } = request.diScope.cradle;
-        const result = await secretsSyncService.deleteVars(
-          env,
-          project,
-          body.keys,
-          request.userId ?? "unknown",
-        );
+        const result = await proxyCanonicalSecrets(`/admin/secrets/vars`, {
+          method: "DELETE",
+          body: JSON.stringify({
+            app: project,
+            environment: env,
+            keys: body.keys,
+          }),
+        });
         return reply.send(result);
       } catch (err) {
         if (err instanceof AppError) throw err;
