@@ -381,7 +381,7 @@ describe("SecretsSyncService", () => {
           response: { ok: true, json: [{ label: "DATABASE_URL" }] },
         },
         {
-          pattern: /actions\/secrets$/,
+          pattern: /environments\/staging\/secrets$/,
           method: "GET",
           response: { ok: true, json: { secrets: [{ name: "SUPABASE_URL" }] } },
         },
@@ -390,7 +390,11 @@ describe("SecretsSyncService", () => {
           method: "GET",
           response: { ok: true, json: { key: "base64publickey=", key_id: "key-123" } },
         },
-        { pattern: /actions\/secrets\/[A-Z]/, method: "PUT", response: { ok: true, json: {} } },
+        {
+          pattern: /environments\/staging\/secrets\/[A-Z]/,
+          method: "PUT",
+          response: { ok: true, json: {} },
+        },
       ]);
 
       const result = await service.sync("staging", "test-user", ["WeKruit/GHOST-HANDS"]);
@@ -401,7 +405,8 @@ describe("SecretsSyncService", () => {
       expect(ghResult!.pushed).toBeGreaterThan(0);
 
       const putCalls = mockFetch.mock.calls.filter(
-        (c) => (c[0] as string).includes("actions/secrets/") && c[1]?.method === "PUT",
+        (c) =>
+          (c[0] as string).includes("/environments/staging/secrets/") && c[1]?.method === "PUT",
       );
       expect(putCalls.length).toBeGreaterThan(0);
 
@@ -455,7 +460,7 @@ describe("SecretsSyncService", () => {
           response: { ok: true, json: [{ label: "DATABASE_URL" }] },
         },
         {
-          pattern: "api.github.com",
+          pattern: /environments\/staging\/secrets$/,
           response: { ok: true, json: { secrets: [{ name: "SUPABASE_URL" }] } },
         },
       ]);
@@ -582,7 +587,11 @@ describe("SecretsSyncService", () => {
           response: { ok: true, json: { secrets: [{ name: "SUPABASE_URL" }] } },
         },
         { pattern: "public-key", response: { ok: true, json: { key: "pk=", key_id: "k1" } } },
-        { pattern: /actions\/secrets\/[A-Z]/, method: "PUT", response: { ok: true, json: {} } },
+        {
+          pattern: /environments\/staging\/secrets\/[A-Z]/,
+          method: "PUT",
+          response: { ok: true, json: {} },
+        },
       ]);
 
       await service.sync("staging", "test-user");
