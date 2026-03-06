@@ -74,7 +74,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   React.useEffect(() => {
     function handleVisibility() {
       if (document.visibilityState !== "visible") return;
-      queryClient.invalidateQueries({ queryKey: ["auth", "me"] }).then(() => {
+      queryClient.refetchQueries({ queryKey: ["auth", "me"] }).then(() => {
         queryClient.invalidateQueries({ queryKey: ["resumes"] });
         queryClient.invalidateQueries({ queryKey: ["users", "profile"] });
         queryClient.invalidateQueries({ queryKey: ["consent"] });
