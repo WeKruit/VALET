@@ -8,12 +8,14 @@ import {
   DialogFooter,
 } from "@valet/ui/components/dialog";
 import { Button } from "@valet/ui/components/button";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Monitor } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
+import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useCreditBalance } from "../hooks/use-credit-balance";
 import { useBatchQueueStore } from "../stores/batch-queue.store";
+import { launchProtocolOrFallback } from "../utils/protocol-launch";
 
 interface BatchConfirmDialogProps {
   open: boolean;
@@ -39,6 +41,8 @@ export function BatchConfirmDialog({
   visionModel,
 }: BatchConfirmDialogProps) {
   const queryClient = useQueryClient();
+  const user = useAuth((s) => s.user);
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
   const { balance, enforcementEnabled } = useCreditBalance();
   const { applyBatchResults, clearSuccessful } = useBatchQueueStore();
   const count = jobUrls.length;
@@ -71,33 +75,71 @@ export function BatchConfirmDialog({
     },
   });
 
+  const createHandoff = api.desktop.createHandoff.useMutation({
+    onSuccess: (data) => {
+      if (data.status === 201) {
+        toast.success("Sending to desktop app...");
+        onOpenChange(false);
+        launchProtocolOrFallback(data.body.deepLink, data.body.token);
+      }
+    },
+    onError: () => {
+      toast.error("Failed to create handoff. Please try again.");
+    },
+  });
+
+  const isPending = createBatch.isPending || createHandoff.isPending;
+
   function handleConfirm() {
     if (insufficientCredits) return;
-    createBatch.mutate({
-      body: {
-        jobUrls,
-        resumeId,
-        mode: "copilot",
-        quality,
-        ...(notes?.trim() ? { notes: notes.trim() } : {}),
-        ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
-        ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
-        ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
-      },
-    });
+
+    if (isAdmin) {
+      // Admin: cloud batch dispatch
+      createBatch.mutate({
+        body: {
+          jobUrls,
+          resumeId,
+          mode: "copilot",
+          quality,
+          ...(notes?.trim() ? { notes: notes.trim() } : {}),
+          ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
+          ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
+          ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
+        },
+      });
+    } else {
+      // Non-admin: desktop handoff
+      createHandoff.mutate({
+        body: {
+          urls: jobUrls,
+          resumeId,
+          quality,
+          ...(notes?.trim() ? { notes: notes.trim() } : {}),
+        },
+      });
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Confirm Batch Submission</DialogTitle>
+          <DialogTitle>{isAdmin ? "Confirm Batch Submission" : "Send to Desktop App"}</DialogTitle>
           <DialogDescription>
-            {count} application{count > 1 ? "s" : ""} will be submitted. This uses{" "}
-            <span className="font-medium text-[var(--wk-text-primary)]">
-              {count} credit{count > 1 ? "s" : ""}
-            </span>
-            . Balance: {balance}.
+            {isAdmin ? (
+              <>
+                {count} application{count > 1 ? "s" : ""} will be submitted. This uses{" "}
+                <span className="font-medium text-[var(--wk-text-primary)]">
+                  {count} credit{count > 1 ? "s" : ""}
+                </span>
+                . Balance: {balance}.
+              </>
+            ) : (
+              <>
+                {count} URL{count > 1 ? "s" : ""} will be sent to GhostHands Desktop for processing.
+                Credits are charged when each application runs.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -111,24 +153,21 @@ export function BatchConfirmDialog({
         )}
 
         <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            disabled={createBatch.isPending}
-          >
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
-          <Button
-            variant="cta"
-            onClick={handleConfirm}
-            disabled={insufficientCredits || createBatch.isPending}
-          >
-            {createBatch.isPending ? (
+          <Button variant="cta" onClick={handleConfirm} disabled={insufficientCredits || isPending}>
+            {isPending ? (
               <span className="flex items-center gap-2">
-                <LoadingSpinner size="sm" /> Submitting...
+                <LoadingSpinner size="sm" /> {isAdmin ? "Submitting..." : "Sending..."}
               </span>
-            ) : (
+            ) : isAdmin ? (
               `Run ${count} Application${count > 1 ? "s" : ""}`
+            ) : (
+              <span className="flex items-center gap-2">
+                <Monitor className="h-4 w-4" />
+                Send {count} to Desktop
+              </span>
             )}
           </Button>
         </DialogFooter>

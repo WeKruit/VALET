@@ -31,7 +31,8 @@ function makeMockCreditService(balance = 100) {
 function makeMinimalDeps(overrides: Record<string, unknown> = {}) {
   return {
     taskRepo: { create: vi.fn() },
-    resumeRepo: { findById: vi.fn() },
+    userRepo: { findById: vi.fn() },
+    resumeRepo: { findById: vi.fn(), findByUserId: vi.fn().mockResolvedValue([]) },
     qaBankRepo: {},
     ghosthandsClient: { submitApplication: vi.fn() },
     ghJobRepo: { create: vi.fn(), findByTaskId: vi.fn() },
@@ -52,7 +53,11 @@ function makeMinimalDeps(overrides: Record<string, unknown> = {}) {
 const BATCH_BASE = {
   resumeId: "00000000-0000-0000-0000-000000000001",
   mode: "copilot" as const,
+  executionTarget: "cloud" as const,
 };
+
+const ADMIN_USER_ID = "user-1";
+const ADMIN_ROLE = "admin";
 
 let taskCounter = 0;
 
@@ -87,7 +92,8 @@ describe("TaskService.createBatch()", () => {
 
     const result = await service.createBatch(
       { ...BATCH_BASE, jobUrls: ["https://example.com/job/1", "https://example.com/job/2"] },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.summary.total).toBe(2);
@@ -114,14 +120,16 @@ describe("TaskService.createBatch()", () => {
     await expect(
       service.createBatch(
         { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
-        "user-1",
+        ADMIN_USER_ID,
+        ADMIN_ROLE,
       ),
     ).rejects.toThrow(AppError);
 
     await expect(
       service.createBatch(
         { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
-        "user-1",
+        ADMIN_USER_ID,
+        ADMIN_ROLE,
       ),
     ).rejects.toThrow(/Insufficient credits/);
 
@@ -135,7 +143,8 @@ describe("TaskService.createBatch()", () => {
 
     const result = await service.createBatch(
       { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2"] },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.summary.created).toBe(2);
@@ -155,7 +164,8 @@ describe("TaskService.createBatch()", () => {
 
     const result = await service.createBatch(
       { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.summary.created).toBe(2);
@@ -180,7 +190,8 @@ describe("TaskService.createBatch()", () => {
           "https://example.com/job/2",
         ],
       },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.summary.total).toBe(3);
@@ -198,7 +209,8 @@ describe("TaskService.createBatch()", () => {
         ...BATCH_BASE,
         jobUrls: ["https://example.com/job/1/", "https://example.com/job/1"],
       },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.summary.created).toBe(1);
@@ -222,7 +234,8 @@ describe("TaskService.createBatch()", () => {
         ...BATCH_BASE,
         jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3", "https://d.com/4"],
       },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.summary.created).toBe(1);
@@ -246,7 +259,8 @@ describe("TaskService.createBatch()", () => {
 
     const result = await service.createBatch(
       { ...BATCH_BASE, jobUrls: ["https://example.com/job/1"] },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.balanceAfter).toBe(42);
@@ -260,7 +274,8 @@ describe("TaskService.createBatch()", () => {
 
     const result = await service.createBatch(
       { ...BATCH_BASE, jobUrls: ["https://example.com/job/1"] },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.balanceAfter).toBeNull();
@@ -280,7 +295,8 @@ describe("TaskService.createBatch()", () => {
     // Should succeed even with 0 balance
     const result = await service.createBatch(
       { ...BATCH_BASE, jobUrls: ["https://a.com/1"] },
-      "user-1",
+      ADMIN_USER_ID,
+      ADMIN_ROLE,
     );
 
     expect(result.summary.created).toBe(1);

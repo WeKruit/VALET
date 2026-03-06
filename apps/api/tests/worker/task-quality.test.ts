@@ -8,7 +8,7 @@ function makeMocks() {
     taskRepo: {
       create: vi.fn().mockResolvedValue({
         id: "task-1",
-        jobUrl: "https://example.com",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "unknown",
         status: "created",
       }),
@@ -55,12 +55,14 @@ describe("TaskService.create quality passthrough", () => {
 
     await service.create(
       {
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         mode: "autopilot",
         resumeId: "resume-1",
         quality: "balanced",
+        executionTarget: "cloud",
       },
       "user-1",
+      "admin",
     );
 
     expect(mocks.submitArgs).toHaveLength(1);
@@ -73,12 +75,14 @@ describe("TaskService.create quality passthrough", () => {
 
     await service.create(
       {
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         mode: "autopilot",
         resumeId: "resume-1",
         quality: "quality",
+        executionTarget: "cloud",
       },
       "user-1",
+      "admin",
     );
 
     expect((mocks.submitArgs[0] as any).quality).toBe("quality");
@@ -89,8 +93,14 @@ describe("TaskService.create quality passthrough", () => {
     const service = new TaskService(mocks as any);
 
     await service.create(
-      { jobUrl: "https://example.com/job", mode: "autopilot", resumeId: "resume-1" },
+      {
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+        mode: "autopilot",
+        resumeId: "resume-1",
+        executionTarget: "cloud",
+      },
       "user-1",
+      "admin",
     );
 
     expect((mocks.submitArgs[0] as any).quality).toBe("speed");
@@ -101,8 +111,14 @@ describe("TaskService.create quality passthrough", () => {
     const service = new TaskService(mocks as any);
 
     await service.create(
-      { jobUrl: "https://example.com/job", mode: "copilot", resumeId: "resume-1" },
+      {
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
+        mode: "copilot",
+        resumeId: "resume-1",
+        executionTarget: "cloud",
+      },
       "user-1",
+      "admin",
     );
 
     expect((mocks.submitArgs[0] as any).quality).toBe("quality");

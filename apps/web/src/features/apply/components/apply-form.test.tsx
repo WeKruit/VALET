@@ -72,6 +72,14 @@ vi.mock("@/lib/api-client", () => ({
         }),
       },
     },
+    desktop: {
+      createHandoff: {
+        useMutation: () => ({
+          mutate: vi.fn(),
+          isPending: false,
+        }),
+      },
+    },
   },
 }));
 
@@ -83,9 +91,26 @@ vi.mock("sonner", () => ({
   },
 }));
 
+// Mock useAuth to return admin user for testing admin path
+vi.mock("@/features/auth/hooks/use-auth", () => ({
+  useAuth: (selector: (state: any) => any) =>
+    selector({
+      user: { id: "user-1", email: "admin@test.com", name: "Admin", role: "admin" },
+      isLoading: false,
+    }),
+}));
+
 // Mock batch components to avoid QueryClient dependency in tests
 vi.mock("./batch-queue-panel", () => ({
   BatchQueuePanel: () => null,
+}));
+
+// Mock admin-only components that use additional API queries
+vi.mock("./worker-selector", () => ({
+  WorkerSelector: () => null,
+}));
+vi.mock("./model-selectors", () => ({
+  ModelSelectors: () => null,
 }));
 
 function renderApplyForm() {

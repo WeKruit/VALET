@@ -111,20 +111,27 @@ export class ReferralService {
   async activateReferral(
     referredUserId: string,
   ): Promise<{ id: string; referrerUserId: string } | null> {
-    // Find pending referral for this user
+    // Find pending referral, or a completed-but-unrewarded referral (crash recovery)
     const ref = await this.db
       .select()
       .from(referrals)
-      .where(and(eq(referrals.referredUserId, referredUserId), eq(referrals.status, "pending")))
+      .where(
+        and(
+          eq(referrals.referredUserId, referredUserId),
+          sql`(${referrals.status} = 'pending' OR (${referrals.status} = 'completed' AND ${referrals.rewardCreditsIssued} = 0))`,
+        ),
+      )
       .limit(1);
 
     if (!ref[0]) return null;
 
-    // Mark as completed
-    await this.db
-      .update(referrals)
-      .set({ status: "completed", completedAt: new Date() })
-      .where(eq(referrals.id, ref[0].id));
+    // Mark as completed (idempotent — already completed in crash recovery case)
+    if (ref[0].status === "pending") {
+      await this.db
+        .update(referrals)
+        .set({ status: "completed", completedAt: new Date() })
+        .where(eq(referrals.id, ref[0].id));
+    }
 
     return { id: ref[0].id, referrerUserId: ref[0].referrerUserId };
   }

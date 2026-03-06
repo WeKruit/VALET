@@ -1,13 +1,17 @@
 import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@valet/ui/components/button";
 import { Badge } from "@valet/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@valet/ui/components/card";
-import { Download, Shield, Cpu, RefreshCw, Monitor } from "lucide-react";
+import { Download, Shield, Cpu, RefreshCw, Monitor, Layers } from "lucide-react";
 import { PublicHeader } from "../../landing/components/public-header";
 import { PublicFooter } from "../../landing/components/public-footer";
 import { api } from "@/lib/api-client";
 
 export function DownloadPage() {
+  const [searchParams] = useSearchParams();
+  const handoffToken = searchParams.get("handoff");
+
   useEffect(() => {
     document.title = "Download GhostHands - WeKruit Valet";
   }, []);
@@ -39,6 +43,26 @@ export function DownloadPage() {
           </p>
         </div>
       </section>
+
+      {/* Handoff banner */}
+      {handoffToken && (
+        <section className="px-6 pb-8">
+          <div className="mx-auto max-w-[var(--wk-content-width)]">
+            <div className="flex items-start gap-4 rounded-[var(--wk-radius-xl)] border border-[var(--wk-accent-amber)] bg-[color-mix(in_srgb,var(--wk-accent-amber)_8%,transparent)] px-6 py-5">
+              <Layers className="h-6 w-6 text-[var(--wk-accent-amber)] shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-[var(--wk-text-primary)]">
+                  Your queued applications are waiting
+                </p>
+                <p className="text-sm text-[var(--wk-text-secondary)]">
+                  Install GhostHands Desktop and sign in with your account. Your queued URLs will be
+                  picked up automatically -- the handoff token is valid for 15 minutes.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Download Cards */}
       <section className="border-t border-[var(--wk-border-subtle)] bg-[var(--wk-surface-raised)] px-6 py-20 md:py-24">

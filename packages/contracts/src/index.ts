@@ -23,6 +23,7 @@ import { insightsContract } from "./insights.js";
 import { jobLeadContract } from "./job-leads.js";
 import { referralContract } from "./referrals.js";
 import { creditContract } from "./credits.js";
+import { desktopContract } from "./desktop.js";
 
 const c = initContract();
 
@@ -51,6 +52,7 @@ export const apiContract = c.router({
   jobLeads: jobLeadContract,
   referrals: referralContract,
   credits: creditContract,
+  desktop: desktopContract,
 });
 
 // Re-export individual contracts for consumers that only need one domain
@@ -80,4 +82,5 @@ export {
   jobLeadContract,
   referralContract,
   creditContract,
+  desktopContract,
 };

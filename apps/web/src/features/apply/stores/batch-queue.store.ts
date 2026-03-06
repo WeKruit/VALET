@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { toast } from "sonner";
-import { normalizeJobUrl } from "@valet/shared/schemas";
+import { normalizeJobUrl, isSupportedJobUrl } from "@valet/shared/schemas";
 
 export interface QueueItem {
   id: string;
@@ -17,7 +17,7 @@ function normalizeUrl(raw: string): string {
 interface BatchQueueStore {
   items: QueueItem[];
   addUrl: (url: string) => void;
-  addUrls: (urls: string[]) => void;
+  addUrls: (urls: string[], maxItems?: number) => void;
   removeItem: (id: string) => void;
   clearAll: () => void;
   clearSuccessful: () => void;
@@ -39,6 +39,10 @@ export const useBatchQueueStore = create<BatchQueueStore>()((set, get) => ({
   addUrl: (raw: string) => {
     const url = normalizeUrl(raw);
     if (!url) return;
+    if (!isSupportedJobUrl(url)) {
+      toast.error("Unsupported job site");
+      return;
+    }
     const existing = get().items.find((i) => normalizeUrl(i.url) === url);
     if (existing) {
       toast.error("This URL is already in the queue.");
@@ -49,13 +53,18 @@ export const useBatchQueueStore = create<BatchQueueStore>()((set, get) => ({
     }));
   },
 
-  addUrls: (rawUrls: string[]) => {
+  addUrls: (rawUrls: string[], maxItems = 25) => {
     const currentUrls = new Set(get().items.map((i) => normalizeUrl(i.url)));
     const newItems: QueueItem[] = [];
     let dupes = 0;
+    let unsupported = 0;
     for (const raw of rawUrls) {
       const url = normalizeUrl(raw);
       if (!url) continue;
+      if (!isSupportedJobUrl(url)) {
+        unsupported++;
+        continue;
+      }
       if (currentUrls.has(url)) {
         dupes++;
         continue;
@@ -63,8 +72,18 @@ export const useBatchQueueStore = create<BatchQueueStore>()((set, get) => ({
       currentUrls.add(url);
       newItems.push({ id: String(++nextId), url, status: "pending" });
     }
+    if (unsupported > 0) {
+      toast.info(`${unsupported} unsupported URL${unsupported > 1 ? "s" : ""} skipped.`);
+    }
     if (dupes > 0) {
       toast.info(`${dupes} duplicate URL${dupes > 1 ? "s" : ""} skipped.`);
+    }
+    const currentCount = get().items.length;
+    if (currentCount + newItems.length > maxItems) {
+      toast.error(
+        `Queue limit is ${maxItems} URLs. ${newItems.length} unique URLs would exceed it.`,
+      );
+      return;
     }
     if (newItems.length > 0) {
       set((s) => ({ items: [...s.items, ...newItems] }));

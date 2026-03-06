@@ -129,9 +129,10 @@ function makeStatefulMocks(opts: {
 
 describe("TaskService — multi-user capacity scenarios", () => {
   const baseBody = {
-    jobUrl: "https://example.com/job",
+    jobUrl: "https://boards.greenhouse.io/example/jobs/123",
     mode: "autopilot" as const,
     resumeId: "resume-uuid-1",
+    executionTarget: "cloud" as const,
   };
 
   describe("3 sandboxes, capacity=5 each (15 total slots)", () => {
@@ -150,9 +151,9 @@ describe("TaskService — multi-user capacity scenarios", () => {
     });
 
     it("first 3 users assigned to 3 different sandboxes (load-balanced)", async () => {
-      await service.create(baseBody, "user-1");
-      await service.create(baseBody, "user-2");
-      await service.create(baseBody, "user-3");
+      await service.create(baseBody, "user-1", "admin");
+      await service.create(baseBody, "user-2", "admin");
+      await service.create(baseBody, "user-3", "admin");
 
       // Each user should be assigned to a unique sandbox (all have 0 load initially)
       const assignedSandboxes = new Set([
@@ -166,13 +167,13 @@ describe("TaskService — multi-user capacity scenarios", () => {
 
     it("users 4-5 assigned to existing sandboxes (capacity=5 allows sharing)", async () => {
       // Fill first 3 users
-      await service.create(baseBody, "user-1");
-      await service.create(baseBody, "user-2");
-      await service.create(baseBody, "user-3");
+      await service.create(baseBody, "user-1", "admin");
+      await service.create(baseBody, "user-2", "admin");
+      await service.create(baseBody, "user-3", "admin");
 
       // Users 4-5 should be assigned to sandboxes that have lowest load
-      await service.create(baseBody, "user-4");
-      await service.create(baseBody, "user-5");
+      await service.create(baseBody, "user-4", "admin");
+      await service.create(baseBody, "user-5", "admin");
 
       expect(deps._state.assignments.size).toBe(5);
       // All users should have assignments
@@ -189,14 +190,14 @@ describe("TaskService — multi-user capacity scenarios", () => {
 
     it("returning user with healthy assignment skips findBestAvailableSandbox", async () => {
       // First call: user gets assigned
-      await service.create(baseBody, "user-1");
+      await service.create(baseBody, "user-1", "admin");
       const firstSandbox = deps._state.assignments.get("user-1");
       expect(firstSandbox).toBeDefined();
 
       vi.clearAllMocks();
 
       // Second call: user already has healthy assignment → reuse
-      await service.create(baseBody, "user-1");
+      await service.create(baseBody, "user-1", "admin");
 
       // findBestAvailableSandbox should NOT be called (user already assigned)
       expect(deps.userSandboxRepo.findBestAvailableSandbox).not.toHaveBeenCalled();
@@ -207,7 +208,7 @@ describe("TaskService — multi-user capacity scenarios", () => {
     it("all 15 slots full → new user falls back to general queue", async () => {
       // Fill all 15 slots
       for (let i = 1; i <= 15; i++) {
-        await service.create(baseBody, `user-${i}`);
+        await service.create(baseBody, `user-${i}`, "admin");
       }
 
       // Verify all sandboxes are at capacity
@@ -218,7 +219,7 @@ describe("TaskService — multi-user capacity scenarios", () => {
       vi.clearAllMocks();
 
       // User 16: no capacity left → falls back to general queue
-      await service.create(baseBody, "user-16");
+      await service.create(baseBody, "user-16", "admin");
 
       // findBestAvailableSandbox returns null (all full)
       expect(deps.userSandboxRepo.findBestAvailableSandbox).toHaveBeenCalled();
@@ -235,7 +236,7 @@ describe("TaskService — multi-user capacity scenarios", () => {
     it("10th user gets assigned to least-loaded sandbox", async () => {
       // Fill 9 users (3 per sandbox)
       for (let i = 1; i <= 9; i++) {
-        await service.create(baseBody, `user-${i}`);
+        await service.create(baseBody, `user-${i}`, "admin");
       }
 
       // All sandboxes should have 3 assignments each
@@ -244,14 +245,14 @@ describe("TaskService — multi-user capacity scenarios", () => {
       }
 
       // User 10 should get assigned (capacity=5, load=3 → space available)
-      await service.create(baseBody, "user-10");
+      await service.create(baseBody, "user-10", "admin");
       expect(deps._state.assignments.has("user-10")).toBe(true);
       expect(deps.userSandboxRepo.assign).toHaveBeenCalled();
     });
 
     it("user auto-reassigns when sandbox is terminated", async () => {
       // User 1 gets assigned
-      await service.create(baseBody, "user-1");
+      await service.create(baseBody, "user-1", "admin");
       const originalSandbox = deps._state.assignments.get("user-1");
       expect(originalSandbox).toBeDefined();
 
@@ -262,7 +263,7 @@ describe("TaskService — multi-user capacity scenarios", () => {
       vi.clearAllMocks();
 
       // Next task for user-1 should trigger auto-reassign
-      await service.create(baseBody, "user-1");
+      await service.create(baseBody, "user-1", "admin");
 
       // findBestAvailableSandbox should be called (existing assignment is unhealthy)
       expect(deps.userSandboxRepo.findBestAvailableSandbox).toHaveBeenCalled();
@@ -273,7 +274,7 @@ describe("TaskService — multi-user capacity scenarios", () => {
     });
 
     it("user with unhealthy (degraded) sandbox auto-reassigns", async () => {
-      await service.create(baseBody, "user-1");
+      await service.create(baseBody, "user-1", "admin");
       const originalSandbox = deps._state.assignments.get("user-1");
 
       // Mark sandbox as degraded
@@ -282,7 +283,7 @@ describe("TaskService — multi-user capacity scenarios", () => {
 
       vi.clearAllMocks();
 
-      await service.create(baseBody, "user-1");
+      await service.create(baseBody, "user-1", "admin");
 
       // Should try to reassign since healthStatus !== "healthy"
       expect(deps.userSandboxRepo.findBestAvailableSandbox).toHaveBeenCalled();
@@ -291,7 +292,7 @@ describe("TaskService — multi-user capacity scenarios", () => {
 
     it("10 concurrent create() calls all get valid routing", async () => {
       const promises = Array.from({ length: 10 }, (_, i) =>
-        service.create(baseBody, `concurrent-user-${i}`),
+        service.create(baseBody, `concurrent-user-${i}`, "admin"),
       );
 
       const results = await Promise.all(promises);

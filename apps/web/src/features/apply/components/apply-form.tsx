@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { useWorkbenchStore } from "../stores/workbench.store";
 import { Card, CardContent } from "@valet/ui/components/card";
@@ -24,6 +25,7 @@ import {
   Globe,
   Cpu,
   ListPlus,
+  Monitor,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -36,6 +38,7 @@ import { WorkerSelector } from "./worker-selector";
 import { ModelSelectors } from "./model-selectors";
 import { BatchQueuePanel } from "./batch-queue-panel";
 import { useBatchQueueStore } from "../stores/batch-queue.store";
+import { launchProtocolOrFallback } from "../utils/protocol-launch";
 
 type PlatformInfo = {
   name: string;
@@ -103,6 +106,7 @@ function isValidUrl(url: string): boolean {
 }
 
 export function ApplyForm() {
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { setSelectedTaskId } = useWorkbenchStore();
   const user = useAuth((s) => s.user);
@@ -110,6 +114,7 @@ export function ApplyForm() {
   const { balance, enforcementEnabled } = useCreditBalance();
   const insufficientCredits = enforcementEnabled && balance < 1;
   const addToQueue = useBatchQueueStore((s) => s.addUrl);
+  const queueHasItems = useBatchQueueStore((s) => s.items.length > 0);
 
   // Pre-fill URL from search params (e.g. /apply?url=https://...)
   const [url, setUrl] = useState(() => searchParams.get("url") ?? "");
@@ -148,12 +153,29 @@ export function ApplyForm() {
         setSelectedTaskId(data.body.id);
         setUrl("");
         setNotes("");
+        queryClient.invalidateQueries({ queryKey: ["credits", "balance"] });
       }
     },
     onError: () => {
       toast.error("Failed to create application. Please try again.");
     },
   });
+
+  const createHandoff = api.desktop.createHandoff.useMutation({
+    onSuccess: (data) => {
+      if (data.status === 201) {
+        toast.success("Sending to desktop app...");
+        setUrl("");
+        setNotes("");
+        launchProtocolOrFallback(data.body.deepLink, data.body.token);
+      }
+    },
+    onError: () => {
+      toast.error("Failed to create handoff. Please try again.");
+    },
+  });
+
+  const isSubmitting = createTask.isPending || createHandoff.isPending;
 
   const platform = url ? detectPlatform(url) : null;
   const platformInfo = platform ? PLATFORM_MAP[platform] : null;
@@ -168,18 +190,31 @@ export function ApplyForm() {
       return;
     }
 
-    createTask.mutate({
-      body: {
-        jobUrl: url,
-        mode: "copilot",
-        resumeId: activeResume.id,
-        quality,
-        ...(notes.trim() ? { notes: notes.trim() } : {}),
-        ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
-        ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
-        ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
-      },
-    });
+    if (isAdmin) {
+      // Admin: cloud dispatch
+      createTask.mutate({
+        body: {
+          jobUrl: url,
+          mode: "copilot",
+          resumeId: activeResume.id,
+          quality,
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
+          ...(targetWorkerId && targetWorkerId !== "auto" ? { targetWorkerId } : {}),
+          ...(reasoningModel && reasoningModel !== "auto" ? { reasoningModel } : {}),
+          ...(visionModel && visionModel !== "auto" ? { visionModel } : {}),
+        },
+      });
+    } else {
+      // Non-admin: desktop handoff
+      createHandoff.mutate({
+        body: {
+          urls: [url],
+          resumeId: activeResume.id,
+          quality,
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
+        },
+      });
+    }
   }
 
   return (
@@ -451,11 +486,7 @@ export function ApplyForm() {
               size="lg"
               className="flex-1"
               disabled={
-                !isValid ||
-                createTask.isPending ||
-                resumesLoading ||
-                !activeResume ||
-                insufficientCredits
+                !isValid || isSubmitting || resumesLoading || !activeResume || insufficientCredits
               }
               onClick={handleSubmit}
             >
@@ -463,12 +494,21 @@ export function ApplyForm() {
                 <span className="flex items-center gap-2">
                   <LoadingSpinner size="sm" /> Loading...
                 </span>
-              ) : createTask.isPending ? (
-                "Starting..."
+              ) : isSubmitting ? (
+                isAdmin ? (
+                  "Starting..."
+                ) : (
+                  "Sending..."
+                )
               ) : insufficientCredits ? (
                 "Insufficient Credits"
-              ) : (
+              ) : isAdmin ? (
                 "Start Application"
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Monitor className="h-4 w-4" />
+                  Send to Desktop
+                </span>
               )}
             </Button>
             <Button
@@ -489,8 +529,8 @@ export function ApplyForm() {
         </CardContent>
       </Card>
 
-      {/* Batch queue panel */}
-      {activeResume && (
+      {/* Batch queue panel — always visible when queue has items */}
+      {(activeResume || queueHasItems) && (
         <BatchQueuePanel
           resumeId={activeResumeId}
           quality={quality}
@@ -498,6 +538,7 @@ export function ApplyForm() {
           targetWorkerId={targetWorkerId !== "auto" ? targetWorkerId : undefined}
           reasoningModel={reasoningModel !== "auto" ? reasoningModel : undefined}
           visionModel={visionModel !== "auto" ? visionModel : undefined}
+          resumeReady={!!activeResume}
         />
       )}
 

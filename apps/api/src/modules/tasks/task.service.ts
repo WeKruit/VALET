@@ -29,6 +29,9 @@ import {
 import { AppError } from "../../common/errors.js";
 import { publishToUser } from "../../websocket/handler.js";
 import type { CreditService } from "../credits/credit.service.js";
+import type { UserRepository } from "../users/user.repository.js";
+import type { LocalWorkerBrokerService } from "../local-workers/local-worker-broker.service.js";
+import { isSupportedJobUrl } from "@valet/shared/schemas";
 
 function useQueueDispatch(): boolean {
   return process.env.TASK_DISPATCH_MODE === "queue";
@@ -76,6 +79,8 @@ export class TaskService {
   private atmFleetClient: AtmFleetClient;
   private submissionProofRepo: SubmissionProofRepository;
   private creditService: CreditService;
+  private userRepo: UserRepository;
+  private localWorkerBrokerService: LocalWorkerBrokerService;
 
   constructor({
     taskRepo,
@@ -93,6 +98,8 @@ export class TaskService {
     atmFleetClient,
     submissionProofRepo,
     creditService,
+    userRepo,
+    localWorkerBrokerService,
   }: {
     taskRepo: TaskRepository;
     resumeRepo: ResumeRepository;
@@ -109,6 +116,8 @@ export class TaskService {
     atmFleetClient: AtmFleetClient;
     submissionProofRepo: SubmissionProofRepository;
     creditService: CreditService;
+    userRepo: UserRepository;
+    localWorkerBrokerService: LocalWorkerBrokerService;
   }) {
     this.taskRepo = taskRepo;
     this.resumeRepo = resumeRepo;
@@ -125,6 +134,80 @@ export class TaskService {
     this.atmFleetClient = atmFleetClient;
     this.submissionProofRepo = submissionProofRepo;
     this.creditService = creditService;
+    this.userRepo = userRepo;
+    this.localWorkerBrokerService = localWorkerBrokerService;
+  }
+
+  /**
+   * Validate URL is a supported job application site.
+   * Throws AppError.badRequest if unsupported.
+   */
+  private validateJobUrl(jobUrl: string): void {
+    if (!isSupportedJobUrl(jobUrl)) {
+      throw AppError.badRequest(
+        `Unsupported job URL. Supported sites include LinkedIn, Greenhouse, Lever, Workday, and others.`,
+      );
+    }
+  }
+
+  /**
+   * Enforce executionTarget policy:
+   * - "cloud": only admin/superadmin
+   * - "desktop": authenticated + completed onboarding + parsed default resume + registered desktop worker
+   */
+  private async enforceExecutionTargetPolicy(
+    userId: string,
+    userRole: string,
+    executionTarget: "cloud" | "desktop",
+    desktopWorkerId?: string,
+  ): Promise<void> {
+    if (executionTarget === "cloud") {
+      if (userRole !== "admin" && userRole !== "superadmin") {
+        throw AppError.forbidden("Cloud execution is only available to admin users.");
+      }
+      return;
+    }
+
+    // executionTarget === "desktop"
+    // 1. Check onboarding completed
+    const user = await this.userRepo.findById(userId);
+    if (!user) {
+      throw AppError.notFound("User not found");
+    }
+    if (!(user as Record<string, unknown>).onboardingCompletedAt) {
+      throw AppError.forbidden("Complete onboarding before creating tasks.");
+    }
+
+    // 2. Check parsed default resume exists
+    const resumes = await this.resumeRepo.findByUserId(userId);
+    const defaultResume = resumes.find((r) => r.isDefault && r.parsedData != null);
+    if (!defaultResume) {
+      throw AppError.forbidden("Upload and parse a default resume before creating tasks.");
+    }
+
+    // 3. Check desktop worker is registered and belongs to user
+    if (!desktopWorkerId) {
+      throw AppError.badRequest("desktopWorkerId is required when executionTarget is 'desktop'.");
+    }
+    // The broker stores worker sessions in Redis keyed by desktopWorkerId.
+    // We read the session directly via Redis to verify registration + ownership.
+    const sessionKey = `gh:local-worker:session:${desktopWorkerId}`;
+    const sessionRaw = await this.redis.get(sessionKey);
+    if (!sessionRaw) {
+      throw AppError.forbidden("Desktop worker is not registered. Launch the desktop app first.");
+    }
+    try {
+      const session = JSON.parse(sessionRaw) as { userId: string; expiresAt: number };
+      if (session.userId !== userId) {
+        throw AppError.forbidden("Desktop worker belongs to a different user.");
+      }
+      if (session.expiresAt <= Date.now()) {
+        throw AppError.forbidden("Desktop worker session has expired. Restart the desktop app.");
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw AppError.forbidden("Desktop worker session is invalid.");
+    }
   }
 
   /**
@@ -548,9 +631,24 @@ export class TaskService {
       targetWorkerId?: string;
       reasoningModel?: string;
       visionModel?: string;
+      executionTarget?: "cloud" | "desktop";
+      desktopWorkerId?: string;
     },
     userId: string,
+    userRole?: string,
   ) {
+    // Validate supported job URL
+    this.validateJobUrl(body.jobUrl);
+
+    // Enforce execution target policy
+    const target = body.executionTarget ?? "desktop";
+    await this.enforceExecutionTargetPolicy(
+      userId,
+      userRole ?? "user",
+      target,
+      body.desktopWorkerId,
+    );
+
     // Resolve sandbox routing
     let resolvedSandboxId = body.targetWorkerId; // admin explicit override
     const isAdminExplicit = !!body.targetWorkerId;
@@ -812,9 +910,21 @@ export class TaskService {
       targetWorkerId?: string;
       reasoningModel?: string;
       visionModel?: string;
+      executionTarget?: "cloud" | "desktop";
+      desktopWorkerId?: string;
     },
     userId: string,
+    userRole?: string,
   ) {
+    // Enforce execution target policy once for the whole batch
+    const target = body.executionTarget ?? "desktop";
+    await this.enforceExecutionTargetPolicy(
+      userId,
+      userRole ?? "user",
+      target,
+      body.desktopWorkerId,
+    );
+
     const { normalizeJobUrl } = await import("@valet/shared/schemas");
     const results: Array<{
       jobUrl: string;
@@ -889,8 +999,11 @@ export class TaskService {
             targetWorkerId: body.targetWorkerId,
             reasoningModel: body.reasoningModel,
             visionModel: body.visionModel,
+            executionTarget: body.executionTarget,
+            desktopWorkerId: body.desktopWorkerId,
           },
           userId,
+          userRole,
         );
         results.push({ jobUrl: entry.original, status: "created", taskId: task.id });
         created++;

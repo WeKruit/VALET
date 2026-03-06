@@ -61,6 +61,7 @@ interface BatchQueuePanelProps {
   targetWorkerId?: string;
   reasoningModel?: string;
   visionModel?: string;
+  resumeReady?: boolean;
 }
 
 export function BatchQueuePanel({
@@ -70,6 +71,7 @@ export function BatchQueuePanel({
   targetWorkerId,
   reasoningModel,
   visionModel,
+  resumeReady = true,
 }: BatchQueuePanelProps) {
   const { items, addUrl, addUrls, removeItem, clearAll } = useBatchQueueStore();
   const { balance, enforcementEnabled } = useCreditBalance();
@@ -90,11 +92,7 @@ export function BatchQueuePanel({
       toast.error("No valid HTTPS URLs found.");
       return;
     }
-    if (items.length + urls.length > BATCH_MAX) {
-      toast.error(`Queue limit is ${BATCH_MAX} URLs.`);
-      return;
-    }
-    addUrls(urls);
+    addUrls(urls, BATCH_MAX);
     setPasteText("");
   }
 
@@ -122,11 +120,7 @@ export function BatchQueuePanel({
         toast.error("No valid URLs found in CSV.");
         return;
       }
-      if (items.length + urls.length > BATCH_MAX) {
-        toast.error(`Queue limit is ${BATCH_MAX} URLs. Found ${urls.length} in CSV.`);
-        return;
-      }
-      addUrls(urls);
+      addUrls(urls, BATCH_MAX);
       toast.success(`${urls.length} URL${urls.length > 1 ? "s" : ""} added from CSV.`);
     };
     reader.readAsText(file);
@@ -300,7 +294,7 @@ export function BatchQueuePanel({
                   variant="cta"
                   size="sm"
                   onClick={handleRunAll}
-                  disabled={pendingCount === 0 || insufficientCredits}
+                  disabled={pendingCount === 0 || insufficientCredits || !resumeReady}
                 >
                   Run All ({pendingCount})
                 </Button>
@@ -309,6 +303,11 @@ export function BatchQueuePanel({
               {insufficientCredits && (
                 <p className="text-xs text-[var(--wk-status-error)]">
                   Insufficient credits. You need {pendingCount} but have {balance}.
+                </p>
+              )}
+              {!resumeReady && (
+                <p className="text-xs text-[var(--wk-status-warning)]">
+                  A parsed resume is required before running batch applications.
                 </p>
               )}
             </div>

@@ -16,7 +16,7 @@ function makeMockDeps() {
       create: vi.fn().mockResolvedValue({
         id: "task-uuid-1",
         userId: "user-uuid-1",
-        jobUrl: "https://example.com/job",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/123",
         platform: "workday",
         status: "created",
         mode: "autopilot",
@@ -80,9 +80,10 @@ describe("TaskService — sandbox routing", () => {
   let service: TaskService;
 
   const baseBody = {
-    jobUrl: "https://example.com/job",
+    jobUrl: "https://boards.greenhouse.io/example/jobs/123",
     mode: "autopilot" as const,
     resumeId: "resume-uuid-1",
+    executionTarget: "cloud" as const,
   };
 
   beforeEach(() => {
@@ -103,7 +104,7 @@ describe("TaskService — sandbox routing", () => {
       });
       deps.sandboxRepo.resolveWorkerId.mockResolvedValue("gh-worker-uuid-1");
 
-      await service.create(baseBody, "user-uuid-1");
+      await service.create(baseBody, "user-uuid-1", "admin");
 
       // Task should be created with the sandbox ID
       expect(deps.taskRepo.create).toHaveBeenCalledWith(
@@ -132,7 +133,7 @@ describe("TaskService — sandbox routing", () => {
       deps.userSandboxRepo.findBestAvailableSandbox.mockResolvedValue("sandbox-uuid-2");
       deps.sandboxRepo.resolveWorkerId.mockResolvedValue("gh-worker-uuid-2");
 
-      await service.create(baseBody, "user-uuid-1");
+      await service.create(baseBody, "user-uuid-1", "admin");
 
       // Should auto-assign the new sandbox
       expect(deps.userSandboxRepo.assign).toHaveBeenCalledWith("user-uuid-1", "sandbox-uuid-2");
@@ -148,7 +149,7 @@ describe("TaskService — sandbox routing", () => {
       deps.userSandboxRepo.findBestAvailableSandbox.mockResolvedValue("sandbox-uuid-3");
       deps.sandboxRepo.resolveWorkerId.mockResolvedValue("gh-worker-uuid-3");
 
-      await service.create(baseBody, "user-uuid-1");
+      await service.create(baseBody, "user-uuid-1", "admin");
 
       expect(deps.userSandboxRepo.assign).toHaveBeenCalledWith("user-uuid-1", "sandbox-uuid-3");
       expect(deps.taskRepo.create).toHaveBeenCalledWith(
@@ -165,7 +166,7 @@ describe("TaskService — sandbox routing", () => {
       deps.userSandboxRepo.findByUserId.mockResolvedValue(null);
       deps.userSandboxRepo.findBestAvailableSandbox.mockResolvedValue(null);
 
-      await service.create(baseBody, "user-uuid-1");
+      await service.create(baseBody, "user-uuid-1", "admin");
 
       // sandboxId should be undefined (no routing)
       expect(deps.taskRepo.create).toHaveBeenCalledWith(
@@ -182,7 +183,11 @@ describe("TaskService — sandbox routing", () => {
     it("bypasses user resolution and uses strict affinity", async () => {
       deps.sandboxRepo.resolveWorkerId.mockResolvedValue("gh-worker-uuid-admin");
 
-      await service.create({ ...baseBody, targetWorkerId: "sandbox-admin-uuid" }, "user-uuid-1");
+      await service.create(
+        { ...baseBody, targetWorkerId: "sandbox-admin-uuid" },
+        "user-uuid-1",
+        "admin",
+      );
 
       // Should NOT call userSandboxRepo at all
       expect(deps.userSandboxRepo.findByUserId).not.toHaveBeenCalled();
@@ -211,7 +216,7 @@ describe("TaskService — sandbox routing", () => {
       // No active worker found
       deps.sandboxRepo.resolveWorkerId.mockResolvedValue(null);
 
-      await service.create(baseBody, "user-uuid-1");
+      await service.create(baseBody, "user-uuid-1", "admin");
 
       // Task is still tagged with sandbox ID
       expect(deps.taskRepo.create).toHaveBeenCalledWith(
@@ -297,7 +302,7 @@ describe("TaskService — createTestTask routing", () => {
     deps.taskRepo.findById.mockResolvedValue({
       id: "task-uuid-1",
       userId: "user-uuid-1",
-      jobUrl: "https://example.com/job",
+      jobUrl: "https://boards.greenhouse.io/example/jobs/123",
       platform: "workday",
       status: "failed",
       mode: "autopilot",

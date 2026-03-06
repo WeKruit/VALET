@@ -23,6 +23,8 @@ export const applicationMode = z.enum(["copilot", "autopilot"]);
 
 export const qualityPreset = z.enum(["speed", "balanced", "quality"]);
 
+export const executionTarget = z.enum(["cloud", "desktop"]);
+
 export const externalStatus = z.enum([
   "applied",
   "viewed",
@@ -65,6 +67,32 @@ export const taskSchema = z.object({
   completedAt: z.coerce.date().nullable().optional(),
 });
 
+// ─── Supported Job URL Validation ───
+const SUPPORTED_JOB_URL_PATTERNS: RegExp[] = [
+  /linkedin\.com\/jobs\//i,
+  /linkedin\.com\/job\//i,
+  /greenhouse\.io\//i,
+  /boards\.greenhouse\.io\//i,
+  /lever\.co\//i,
+  /myworkdayjobs\.com\//i,
+  /myworkday\.com\//i,
+  /workday\.com\/.*\/job\//i,
+  /jobs\.ashbyhq\.com\//i,
+  /icims\.com\//i,
+  /smartrecruiters\.com\//i,
+  /jobvite\.com\//i,
+  /ultipro\.com\//i,
+  /taleo\.net\//i,
+  /brassring\.com\//i,
+  /successfactors\.com\//i,
+  /applytojob\.com\//i,
+];
+
+/** Returns true if the URL matches a supported job application site. */
+export function isSupportedJobUrl(url: string): boolean {
+  return SUPPORTED_JOB_URL_PATTERNS.some((pattern) => pattern.test(url));
+}
+
 // ─── Request DTOs ───
 export const createTaskRequest = z.object({
   jobUrl: z
@@ -93,6 +121,10 @@ export const createTaskRequest = z.object({
   credentialId: z.string().uuid().optional(),
   /** UUID of the mailbox credential for email verifications. */
   mailboxCredentialId: z.string().uuid().optional(),
+  /** Where the task should execute: cloud (GH EC2) or desktop (local worker). */
+  executionTarget: executionTarget.default("desktop"),
+  /** Desktop worker ID — required when executionTarget is "desktop". */
+  desktopWorkerId: z.string().optional(),
 });
 
 export const taskListQuery = z.object({
@@ -351,6 +383,8 @@ const batchSharedOptions = z.object({
   targetWorkerId: z.string().uuid().optional(),
   reasoningModel: z.string().max(100).optional(),
   visionModel: z.string().max(100).optional(),
+  executionTarget: executionTarget.default("desktop"),
+  desktopWorkerId: z.string().optional(),
 });
 
 export const createBatchTaskRequest = batchSharedOptions.extend({
@@ -384,6 +418,7 @@ export type TaskStatus = z.infer<typeof taskStatus>;
 export type Platform = z.infer<typeof platform>;
 export type ApplicationMode = z.infer<typeof applicationMode>;
 export type QualityPreset = z.infer<typeof qualityPreset>;
+export type ExecutionTarget = z.infer<typeof executionTarget>;
 export type ExternalStatus = z.infer<typeof externalStatus>;
 export type Task = z.infer<typeof taskSchema>;
 export type CreateTaskRequest = z.infer<typeof createTaskRequest>;
