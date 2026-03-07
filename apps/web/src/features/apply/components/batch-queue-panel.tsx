@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useCreditBalance } from "../hooks/use-credit-balance";
+import { useCreditCost } from "@/features/credits/hooks/use-credit-cost";
 import { useBatchQueueStore, type QueueItem } from "../stores/batch-queue.store";
 import { BatchConfirmDialog } from "./batch-confirm-dialog";
 
@@ -74,7 +75,7 @@ export function BatchQueuePanel({
   resumeReady = true,
 }: BatchQueuePanelProps) {
   const { items, addUrl, addUrls, removeItem, clearAll } = useBatchQueueStore();
-  const { balance, enforcementEnabled } = useCreditBalance();
+  const { enforcementEnabled } = useCreditBalance();
 
   // Input states
   const [pasteText, setPasteText] = useState("");
@@ -84,7 +85,8 @@ export function BatchQueuePanel({
 
   const pendingItems = items.filter((i) => i.status === "pending");
   const pendingCount = pendingItems.length;
-  const insufficientCredits = enforcementEnabled && balance < pendingCount;
+  const { canAfford, totalCost, balance } = useCreditCost("batch_application", pendingCount);
+  const insufficientCredits = enforcementEnabled && !canAfford;
 
   function handlePasteAdd() {
     const urls = parseUrlsFromText(pasteText);
@@ -288,7 +290,7 @@ export function BatchQueuePanel({
               {/* Footer: Run All */}
               <div className="flex items-center justify-between pt-2 border-t border-[var(--wk-border-subtle)]">
                 <span className="text-xs text-[var(--wk-text-tertiary)]">
-                  Uses {pendingCount} credit{pendingCount !== 1 ? "s" : ""} -- Balance: {balance}
+                  Uses {totalCost} credit{totalCost !== 1 ? "s" : ""} -- Balance: {balance}
                 </span>
                 <Button
                   variant="cta"
@@ -302,7 +304,7 @@ export function BatchQueuePanel({
 
               {insufficientCredits && (
                 <p className="text-xs text-[var(--wk-status-error)]">
-                  Insufficient credits. You need {pendingCount} but have {balance}.
+                  Insufficient credits. You need {totalCost} but have {balance}.
                 </p>
               )}
               {!resumeReady && (

@@ -18,11 +18,12 @@ function makeMockLogger() {
   };
 }
 
-function makeMockCreditService(balance = 100) {
+function makeMockCreditService(balance = 1000) {
   return {
     getBalance: vi.fn().mockResolvedValue({ balance, trialExpiry: null, enforcementEnabled: true }),
-    debitForTask: vi.fn().mockResolvedValue({ success: true, balance: balance - 1 }),
-    refundTask: vi.fn().mockResolvedValue({ balance: balance + 1 }),
+    getCostForType: vi.fn().mockReturnValue(25),
+    debitForTask: vi.fn().mockResolvedValue({ success: true, balance: balance - 25 }),
+    refundTask: vi.fn().mockResolvedValue({ balance: balance + 25 }),
     grantCredits: vi.fn(),
     getLedger: vi.fn(),
   };
@@ -120,7 +121,9 @@ describe("TaskService.createBatch()", () => {
     const serviceWithExecutionPolicy = service as unknown as {
       enforceExecutionTargetPolicy: (...args: unknown[]) => Promise<void>;
     };
-    vi.spyOn(serviceWithExecutionPolicy, "enforceExecutionTargetPolicy").mockResolvedValue(undefined);
+    vi.spyOn(serviceWithExecutionPolicy, "enforceExecutionTargetPolicy").mockResolvedValue(
+      undefined,
+    );
     (deps.creditService.getBalance as ReturnType<typeof vi.fn>).mockResolvedValue({
       balance: 1,
       trialExpiry: null,

@@ -33,6 +33,8 @@ import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useCreditBalance } from "../hooks/use-credit-balance";
+import { useCreditCost } from "@/features/credits/hooks/use-credit-cost";
+import { CreditCostIndicator } from "@/features/credits/components/credit-cost-indicator";
 import { QualitySelector } from "./quality-selector";
 import { WorkerSelector } from "./worker-selector";
 import { ModelSelectors } from "./model-selectors";
@@ -111,8 +113,9 @@ export function ApplyForm() {
   const { setSelectedTaskId } = useWorkbenchStore();
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
-  const { balance, enforcementEnabled } = useCreditBalance();
-  const insufficientCredits = enforcementEnabled && balance < 1;
+  const { enforcementEnabled } = useCreditBalance();
+  const { canAfford } = useCreditCost("task_application");
+  const insufficientCredits = enforcementEnabled && !canAfford;
   const addToQueue = useBatchQueueStore((s) => s.addUrl);
   const queueHasItems = useBatchQueueStore((s) => s.items.length > 0);
 
@@ -465,11 +468,7 @@ export function ApplyForm() {
 
           {/* Credit cost info */}
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--wk-text-secondary)]">
-              This will use{" "}
-              <span className="font-medium text-[var(--wk-text-primary)]">1 credit</span>
-            </span>
-            <span className="text-[var(--wk-text-tertiary)]">Balance: {balance}</span>
+            <CreditCostIndicator costType="task_application" showBalance />
           </div>
 
           {insufficientCredits && (

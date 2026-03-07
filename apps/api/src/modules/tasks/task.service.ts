@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type {
   ApplicationMode,
+  CreditCostType,
   ExternalStatus,
   TaskStatus,
   InteractionType,
@@ -664,6 +665,7 @@ export class TaskService {
     },
     userId: string,
     userRole?: string,
+    creditCostType: CreditCostType = "task_application",
   ) {
     // Validate supported job URL
     this.validateJobUrl(body.jobUrl);
@@ -726,6 +728,7 @@ export class TaskService {
           userId,
           task.id,
           `task-create-${task.id}`,
+          creditCostType,
         );
         if (!debit.success) {
           // Insufficient credits — clean up the task row
@@ -803,7 +806,7 @@ export class TaskService {
         completedAt: null,
       });
       // Refund credit — dispatch never happened
-      await this.refundCreditIfDebited(userId, task.id, userRole);
+      await this.refundCreditIfDebited(userId, task.id, userRole, creditCostType);
       return task;
     }
 
@@ -895,7 +898,7 @@ export class TaskService {
             },
             completedAt: null,
           });
-          await this.refundCreditIfDebited(userId, task.id, userRole);
+          await this.refundCreditIfDebited(userId, task.id, userRole, creditCostType);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (task as any).status = "failed";
           (task as any).errorMessage = "pg-boss did not accept the job (returned null)";
@@ -913,7 +916,7 @@ export class TaskService {
           completedAt: null,
         });
         // Refund credit — dispatch failed before GH received the job
-        await this.refundCreditIfDebited(userId, task.id, userRole);
+        await this.refundCreditIfDebited(userId, task.id, userRole, creditCostType);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (task as any).status = "failed";
         (task as any).errorMessage = err instanceof Error ? err.message : "Failed to enqueue job";
@@ -969,7 +972,7 @@ export class TaskService {
           completedAt: null,
         });
         // Refund credit — REST dispatch failed before GH received the job
-        await this.refundCreditIfDebited(userId, task.id, userRole);
+        await this.refundCreditIfDebited(userId, task.id, userRole, creditCostType);
       }
     }
 
@@ -1041,11 +1044,13 @@ export class TaskService {
 
     // 2. Preflight credit check (admin/superadmin exempt)
     const isAdminRole = userRole === "admin" || userRole === "superadmin";
+    const batchCostPerItem = this.creditService.getCostForType("batch_application");
     if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true" && !isAdminRole) {
       const { balance } = await this.creditService.getBalance(userId);
-      if (balance < uniqueCount) {
+      const totalCost = uniqueCount * batchCostPerItem;
+      if (balance < totalCost) {
         throw AppError.paymentRequired(
-          `Insufficient credits: ${balance} available, ${uniqueCount} required for this batch.`,
+          `Insufficient credits: ${balance} available, ${totalCost} required for this batch.`,
         );
       }
     }
@@ -1088,6 +1093,7 @@ export class TaskService {
           },
           userId,
           userRole,
+          "batch_application",
         );
         // create() catches enqueue errors internally — check actual task status
         if (task.status === "failed") {
@@ -1145,11 +1151,12 @@ export class TaskService {
     };
   }
 
-  /** Refund one credit if enforcement is on. Swallows errors — dispatch already failed. */
+  /** Refund credits if enforcement is on. Swallows errors — dispatch already failed. */
   private async refundCreditIfDebited(
     userId: string,
     taskId: string,
     userRole?: string,
+    creditCostType: CreditCostType = "task_application",
   ): Promise<void> {
     if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") return;
     // Admin/superadmin were never debited, so skip refund
@@ -1160,6 +1167,7 @@ export class TaskService {
         taskId,
         `task-refund-dispatch-${taskId}`,
         "Refund: dispatch failed before job reached worker",
+        creditCostType,
       );
       this.logger.info({ userId, taskId }, "Credit refunded for failed dispatch");
     } catch (err) {

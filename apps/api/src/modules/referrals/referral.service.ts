@@ -1,12 +1,10 @@
 import { eq, sql, and } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { users, referrals, type Database } from "@valet/db";
+import { CREDITS } from "@valet/shared/constants";
 import type { CreditService } from "../credits/credit.service.js";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-/** Credits granted to each party when a referral is activated */
-const REFERRAL_REWARD_CREDITS = 50;
 
 function generateCode(length = 8): string {
   const bytes = randomBytes(length);
@@ -160,29 +158,36 @@ export class ReferralService {
     const ref = await this.activateReferral(referredUserId);
     if (!ref) return null;
 
-    const rewardAmount = REFERRAL_REWARD_CREDITS;
+    const rewardAmount = CREDITS.REFERRAL_REWARD;
     const idempotencyPrefix = `referral_reward_${ref.id}`;
 
-    // Grant credits to referrer
-    await this.creditService.grantCredits(ref.referrerUserId, rewardAmount, "referral_reward", {
-      description: "Referral reward — your friend completed their first task",
-      referenceType: "referral",
-      referenceId: ref.id,
-      idempotencyKey: `${idempotencyPrefix}_referrer`,
+    return this.db.transaction(async (tx) => {
+      // Grant credits to referrer
+      await this.creditService.grantCredits(ref.referrerUserId, rewardAmount, "referral_reward", {
+        description: "Referral reward — your friend completed their first task",
+        referenceType: "referral",
+        referenceId: ref.id,
+        idempotencyKey: `${idempotencyPrefix}_referrer`,
+        tx,
+      });
+
+      // Grant credits to referee
+      await this.creditService.grantCredits(referredUserId, rewardAmount, "referral_reward", {
+        description: "Referral bonus — welcome reward for joining via referral",
+        referenceType: "referral",
+        referenceId: ref.id,
+        idempotencyKey: `${idempotencyPrefix}_referee`,
+        tx,
+      });
+
+      // Mark reward as issued (within transaction)
+      await tx
+        .update(referrals)
+        .set({ rewardCreditsIssued: rewardAmount })
+        .where(eq(referrals.id, ref.id));
+
+      return { rewarded: true, rewardAmount };
     });
-
-    // Grant credits to referee
-    await this.creditService.grantCredits(referredUserId, rewardAmount, "referral_reward", {
-      description: "Referral bonus — welcome reward for joining via referral",
-      referenceType: "referral",
-      referenceId: ref.id,
-      idempotencyKey: `${idempotencyPrefix}_referee`,
-    });
-
-    // Mark reward as issued
-    await this.updateRewardCreditsIssued(ref.id, rewardAmount);
-
-    return { rewarded: true, rewardAmount };
   }
 
   async getStats(userId: string) {

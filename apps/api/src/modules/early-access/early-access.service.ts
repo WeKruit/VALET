@@ -89,9 +89,9 @@ export class EarlyAccessService {
       // Revoke all tokens so user gets a fresh JWT with the new role
       await this.authService.revokeAllUserTokens(userRows[0].id);
 
-      // Issue 50 trial credits with 30-day expiry
+      // Issue 500 trial credits with 30-day expiry (~14 applications)
       const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      await this.creditService.grantCredits(userRows[0].id, 50, "trial", {
+      await this.creditService.grantCredits(userRows[0].id, 500, "trial", {
         description: "Welcome trial credits (30-day expiry)",
         idempotencyKey: `trial-promo-${userRows[0].id}`,
       });
