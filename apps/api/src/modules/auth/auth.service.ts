@@ -292,11 +292,21 @@ export class AuthService {
         throw new Error("Token has been revoked");
       }
 
-      return this.generateTokens(
-        payload.sub,
-        payload.email as string,
-        (payload.role as string) ?? "user",
-      );
+      // Resolve current role from DB — don't perpetuate stale JWT role through refresh chain
+      const jwtRole = (payload.role as string) ?? "user";
+      let currentRole = jwtRole;
+      try {
+        const rows = await this.db
+          .select({ role: users.role })
+          .from(users)
+          .where(eq(users.id, payload.sub))
+          .limit(1);
+        if (rows[0]?.role) currentRole = rows[0].role;
+      } catch {
+        // DB unavailable — fall back to JWT role
+      }
+
+      return this.generateTokens(payload.sub, payload.email as string, currentRole);
     } catch (err) {
       if (err instanceof Error && err.message === "Token has been revoked") throw err;
       throw new Error("Invalid or expired refresh token");

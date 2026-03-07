@@ -141,7 +141,11 @@ async function resolveCurrentRole(
       .limit(1);
 
     const dbRole = rows[0]?.role ?? jwtRole;
-    await redis.set(cacheKey, dbRole, "EX", ROLE_CACHE_TTL_SECONDS);
+    try {
+      await redis.set(cacheKey, dbRole, "EX", ROLE_CACHE_TTL_SECONDS);
+    } catch {
+      /* write-behind, non-fatal */
+    }
     return dbRole;
   } catch {
     // Graceful degradation — fall back to JWT role
