@@ -16,6 +16,7 @@ import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useCreditBalance } from "../hooks/use-credit-balance";
 import { useBatchQueueStore } from "../stores/batch-queue.store";
 import { launchProtocolOrFallback } from "../utils/protocol-launch";
+import { useValetWebFlags } from "@/lib/launchdarkly";
 
 interface BatchConfirmDialogProps {
   open: boolean;
@@ -43,6 +44,7 @@ export function BatchConfirmDialog({
   const queryClient = useQueryClient();
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const { desktopHandoffEnabled } = useValetWebFlags();
   const { balance, enforcementEnabled } = useCreditBalance();
   const { applyBatchResults, clearSuccessful } = useBatchQueueStore();
   const count = jobUrls.length;
@@ -92,6 +94,10 @@ export function BatchConfirmDialog({
 
   function handleConfirm() {
     if (insufficientCredits) return;
+    if (!isAdmin && !desktopHandoffEnabled) {
+      toast.error("Desktop handoff is temporarily unavailable. Please try again later.");
+      return;
+    }
 
     if (isAdmin) {
       // Admin: cloud batch dispatch
@@ -153,11 +159,24 @@ export function BatchConfirmDialog({
           </div>
         )}
 
+        {!isAdmin && !desktopHandoffEnabled && (
+          <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] bg-[color-mix(in_srgb,var(--wk-status-warning)_8%,transparent)] border border-[color-mix(in_srgb,var(--wk-status-warning)_20%,transparent)] px-3 py-2">
+            <AlertTriangle className="h-4 w-4 text-[var(--wk-status-warning)] shrink-0" />
+            <span className="text-sm text-[var(--wk-status-warning)]">
+              Desktop handoff is temporarily unavailable for your account.
+            </span>
+          </div>
+        )}
+
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
-          <Button variant="cta" onClick={handleConfirm} disabled={insufficientCredits || isPending}>
+          <Button
+            variant="cta"
+            onClick={handleConfirm}
+            disabled={insufficientCredits || isPending || (!isAdmin && !desktopHandoffEnabled)}
+          >
             {isPending ? (
               <span className="flex items-center gap-2">
                 <LoadingSpinner size="sm" /> {isAdmin ? "Submitting..." : "Sending..."}

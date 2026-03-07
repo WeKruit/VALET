@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
 import { Button } from "@valet/ui/components/button";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useValetWebFlags } from "@/lib/launchdarkly";
 
 export function PublicHeader() {
   const { user } = useAuth();
+  const { downloadPageEnabled } = useValetWebFlags();
 
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)]/95 backdrop-blur-sm">
@@ -34,12 +36,14 @@ export function PublicHeader() {
           >
             Contact
           </Link>
-          <Link
-            to="/download"
-            className="text-sm text-[var(--wk-text-secondary)] transition-colors hover:text-[var(--wk-text-primary)]"
-          >
-            Download
-          </Link>
+          {downloadPageEnabled && (
+            <Link
+              to="/download"
+              className="text-sm text-[var(--wk-text-secondary)] transition-colors hover:text-[var(--wk-text-primary)]"
+            >
+              Download
+            </Link>
+          )}
         </nav>
 
         <div className="flex items-center gap-3">

@@ -18,6 +18,7 @@ export const desktopContract = c.router({
     responses: {
       201: createHandoffResponse,
       401: errorResponse,
+      403: errorResponse,
     },
     summary: "Create a short-lived handoff token for web-to-desktop transfer",
   },
@@ -30,6 +31,7 @@ export const desktopContract = c.router({
       200: consumeHandoffResponse,
       404: errorResponse,
       401: errorResponse,
+      403: errorResponse,
     },
     summary: "Exchange a handoff token for queued URLs and resume context",
   },
@@ -39,6 +41,7 @@ export const desktopContract = c.router({
     responses: {
       200: desktopBootstrapResponse,
       401: errorResponse,
+      403: errorResponse,
     },
     summary: "Get all state the desktop app needs in a single call",
   },

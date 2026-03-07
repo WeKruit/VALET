@@ -6,6 +6,8 @@ import type { CreditService } from "../credits/credit.service.js";
 import type { ReferralService } from "../referrals/referral.service.js";
 import type { ResumeService } from "../resumes/resume.service.js";
 import type { TaskService } from "../tasks/task.service.js";
+import type { LaunchDarklyService } from "../../services/launchdarkly.service.js";
+import type { AtmDesktopReleaseService } from "../../services/atm-desktop-release.service.js";
 import type { DesktopBootstrapResponse } from "@valet/shared/schemas";
 import { getAnthropicProxyReadiness } from "../local-workers/anthropic-proxy-config.js";
 
@@ -29,6 +31,8 @@ export class DesktopService {
   private referralService: ReferralService;
   private resumeService: ResumeService;
   private taskService: TaskService;
+  private launchDarklyService: LaunchDarklyService;
+  private atmDesktopReleaseService: AtmDesktopReleaseService;
 
   constructor({
     redis,
@@ -38,6 +42,8 @@ export class DesktopService {
     referralService,
     resumeService,
     taskService,
+    launchDarklyService,
+    atmDesktopReleaseService,
   }: {
     redis: Redis;
     logger: FastifyBaseLogger;
@@ -46,6 +52,8 @@ export class DesktopService {
     referralService: ReferralService;
     resumeService: ResumeService;
     taskService: TaskService;
+    launchDarklyService: LaunchDarklyService;
+    atmDesktopReleaseService: AtmDesktopReleaseService;
   }) {
     this.redis = redis;
     this.logger = logger;
@@ -54,6 +62,8 @@ export class DesktopService {
     this.referralService = referralService;
     this.resumeService = resumeService;
     this.taskService = taskService;
+    this.launchDarklyService = launchDarklyService;
+    this.atmDesktopReleaseService = atmDesktopReleaseService;
   }
 
   async createHandoff(
@@ -116,19 +126,66 @@ export class DesktopService {
     return null;
   }
 
-  async bootstrap(userId: string): Promise<DesktopBootstrapResponse> {
+  async bootstrap(input: {
+    userId: string;
+    email: string;
+    role: string;
+    platform?: string | null;
+    arch?: string | null;
+    appVersion?: string | null;
+  }): Promise<DesktopBootstrapResponse> {
     const [user, credits, referrals, resumes, tasksResult, automation] = await Promise.all([
-      this.userService.getById(userId),
-      this.creditService.getBalance(userId),
-      this.referralService.getStats(userId),
-      this.resumeService.listByUser(userId),
-      this.taskService.list(userId, {
+      this.userService.getById(input.userId),
+      this.creditService.getBalance(input.userId),
+      this.referralService.getStats(input.userId),
+      this.resumeService.listByUser(input.userId),
+      this.taskService.list(input.userId, {
         page: 1,
         pageSize: 10,
         sortBy: "createdAt",
         sortOrder: "desc",
       }),
       getAnthropicProxyReadiness(this.logger),
+    ]);
+
+    const releaseChannel =
+      this.launchDarklyService.getEnvironment() === "staging"
+        ? "beta"
+        : this.launchDarklyService.getEnvironment() === "production"
+          ? "stable"
+          : "local";
+    const flagContext = this.launchDarklyService.buildUserContext({
+      key: input.userId,
+      email: input.email,
+      role: input.role,
+      isAdmin: input.role === "admin" || input.role === "superadmin",
+      channel: releaseChannel,
+      appVersion: input.appVersion ?? undefined,
+      platform: input.platform ?? undefined,
+      arch: input.arch ?? undefined,
+    });
+    const [
+      killSwitch,
+      localWorkerEnabled,
+      localWorkerBrokerEnabled,
+      smartApplyEnabled,
+      managedInferenceRequired,
+      releaseState,
+    ] = await Promise.all([
+      this.launchDarklyService.boolVariation("desktop.kill_switch", flagContext, false),
+      this.launchDarklyService.boolVariation("desktop.local_worker.enabled", flagContext, true),
+      this.launchDarklyService.boolVariation(
+        "desktop.local_worker.broker.enabled",
+        flagContext,
+        true,
+      ),
+      this.launchDarklyService.boolVariation("desktop.smart_apply.enabled", flagContext, true),
+      this.launchDarklyService.boolVariation(
+        "desktop.managed_inference.required",
+        flagContext,
+        false,
+      ),
+      this.atmDesktopReleaseService.getReleaseState(releaseChannel === "beta" ? "beta" : "stable"),
     ]);
 
     const userRecord = user as Record<string, unknown>;
@@ -147,6 +204,13 @@ export class DesktopService {
 
     const role = userRecord.role as string;
     const isAdminRole = role === "admin" || role === "superadmin";
+    const activeRollout =
+      releaseState?.rollouts.find(
+        (rollout) => rollout.channel === (releaseChannel === "beta" ? "beta" : "stable"),
+      ) ?? null;
+    const publicDownloadUrl = process.env.VALET_WEB_URL
+      ? `${process.env.VALET_WEB_URL.replace(/\/+$/, "")}/download`
+      : null;
 
     return {
       user: {
@@ -178,6 +242,21 @@ export class DesktopService {
         createdAt: t.createdAt.toISOString(),
       })),
       automation,
+      desktop: {
+        channel: releaseChannel,
+        minimumSupportedVersion: activeRollout?.minimumSupportedVersion ?? null,
+        flags: {
+          killSwitch,
+          localWorkerEnabled,
+          localWorkerBrokerEnabled,
+          smartApplyEnabled,
+          managedInferenceRequired,
+        },
+        config: {
+          updaterBaseUrl: this.atmDesktopReleaseService.getBaseUrl(),
+          publicDownloadUrl,
+        },
+      },
     };
   }
 }

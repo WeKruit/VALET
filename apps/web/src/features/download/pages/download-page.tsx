@@ -7,10 +7,12 @@ import { Download, Shield, Cpu, RefreshCw, Monitor, Layers } from "lucide-react"
 import { PublicHeader } from "../../landing/components/public-header";
 import { PublicFooter } from "../../landing/components/public-footer";
 import { api } from "@/lib/api-client";
+import { useValetWebFlags } from "@/lib/launchdarkly";
 
 export function DownloadPage() {
   const [searchParams] = useSearchParams();
   const handoffToken = searchParams.get("handoff");
+  const { downloadPageEnabled } = useValetWebFlags();
 
   useEffect(() => {
     document.title = "Download GhostHands - WeKruit Valet";
@@ -20,6 +22,7 @@ export function DownloadPage() {
     queryKey: ["desktop-release", "latest"],
     queryData: {},
     staleTime: 1000 * 60 * 5,
+    enabled: downloadPageEnabled,
   });
 
   const release = data?.status === 200 ? data.body : null;
@@ -67,13 +70,21 @@ export function DownloadPage() {
       {/* Download Cards */}
       <section className="border-t border-[var(--wk-border-subtle)] bg-[var(--wk-surface-raised)] px-6 py-20 md:py-24">
         <div className="mx-auto max-w-[var(--wk-content-width)]">
-          {isLoading && (
+          {!downloadPageEnabled && (
+            <div className="text-center space-y-4">
+              <p className="text-[var(--wk-text-secondary)]">
+                Desktop downloads are temporarily unavailable while we finish the next rollout.
+              </p>
+            </div>
+          )}
+
+          {downloadPageEnabled && isLoading && (
             <div className="flex justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--wk-border-subtle)] border-t-[var(--wk-accent-amber)]" />
             </div>
           )}
 
-          {isNotFound && (
+          {downloadPageEnabled && isNotFound && (
             <div className="text-center">
               <p className="text-[var(--wk-text-secondary)]">
                 No release available yet. Check back soon.
@@ -81,7 +92,7 @@ export function DownloadPage() {
             </div>
           )}
 
-          {isError && (
+          {downloadPageEnabled && isError && (
             <div className="text-center space-y-4">
               <p className="text-[var(--wk-text-secondary)]">
                 Unable to load download info. Please try again.
@@ -93,7 +104,7 @@ export function DownloadPage() {
             </div>
           )}
 
-          {release && (
+          {downloadPageEnabled && release && (
             <div className="mx-auto max-w-5xl space-y-8">
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {/* Apple Silicon (ARM64) */}

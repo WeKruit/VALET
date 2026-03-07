@@ -70,6 +70,8 @@ import { LocalWorkerBrokerService } from "../modules/local-workers/local-worker-
 import { ReferralService } from "../modules/referrals/referral.service.js";
 import { CreditService } from "../modules/credits/credit.service.js";
 import { DesktopService } from "../modules/desktop/desktop.service.js";
+import { LaunchDarklyService } from "../services/launchdarkly.service.js";
+import { AtmDesktopReleaseService } from "../services/atm-desktop-release.service.js";
 
 export interface AppCradle {
   db: Database;
@@ -140,6 +142,8 @@ export interface AppCradle {
   referralService: ReferralService;
   creditService: CreditService;
   desktopService: DesktopService;
+  launchDarklyService: LaunchDarklyService;
+  atmDesktopReleaseService: AtmDesktopReleaseService;
 }
 
 declare module "@fastify/awilix" {
@@ -269,6 +273,8 @@ export default fp(async (fastify: FastifyInstance) => {
     }),
     referralService: asClass(ReferralService, { lifetime: Lifetime.SINGLETON }),
     creditService: asClass(CreditService, { lifetime: Lifetime.SINGLETON }),
+    launchDarklyService: asClass(LaunchDarklyService, { lifetime: Lifetime.SINGLETON }),
+    atmDesktopReleaseService: asClass(AtmDesktopReleaseService, { lifetime: Lifetime.SINGLETON }),
     desktopService: asClass(DesktopService, { lifetime: Lifetime.SINGLETON }),
   });
 });

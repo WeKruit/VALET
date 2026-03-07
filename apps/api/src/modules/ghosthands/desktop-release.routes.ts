@@ -5,7 +5,22 @@ const s = initServer();
 
 export const desktopReleaseRouter = s.router(desktopReleaseContract, {
   latest: async ({ request }) => {
-    const { redis } = request.diScope.cradle;
+    const { redis, atmDesktopReleaseService } = request.diScope.cradle;
+    const atmRelease = await atmDesktopReleaseService.getLatestRelease("stable");
+    if (atmRelease) {
+      return {
+        status: 200 as const,
+        body: {
+          version: atmRelease.version,
+          dmgArm64Url: atmRelease.assets.dmg_arm64 ?? "",
+          dmgX64Url: atmRelease.assets.dmg_x64 ?? null,
+          exeX64Url: atmRelease.assets.exe_x64 ?? null,
+          releaseUrl: atmRelease.releaseUrl,
+          releasedAt: atmRelease.publishedAt,
+        },
+      };
+    }
+
     const raw = await redis.get("desktop:latest-release");
 
     if (!raw) {

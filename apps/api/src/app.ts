@@ -213,6 +213,7 @@ export async function buildApp() {
       pgBossService,
       staleTaskReconciliation,
       instanceDiscoveryService,
+      launchDarklyService,
     } = diContainer.cradle;
     sandboxHealthMonitor.stop();
     autoStopMonitor.stop();
@@ -220,6 +221,7 @@ export async function buildApp() {
     staleTaskReconciliation.stop();
     instanceDiscoveryService.stop();
     await pgBossService.stop();
+    launchDarklyService.close();
   });
 
   return fastify;

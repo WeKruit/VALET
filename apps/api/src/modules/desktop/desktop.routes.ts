@@ -9,12 +9,47 @@ const S3_BUCKET = process.env.S3_BUCKET_RESUMES ?? "resumes";
 
 export const desktopRouter = s.router(desktopContract, {
   createHandoff: async ({ request, body }) => {
-    const { desktopService } = request.diScope.cradle;
+    const { desktopService, launchDarklyService } = request.diScope.cradle;
+    const allowed = await launchDarklyService.boolVariation(
+      "valet.api.desktop_handoff_accept.enabled",
+      launchDarklyService.buildUserContext({
+        key: request.userId,
+        email: request.userEmail,
+        role: request.userRole,
+        isAdmin: request.userRole === "admin" || request.userRole === "superadmin",
+      }),
+      true,
+    );
+    if (!allowed) {
+      return {
+        status: 403 as const,
+        body: { error: "forbidden", message: "Desktop handoff is temporarily unavailable" },
+      };
+    }
     const result = await desktopService.createHandoff(request.userId, body);
     return { status: 201 as const, body: result };
   },
   consumeHandoff: async ({ request, params }) => {
-    const { desktopService } = request.diScope.cradle;
+    const { desktopService, launchDarklyService } = request.diScope.cradle;
+    const allowed = await launchDarklyService.boolVariation(
+      "valet.api.desktop_handoff_accept.enabled",
+      launchDarklyService.buildUserContext({
+        key: request.userId,
+        email: request.userEmail,
+        role: request.userRole,
+        isAdmin: request.userRole === "admin" || request.userRole === "superadmin",
+      }),
+      true,
+    );
+    if (!allowed) {
+      return {
+        status: 403 as const,
+        body: {
+          error: "forbidden",
+          message: "Desktop handoff acceptance is temporarily unavailable",
+        },
+      };
+    }
     const data = await desktopService.consumeHandoff(params.token, request.userId);
     if (!data) {
       return {
@@ -25,8 +60,41 @@ export const desktopRouter = s.router(desktopContract, {
     return { status: 200 as const, body: data };
   },
   bootstrap: async ({ request }) => {
-    const { desktopService } = request.diScope.cradle;
-    const data = await desktopService.bootstrap(request.userId);
+    const { desktopService, launchDarklyService } = request.diScope.cradle;
+    const allowed = await launchDarklyService.boolVariation(
+      "valet.api.desktop_bootstrap.enabled",
+      launchDarklyService.buildUserContext({
+        key: request.userId,
+        email: request.userEmail,
+        role: request.userRole,
+        isAdmin: request.userRole === "admin" || request.userRole === "superadmin",
+      }),
+      true,
+    );
+    if (!allowed) {
+      return {
+        status: 403 as const,
+        body: { error: "forbidden", message: "Desktop bootstrap is temporarily unavailable" },
+      };
+    }
+    const userAgent = request.headers["user-agent"] ?? "";
+    const data = await desktopService.bootstrap({
+      userId: request.userId,
+      email: request.userEmail,
+      role: request.userRole,
+      appVersion:
+        typeof request.headers["x-desktop-app-version"] === "string"
+          ? request.headers["x-desktop-app-version"]
+          : null,
+      platform:
+        typeof request.headers["x-desktop-platform"] === "string"
+          ? request.headers["x-desktop-platform"]
+          : userAgent,
+      arch:
+        typeof request.headers["x-desktop-arch"] === "string"
+          ? request.headers["x-desktop-arch"]
+          : null,
+    });
     return { status: 200 as const, body: data };
   },
 });

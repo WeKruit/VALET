@@ -39,6 +39,7 @@ import { ModelSelectors } from "./model-selectors";
 import { BatchQueuePanel } from "./batch-queue-panel";
 import { useBatchQueueStore } from "../stores/batch-queue.store";
 import { launchProtocolOrFallback } from "../utils/protocol-launch";
+import { useValetWebFlags } from "@/lib/launchdarkly";
 
 type PlatformInfo = {
   name: string;
@@ -111,6 +112,7 @@ export function ApplyForm() {
   const { setSelectedTaskId } = useWorkbenchStore();
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const { desktopHandoffEnabled } = useValetWebFlags();
   const { balance, enforcementEnabled } = useCreditBalance();
   const insufficientCredits = enforcementEnabled && balance < 1;
   const addToQueue = useBatchQueueStore((s) => s.addUrl);
@@ -187,6 +189,11 @@ export function ApplyForm() {
 
     if (!activeResume) {
       toast.error("Please upload a resume first in Settings before applying.");
+      return;
+    }
+
+    if (!isAdmin && !desktopHandoffEnabled) {
+      toast.error("Desktop handoff is temporarily unavailable. Please try again later.");
       return;
     }
 
@@ -481,13 +488,27 @@ export function ApplyForm() {
             </div>
           )}
 
+          {!isAdmin && !desktopHandoffEnabled && (
+            <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] bg-[color-mix(in_srgb,var(--wk-status-warning)_8%,transparent)] border border-[color-mix(in_srgb,var(--wk-status-warning)_20%,transparent)] px-3 py-2">
+              <AlertTriangle className="h-4 w-4 text-[var(--wk-status-warning)] shrink-0" />
+              <span className="text-sm text-[var(--wk-status-warning)]">
+                Desktop handoff is temporarily unavailable for your account.
+              </span>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <Button
               variant="cta"
               size="lg"
               className="flex-1"
               disabled={
-                !isValid || isSubmitting || resumesLoading || !activeResume || insufficientCredits
+                !isValid ||
+                isSubmitting ||
+                resumesLoading ||
+                !activeResume ||
+                insufficientCredits ||
+                (!isAdmin && !desktopHandoffEnabled)
               }
               onClick={handleSubmit}
             >

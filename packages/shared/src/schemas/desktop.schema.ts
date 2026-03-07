@@ -70,6 +70,21 @@ export const desktopBootstrapResponse = z.object({
     llmRuntimeReady: z.boolean(),
     message: z.string().nullable(),
   }),
+  desktop: z.object({
+    channel: z.enum(["local", "beta", "stable"]),
+    minimumSupportedVersion: z.string().nullable(),
+    flags: z.object({
+      killSwitch: z.boolean(),
+      localWorkerEnabled: z.boolean(),
+      localWorkerBrokerEnabled: z.boolean(),
+      smartApplyEnabled: z.boolean(),
+      managedInferenceRequired: z.boolean(),
+    }),
+    config: z.object({
+      updaterBaseUrl: z.string().nullable(),
+      publicDownloadUrl: z.string().nullable(),
+    }),
+  }),
 });
 
 // ─── Inferred Types ───
