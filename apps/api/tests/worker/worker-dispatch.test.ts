@@ -13,6 +13,7 @@ const mockTaskRepo = {
   findById: vi.fn(),
   findByWorkflowRunId: vi.fn(),
   updateStatus: vi.fn(),
+  updateStatusGuarded: vi.fn(),
   updateWorkflowRunId: vi.fn(),
   updateGhosthandsResult: vi.fn(),
   cancel: vi.fn(),

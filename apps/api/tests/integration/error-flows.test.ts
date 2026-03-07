@@ -49,10 +49,13 @@ function createMockTaskRepo() {
 }
 
 function createMockGhJobRepo() {
+  const updateStatus = vi.fn();
   return {
     findById: vi.fn(),
     findByValetTaskId: vi.fn(),
-    updateStatus: vi.fn(),
+    updateStatus,
+    updateStatusIfNotTerminal: updateStatus,
+    updateFields: vi.fn(),
     findStuckJobs: vi.fn(),
   };
 }
@@ -314,7 +317,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
         status: "in_progress",
         workflowRunId: ghJobId,
       });
-      mockTaskRepo.cancel.mockResolvedValue({
+      mockTaskRepo.updateStatusGuarded.mockResolvedValue({
         id: taskId,
         userId: TEST_USER_ID,
         status: "cancelled",
@@ -339,7 +342,7 @@ describe("Integration: Error & Recovery Flows (P1)", () => {
 
       await taskService.cancel(taskId, TEST_USER_ID);
 
-      expect(mockTaskRepo.cancel).toHaveBeenCalledWith(taskId);
+      expect(mockTaskRepo.updateStatusGuarded).toHaveBeenCalledWith(taskId, "cancelled");
       expect(mockGhClient.cancelJob).toHaveBeenCalledWith(ghJobId);
     });
   });
