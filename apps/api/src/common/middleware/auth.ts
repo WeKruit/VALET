@@ -129,9 +129,18 @@ export async function resolveCurrentRole(
   // Stage 1: Try cache read (best-effort)
   try {
     const cached = await request.server.redis.get(cacheKey);
-    if (cached) return cached;
-  } catch {
-    // Cache read failed — fall through to DB
+    if (cached) {
+      request.log.info(
+        { userId, resolvedRole: cached, source: "cache", jwtRole },
+        "resolveCurrentRole",
+      );
+      return cached;
+    }
+  } catch (err) {
+    request.log.warn(
+      { userId, err: (err as Error).message },
+      "resolveCurrentRole: cache read failed",
+    );
   }
 
   // Stage 2: DB is authoritative
@@ -144,6 +153,16 @@ export async function resolveCurrentRole(
       .limit(1);
 
     const dbRole = rows[0]?.role ?? jwtRole;
+    request.log.info(
+      {
+        userId,
+        resolvedRole: dbRole,
+        source: rows[0] ? "db" : "db-empty-fallback",
+        jwtRole,
+        rowCount: rows.length,
+      },
+      "resolveCurrentRole",
+    );
 
     // Stage 3: Try cache write (best-effort)
     try {
@@ -153,8 +172,11 @@ export async function resolveCurrentRole(
     }
 
     return dbRole;
-  } catch {
-    // DB unreachable — fall back to JWT role as last resort
+  } catch (err) {
+    request.log.error(
+      { userId, jwtRole, err: (err as Error).message },
+      "resolveCurrentRole: DB query failed, falling back to jwtRole",
+    );
     return jwtRole;
   }
 }

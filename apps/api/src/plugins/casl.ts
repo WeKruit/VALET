@@ -15,6 +15,14 @@ async function caslPlugin(fastify: FastifyInstance) {
     if (request.userRole) {
       request.ability = defineAbilitiesFor(request.userRole);
     }
+    // Temporary diagnostic — remove after 403 investigation
+    const path = request.url?.split("?")[0] ?? "";
+    if (path.startsWith("/api/v1/") && !path.includes("/health")) {
+      request.log.info(
+        { userRole: request.userRole ?? "NOT_SET", hasAbility: !!request.ability, path },
+        "casl:onRequest",
+      );
+    }
   });
 }
 
