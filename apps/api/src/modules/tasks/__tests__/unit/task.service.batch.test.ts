@@ -91,7 +91,13 @@ describe("TaskService.createBatch()", () => {
     stubCreateMethod(service);
 
     const result = await service.createBatch(
-      { ...BATCH_BASE, jobUrls: ["https://example.com/job/1", "https://example.com/job/2"] },
+      {
+        ...BATCH_BASE,
+        jobUrls: [
+          "https://boards.greenhouse.io/example/jobs/1001",
+          "https://boards.greenhouse.io/example/jobs/1002",
+        ],
+      },
       ADMIN_USER_ID,
       ADMIN_ROLE,
     );
@@ -111,10 +117,10 @@ describe("TaskService.createBatch()", () => {
 
   it("rejects the whole batch with 402 when enforcement is on and balance is insufficient", async () => {
     vi.stubEnv("FEATURE_CREDITS_ENFORCEMENT", "true");
-    // Bypass execution target policy — this test is about credit enforcement, not target policy
-    vi.spyOn(service as never, "enforceExecutionTargetPolicy" as never).mockResolvedValue(
-      undefined as never,
-    );
+    const serviceWithExecutionPolicy = service as unknown as {
+      enforceExecutionTargetPolicy: (...args: unknown[]) => Promise<void>;
+    };
+    vi.spyOn(serviceWithExecutionPolicy, "enforceExecutionTargetPolicy").mockResolvedValue(undefined);
     (deps.creditService.getBalance as ReturnType<typeof vi.fn>).mockResolvedValue({
       balance: 1,
       trialExpiry: null,
@@ -124,7 +130,14 @@ describe("TaskService.createBatch()", () => {
     // Use non-admin role so credit enforcement actually applies (admin is exempt)
     await expect(
       service.createBatch(
-        { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
+        {
+          ...BATCH_BASE,
+          jobUrls: [
+            "https://boards.greenhouse.io/example/jobs/2001",
+            "https://boards.greenhouse.io/example/jobs/2002",
+            "https://boards.greenhouse.io/example/jobs/2003",
+          ],
+        },
         ADMIN_USER_ID,
         "early_access",
       ),
@@ -132,7 +145,14 @@ describe("TaskService.createBatch()", () => {
 
     await expect(
       service.createBatch(
-        { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
+        {
+          ...BATCH_BASE,
+          jobUrls: [
+            "https://boards.greenhouse.io/example/jobs/2001",
+            "https://boards.greenhouse.io/example/jobs/2002",
+            "https://boards.greenhouse.io/example/jobs/2003",
+          ],
+        },
         ADMIN_USER_ID,
         "early_access",
       ),
@@ -147,7 +167,13 @@ describe("TaskService.createBatch()", () => {
     stubCreateMethod(service);
 
     const result = await service.createBatch(
-      { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2"] },
+      {
+        ...BATCH_BASE,
+        jobUrls: [
+          "https://boards.greenhouse.io/example/jobs/3001",
+          "https://boards.greenhouse.io/example/jobs/3002",
+        ],
+      },
       ADMIN_USER_ID,
       ADMIN_ROLE,
     );
@@ -168,7 +194,14 @@ describe("TaskService.createBatch()", () => {
     });
 
     const result = await service.createBatch(
-      { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
+      {
+        ...BATCH_BASE,
+        jobUrls: [
+          "https://boards.greenhouse.io/example/jobs/4001",
+          "https://boards.greenhouse.io/example/jobs/4002",
+          "https://boards.greenhouse.io/example/jobs/4003",
+        ],
+      },
       ADMIN_USER_ID,
       ADMIN_ROLE,
     );
@@ -190,9 +223,9 @@ describe("TaskService.createBatch()", () => {
       {
         ...BATCH_BASE,
         jobUrls: [
-          "https://example.com/job/1",
-          "https://EXAMPLE.COM/job/1", // same after normalization (host lowercased)
-          "https://example.com/job/2",
+          "https://boards.greenhouse.io/example/jobs/5001",
+          "https://BOARDS.GREENHOUSE.IO/example/jobs/5001", // same after normalization (host lowercased)
+          "https://boards.greenhouse.io/example/jobs/5002",
         ],
       },
       ADMIN_USER_ID,
@@ -212,7 +245,10 @@ describe("TaskService.createBatch()", () => {
     const result = await service.createBatch(
       {
         ...BATCH_BASE,
-        jobUrls: ["https://example.com/job/1/", "https://example.com/job/1"],
+        jobUrls: [
+          "https://boards.greenhouse.io/example/jobs/6001/",
+          "https://boards.greenhouse.io/example/jobs/6001",
+        ],
       },
       ADMIN_USER_ID,
       ADMIN_ROLE,
@@ -237,7 +273,12 @@ describe("TaskService.createBatch()", () => {
     const result = await service.createBatch(
       {
         ...BATCH_BASE,
-        jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3", "https://d.com/4"],
+        jobUrls: [
+          "https://boards.greenhouse.io/example/jobs/7001",
+          "https://boards.greenhouse.io/example/jobs/7002",
+          "https://boards.greenhouse.io/example/jobs/7003",
+          "https://boards.greenhouse.io/example/jobs/7004",
+        ],
       },
       ADMIN_USER_ID,
       ADMIN_ROLE,
@@ -263,7 +304,7 @@ describe("TaskService.createBatch()", () => {
     });
 
     const result = await service.createBatch(
-      { ...BATCH_BASE, jobUrls: ["https://example.com/job/1"] },
+      { ...BATCH_BASE, jobUrls: ["https://boards.greenhouse.io/example/jobs/8001"] },
       ADMIN_USER_ID,
       ADMIN_ROLE,
     );
@@ -278,7 +319,7 @@ describe("TaskService.createBatch()", () => {
     );
 
     const result = await service.createBatch(
-      { ...BATCH_BASE, jobUrls: ["https://example.com/job/1"] },
+      { ...BATCH_BASE, jobUrls: ["https://boards.greenhouse.io/example/jobs/8002"] },
       ADMIN_USER_ID,
       ADMIN_ROLE,
     );
@@ -299,7 +340,7 @@ describe("TaskService.createBatch()", () => {
 
     // Should succeed even with 0 balance
     const result = await service.createBatch(
-      { ...BATCH_BASE, jobUrls: ["https://a.com/1"] },
+      { ...BATCH_BASE, jobUrls: ["https://boards.greenhouse.io/example/jobs/9001"] },
       ADMIN_USER_ID,
       ADMIN_ROLE,
     );
