@@ -98,7 +98,7 @@ export class LocalWorkerBrokerService {
   }
 
   private isEnabled(): boolean {
-    return process.env.GH_LOCAL_WORKER_BROKER_ENABLED === "true";
+    return process.env.GH_LOCAL_WORKER_BROKER_ENABLED !== "false";
   }
 
   private ensureEnabled(): void {
