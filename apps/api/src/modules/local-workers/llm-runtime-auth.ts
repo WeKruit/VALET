@@ -1,6 +1,6 @@
-import * as jose from "jose";
+import { createHash, randomBytes } from "node:crypto";
 
-const RUNTIME_TOKEN_PREFIX = "lwrt_v1_";
+const RUNTIME_GRANT_PREFIX = "lwrg_v1_";
 
 export class ManagedRuntimeAuthError extends Error {
   constructor(message: string) {
@@ -9,63 +9,24 @@ export class ManagedRuntimeAuthError extends Error {
   }
 }
 
-export interface LocalWorkerRuntimeTokenPayload {
-  kind: "desktop_local_worker";
-  accessToken: string;
-  sessionToken: string;
-  leaseId: string;
+export function createManagedRuntimeGrant(): string {
+  return `${RUNTIME_GRANT_PREFIX}${randomBytes(32).toString("base64url")}`;
 }
 
-export function parseLocalWorkerRuntimeToken(token: string): LocalWorkerRuntimeTokenPayload {
-  if (!token.startsWith(RUNTIME_TOKEN_PREFIX)) {
-    throw new ManagedRuntimeAuthError("Missing managed runtime token prefix");
+export function normalizeManagedRuntimeGrant(token: string): string {
+  const value = token.trim();
+  if (!value.startsWith(RUNTIME_GRANT_PREFIX)) {
+    throw new ManagedRuntimeAuthError("Missing managed runtime grant prefix");
   }
 
-  const encoded = token.slice(RUNTIME_TOKEN_PREFIX.length);
-  let payload: unknown;
-  try {
-    payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-  } catch {
-    throw new ManagedRuntimeAuthError("Managed runtime token is malformed");
+  const encoded = value.slice(RUNTIME_GRANT_PREFIX.length);
+  if (!encoded) {
+    throw new ManagedRuntimeAuthError("Managed runtime grant is malformed");
   }
 
-  if (
-    !payload ||
-    typeof payload !== "object" ||
-    (payload as Record<string, unknown>).kind !== "desktop_local_worker" ||
-    typeof (payload as Record<string, unknown>).accessToken !== "string" ||
-    typeof (payload as Record<string, unknown>).sessionToken !== "string" ||
-    typeof (payload as Record<string, unknown>).leaseId !== "string"
-  ) {
-    throw new ManagedRuntimeAuthError("Managed runtime token payload is invalid");
-  }
-
-  return payload as LocalWorkerRuntimeTokenPayload;
+  return value;
 }
 
-export async function verifyRuntimeAccessToken(
-  accessToken: string,
-): Promise<{ userId: string; email: string }> {
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    throw new Error("JWT_SECRET is not configured");
-  }
-
-  const secret = new TextEncoder().encode(jwtSecret);
-  let payload: jose.JWTPayload;
-  try {
-    ({ payload } = await jose.jwtVerify(accessToken, secret, {
-      algorithms: ["HS256"],
-    }));
-  } catch {
-    throw new ManagedRuntimeAuthError("Invalid or expired managed runtime access token");
-  }
-
-  if (!payload.sub || typeof payload.email !== "string") {
-    throw new ManagedRuntimeAuthError(
-      "Managed runtime token access JWT is missing required claims",
-    );
-  }
-
-  return { userId: payload.sub, email: payload.email };
+export function hashManagedRuntimeGrant(token: string): string {
+  return createHash("sha256").update(normalizeManagedRuntimeGrant(token)).digest("hex");
 }

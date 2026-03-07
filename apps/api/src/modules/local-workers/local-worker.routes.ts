@@ -2,11 +2,6 @@ import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { getAnthropicProxyConfig } from "./anthropic-proxy-config.js";
-import {
-  ManagedRuntimeAuthError,
-  parseLocalWorkerRuntimeToken,
-  verifyRuntimeAccessToken,
-} from "./llm-runtime-auth.js";
 import { LocalWorkerBrokerError } from "./local-worker-broker.service.js";
 
 const nonEmptyString = z.string().trim().min(1);
@@ -74,7 +69,8 @@ const cancelBodySchema = z.object({
   leaseId: nonEmptyString,
 });
 
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 5 * 60_000;
+const INFERENCE_PROXY_BODY_LIMIT = 10 * 1024 * 1024;
 
 const ALLOWED_UPSTREAM_HEADERS = new Set([
   "accept",
@@ -161,67 +157,66 @@ function sendBrokerError(reply: FastifyReply, error: unknown, fallback: string) 
 }
 
 export async function localWorkerRoutes(fastify: FastifyInstance) {
+  const inferenceMessagesHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const token = runtimeToken(request);
+      if (!token) {
+        return reply.status(401).send({ error: "Missing managed runtime grant" });
+      }
+
+      const { localWorkerBrokerService } = request.diScope.cradle;
+      await localWorkerBrokerService.requireRuntimeGrant(token);
+
+      const config = await getAnthropicProxyConfig(request.log);
+      const body = isObject(request.body) ? { ...request.body } : request.body;
+      const requestedModel = isObject(body) && typeof body.model === "string" ? body.model : null;
+      if (requestedModel && !config.allowedModels.includes(requestedModel)) {
+        return reply.status(400).send({
+          error: `Model "${requestedModel}" is not allowed for managed Desktop inference`,
+        });
+      }
+      if (isObject(body) && !requestedModel) {
+        body.model = config.defaultModel;
+      }
+
+      const controller = new AbortController();
+      request.raw.on("close", () => controller.abort());
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+      const upstream = await fetch(`${config.baseUrl.replace(/\/+$/, "")}/v1/messages`, {
+        method: "POST",
+        headers: buildAnthropicUpstreamHeaders(request, config.apiKey),
+        body: body == null ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      }).finally(() => {
+        clearTimeout(timeout);
+      });
+
+      reply.code(upstream.status);
+      copyResponseHeaders(reply, upstream);
+
+      if (!upstream.body) {
+        return reply.send(await upstream.text());
+      }
+
+      return reply.send(Readable.fromWeb(upstream.body as never));
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return reply.status(504).send({ error: "Managed inference upstream timed out" });
+      }
+      return sendBrokerError(reply, error, "Failed to proxy managed inference request");
+    }
+  };
+
+  fastify.post(
+    "/api/v1/local-workers/inference/v1/messages",
+    { bodyLimit: INFERENCE_PROXY_BODY_LIMIT },
+    inferenceMessagesHandler,
+  );
   fastify.post(
     "/api/v1/local-workers/anthropic/v1/messages",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        const token = runtimeToken(request);
-        if (!token) {
-          return reply.status(401).send({ error: "Missing managed runtime token" });
-        }
-
-        const decoded = parseLocalWorkerRuntimeToken(token);
-        const auth = await verifyRuntimeAccessToken(decoded.accessToken);
-        const { localWorkerBrokerService } = request.diScope.cradle;
-        await localWorkerBrokerService.requireCurrentLease(
-          decoded.sessionToken,
-          decoded.leaseId,
-          auth.userId,
-        );
-
-        const config = await getAnthropicProxyConfig(request.log);
-        const body = isObject(request.body) ? { ...request.body } : request.body;
-        const requestedModel = isObject(body) && typeof body.model === "string" ? body.model : null;
-        if (requestedModel && !config.allowedModels.includes(requestedModel)) {
-          return reply.status(400).send({
-            error: `Model "${requestedModel}" is not allowed for managed Desktop inference`,
-          });
-        }
-        if (isObject(body) && !requestedModel) {
-          body.model = config.defaultModel;
-        }
-
-        const controller = new AbortController();
-        request.raw.on("close", () => controller.abort());
-        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-        const upstream = await fetch(`${config.baseUrl.replace(/\/+$/, "")}/v1/messages`, {
-          method: "POST",
-          headers: buildAnthropicUpstreamHeaders(request, config.apiKey),
-          body: body == null ? undefined : JSON.stringify(body),
-          signal: controller.signal,
-        }).finally(() => {
-          clearTimeout(timeout);
-        });
-
-        reply.code(upstream.status);
-        copyResponseHeaders(reply, upstream);
-
-        if (!upstream.body) {
-          return reply.send(await upstream.text());
-        }
-
-        return reply.send(Readable.fromWeb(upstream.body as never));
-      } catch (error) {
-        if (error instanceof ManagedRuntimeAuthError) {
-          return reply.status(401).send({ error: error.message });
-        }
-        if (error instanceof Error && error.name === "AbortError") {
-          return reply.status(504).send({ error: "Managed Anthropic upstream timed out" });
-        }
-        return sendBrokerError(reply, error, "Failed to proxy managed Anthropic request");
-      }
-    },
+    { bodyLimit: INFERENCE_PROXY_BODY_LIMIT },
+    inferenceMessagesHandler,
   );
 
   fastify.post(

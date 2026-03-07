@@ -46,6 +46,7 @@ const PUBLIC_PREFIX_PATHS = ["/api/v1/ws", "/docs"];
 /** Routes that bypass JWT auth and authenticate with X-Local-Worker-Session tokens instead. */
 const SELF_AUTH_PATTERNS = [
   /^\/api\/v1\/tasks\/[^/]+\/events\/stream$/,
+  /^\/api\/v1\/local-workers\/inference\/v1\/messages$/,
   /^\/api\/v1\/local-workers\/anthropic\/v1\/messages$/,
 ];
 
