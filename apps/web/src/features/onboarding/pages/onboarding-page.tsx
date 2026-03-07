@@ -3,6 +3,7 @@ import { CheckCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@valet/ui/components/button";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { extractApiError } from "@/lib/extract-api-error";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useConsent } from "@/features/consent/hooks/use-consent";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
@@ -246,12 +247,7 @@ export function OnboardingPage() {
 
   const updateProfile = api.users.updateProfile.useMutation({
     onError: (err) => {
-      const detail =
-        err && typeof err === "object" && "body" in err
-          ? String((err as Record<string, unknown>).body ?? "")
-          : err instanceof Error
-            ? err.message
-            : "";
+      const detail = extractApiError(err);
       toast.error(
         detail ? `Failed to save profile: ${detail}` : "Failed to save profile. Please try again.",
       );

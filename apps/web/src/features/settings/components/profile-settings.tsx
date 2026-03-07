@@ -30,6 +30,7 @@ import type {
   EducationEntry as EducationSchema,
 } from "@valet/shared/schemas";
 import { api } from "@/lib/api-client";
+import { extractApiError } from "@/lib/extract-api-error";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -84,12 +85,7 @@ export function ProfileSettings() {
       }
     },
     onError: (err) => {
-      const detail =
-        err && typeof err === "object" && "body" in err
-          ? String((err as Record<string, unknown>).body ?? "")
-          : err instanceof Error
-            ? err.message
-            : "";
+      const detail = extractApiError(err);
       toast.error(
         detail ? `Failed to save profile: ${detail}` : "Failed to save profile. Please try again.",
       );

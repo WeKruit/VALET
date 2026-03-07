@@ -1,5 +1,4 @@
 import type { FastifyBaseLogger } from "fastify";
-import type Redis from "ioredis";
 import type { ResumeService } from "./resume.service.js";
 import type { ResumeRepository } from "./resume.repository.js";
 
@@ -7,8 +6,6 @@ import type { ResumeRepository } from "./resume.repository.js";
 const SWEEP_INTERVAL_MS = 2 * 60 * 1000;
 /** Resumes stuck in "parsing" longer than this are considered stale. */
 const STALE_THRESHOLD_MS = 60 * 1000; // 1 minute
-/** Redis lock TTL to prevent duplicate retries across instances. */
-const LOCK_TTL_SECS = 90;
 
 /**
  * Periodic monitor that recovers orphaned resume parses.
@@ -17,12 +14,11 @@ const LOCK_TTL_SECS = 90;
  * parseResume() promises are silently killed. This monitor:
  *   1. Runs immediately on startup (onReady hook) to sweep orphans from the last crash.
  *   2. Runs every 2 minutes to catch any that slip through getById-level recovery.
- *   3. Uses a Redis NX lock per resume to prevent duplicate retries.
+ *   3. Relies on parseResume()'s internal Redis NX lock to prevent duplicate concurrent parses.
  */
 export class StaleResumeParseMonitor {
   private resumeService: ResumeService;
   private resumeRepo: ResumeRepository;
-  private redis: Redis;
   private logger: FastifyBaseLogger;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private running = false;
@@ -30,17 +26,14 @@ export class StaleResumeParseMonitor {
   constructor({
     resumeService,
     resumeRepo,
-    redis,
     logger,
   }: {
     resumeService: ResumeService;
     resumeRepo: ResumeRepository;
-    redis: Redis;
     logger: FastifyBaseLogger;
   }) {
     this.resumeService = resumeService;
     this.resumeRepo = resumeRepo;
-    this.redis = redis;
     this.logger = logger;
   }
 
@@ -79,18 +72,10 @@ export class StaleResumeParseMonitor {
       this.logger.info({ count: stale.length }, "Found stale parsing resumes to recover");
 
       let recovered = 0;
-      let skipped = 0;
       let errors = 0;
 
       for (const resume of stale) {
-        const lockKey = `resume-parse-lock:${resume.id}`;
         try {
-          const acquired = await this.redis.set(lockKey, "1", "EX", LOCK_TTL_SECS, "NX");
-          if (!acquired) {
-            skipped++;
-            continue;
-          }
-
           this.logger.warn(
             {
               resumeId: resume.id,
@@ -100,7 +85,8 @@ export class StaleResumeParseMonitor {
             "Recovering stale resume parse",
           );
 
-          // Use retryParse which resets status and re-fires the background parse
+          // retryParse resets status and fires parseResume(), which acquires
+          // its own Redis NX lock to prevent duplicate concurrent parses.
           await this.resumeService.retryParse(resume.id, resume.userId);
           recovered++;
         } catch (err) {
@@ -110,7 +96,7 @@ export class StaleResumeParseMonitor {
       }
 
       this.logger.info(
-        { total: stale.length, recovered, skipped, errors },
+        { total: stale.length, recovered, errors },
         "Stale resume parse sweep complete",
       );
     } catch (err) {
