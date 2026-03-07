@@ -138,12 +138,15 @@ export class DesktopService {
         }
       : null;
 
+    const role = userRecord.role as string;
+    const isAdminRole = role === "admin" || role === "superadmin";
+
     return {
       user: {
         id: userRecord.id as string,
         email: userRecord.email as string,
         name: userRecord.name as string,
-        role: userRecord.role as string,
+        role,
       },
       onboarding: {
         completed: userRecord.onboardingCompletedAt != null,
@@ -151,7 +154,7 @@ export class DesktopService {
       },
       credits: {
         balance: credits.balance,
-        enforcementEnabled: credits.enforcementEnabled,
+        enforcementEnabled: isAdminRole ? false : credits.enforcementEnabled,
         trialExpiry: credits.trialExpiry,
       },
       referrals: {

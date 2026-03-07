@@ -690,7 +690,9 @@ export class TaskService {
     }
 
     // Credit enforcement (feature-flagged) — debit AFTER task creation so we have a real task UUID
-    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
+    // Admin/superadmin users are exempt from credit enforcement
+    const isAdminRole = userRole === "admin" || userRole === "superadmin";
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true" && !isAdminRole) {
       try {
         const debit = await this.creditService.debitForTask(
           userId,
@@ -760,7 +762,7 @@ export class TaskService {
         completedAt: null,
       });
       // Refund credit — dispatch never happened
-      await this.refundCreditIfDebited(userId, task.id);
+      await this.refundCreditIfDebited(userId, task.id, userRole);
       return task;
     }
 
@@ -838,7 +840,7 @@ export class TaskService {
           completedAt: null,
         });
         // Refund credit — dispatch failed before GH received the job
-        await this.refundCreditIfDebited(userId, task.id);
+        await this.refundCreditIfDebited(userId, task.id, userRole);
       }
     } else {
       // ── REST dispatch path (legacy, only when TASK_DISPATCH_MODE != queue) ──
@@ -891,7 +893,7 @@ export class TaskService {
           completedAt: null,
         });
         // Refund credit — REST dispatch failed before GH received the job
-        await this.refundCreditIfDebited(userId, task.id);
+        await this.refundCreditIfDebited(userId, task.id, userRole);
       }
     }
 
@@ -961,8 +963,9 @@ export class TaskService {
 
     const uniqueCount = urlEntries.filter((e) => !e.isDuplicate).length;
 
-    // 2. Preflight credit check
-    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true") {
+    // 2. Preflight credit check (admin/superadmin exempt)
+    const isAdminRole = userRole === "admin" || userRole === "superadmin";
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT === "true" && !isAdminRole) {
       const { balance } = await this.creditService.getBalance(userId);
       if (balance < uniqueCount) {
         throw AppError.paymentRequired(
@@ -1056,8 +1059,14 @@ export class TaskService {
   }
 
   /** Refund one credit if enforcement is on. Swallows errors — dispatch already failed. */
-  private async refundCreditIfDebited(userId: string, taskId: string): Promise<void> {
+  private async refundCreditIfDebited(
+    userId: string,
+    taskId: string,
+    userRole?: string,
+  ): Promise<void> {
     if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") return;
+    // Admin/superadmin were never debited, so skip refund
+    if (userRole === "admin" || userRole === "superadmin") return;
     try {
       await this.creditService.refundTask(
         userId,
