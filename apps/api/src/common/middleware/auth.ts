@@ -119,20 +119,23 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
   }
 }
 
-async function resolveCurrentRole(
+export async function resolveCurrentRole(
   request: FastifyRequest,
   userId: string,
   jwtRole: string,
 ): Promise<string> {
+  const cacheKey = `role:cache:${userId}`;
+
+  // Stage 1: Try cache read (best-effort)
   try {
-    const redis = request.server.redis;
-    const cacheKey = `role:cache:${userId}`;
-
-    // Check Redis cache first
-    const cached = await redis.get(cacheKey);
+    const cached = await request.server.redis.get(cacheKey);
     if (cached) return cached;
+  } catch {
+    // Cache read failed — fall through to DB
+  }
 
-    // Cache miss — query DB
+  // Stage 2: DB is authoritative
+  try {
     const db = request.server.db;
     const rows = await db
       .select({ role: users.role })
@@ -141,14 +144,17 @@ async function resolveCurrentRole(
       .limit(1);
 
     const dbRole = rows[0]?.role ?? jwtRole;
+
+    // Stage 3: Try cache write (best-effort)
     try {
-      await redis.set(cacheKey, dbRole, "EX", ROLE_CACHE_TTL_SECONDS);
+      await request.server.redis.set(cacheKey, dbRole, "EX", ROLE_CACHE_TTL_SECONDS);
     } catch {
       /* write-behind, non-fatal */
     }
+
     return dbRole;
   } catch {
-    // Graceful degradation — fall back to JWT role
+    // DB unreachable — fall back to JWT role as last resort
     return jwtRole;
   }
 }
