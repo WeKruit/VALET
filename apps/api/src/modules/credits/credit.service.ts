@@ -273,12 +273,13 @@ export class CreditService {
     userId: string,
     taskId: string,
     idempotencyKey: string,
+    costType: CreditCostType = "task_application",
   ): Promise<{ success: boolean; balance: number }> {
-    const result = await this.consumeCredits(userId, "task_application", {
+    const result = await this.consumeCredits(userId, costType, {
       referenceType: "task",
       referenceId: taskId,
       idempotencyKey,
-      description: "Task application credit",
+      description: CREDIT_COSTS[costType].label,
     });
 
     return { success: result.success, balance: result.balance };
@@ -289,8 +290,9 @@ export class CreditService {
     taskId: string,
     idempotencyKey: string,
     reason = "Pre-accept failure refund",
+    costType: CreditCostType = "task_application",
   ): Promise<{ balance: number }> {
-    return this.grantCredits(userId, CREDIT_COSTS.task_application.credits, "task_refund", {
+    return this.grantCredits(userId, CREDIT_COSTS[costType].credits, "task_refund", {
       description: reason,
       referenceType: "task",
       referenceId: taskId,

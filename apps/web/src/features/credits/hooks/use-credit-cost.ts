@@ -11,7 +11,7 @@ export function useCreditCost(costType: CreditCostType, quantity = 1) {
 
   const unitCost = costEntry?.credits ?? 0;
   const totalCost = unitCost * quantity;
-  const canAfford = balance >= totalCost;
+  const canAfford = !balanceLoading && !configLoading && balance >= totalCost;
   const remaining = balance - totalCost;
   const label = costEntry?.label ?? costType;
 

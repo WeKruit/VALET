@@ -101,7 +101,7 @@ export function CreditBalanceCard() {
                 className="absolute inset-0 rounded-full"
                 style={{
                   background: `conic-gradient(
-                    var(--wk-accent-amber) ${Math.min((balance / Math.max(balance, 100)) * 100, 100) * 3.6}deg,
+                    var(--wk-accent-amber) ${Math.min((balance / 500) * 100, 100) * 3.6}deg,
                     var(--wk-border-subtle) 0deg
                   )`,
                   mask: "radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px))",
