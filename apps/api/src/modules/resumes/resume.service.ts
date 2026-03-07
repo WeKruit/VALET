@@ -173,8 +173,13 @@ export class ResumeService {
     // Auto-recover stale parses: if stuck in "parsing" for > 1 min, retry automatically.
     // This handles cases where the background promise was lost (VM restart, deploy, etc.).
     // parseResume() acquires its own Redis NX lock to prevent duplicate concurrent parses.
+    //
+    // Uses Redis parse-start timestamp (not immutable createdAt) so that retried
+    // resumes aren't immediately re-detected as stale. Falls back to createdAt only
+    // if no Redis record exists (first parse, or Redis key expired after VM crash).
     if (resume.status === "parsing") {
-      const age = Date.now() - new Date(resume.createdAt).getTime();
+      const parseAge = await this.getParseAge(id);
+      const age = parseAge ?? Date.now() - new Date(resume.createdAt).getTime();
       if (age > STALE_PARSE_THRESHOLD_MS) {
         const attempts = await this.getParseAttempts(id);
         if (attempts >= MAX_PARSE_ATTEMPTS) {
@@ -349,6 +354,9 @@ export class ResumeService {
       this.logger.info({ resumeId }, "Resume parse already in progress (lock held), skipping");
       return;
     }
+
+    // Record parse start time — used by staleness checks instead of immutable createdAt.
+    await this.recordParseStart(resumeId);
 
     // Track attempt count for auto-recovery retry limiting.
     // TTL = 1 hour: if no attempts for 1 hour, counter resets naturally.
@@ -575,9 +583,36 @@ export class ResumeService {
     }
   }
 
-  // ── Parse attempt counter (Redis-backed) ────────────────────────
-  // Used to cap auto-recovery retries and prevent infinite LLM token waste
-  // on permanently-broken parses. TTL = 1 hour for natural expiry.
+  // ── Parse tracking (Redis-backed) ───────────────────────────────
+
+  // Parse-start timestamp: records when the most recent parse began.
+  // Used for staleness checks instead of immutable createdAt, so that
+  // retried resumes aren't immediately re-detected as stale.
+  private parseStartedKey(resumeId: string) {
+    return `resume-parse-started:${resumeId}`;
+  }
+
+  /** Returns ms since the current/last parse started, or null if no record. */
+  private async getParseAge(resumeId: string): Promise<number | null> {
+    const val = await this.redis.get(this.parseStartedKey(resumeId));
+    if (!val) return null;
+    return Date.now() - parseInt(val, 10);
+  }
+
+  private async recordParseStart(resumeId: string): Promise<void> {
+    // TTL = lock TTL + threshold — ensures the key outlives both the parse
+    // and the staleness window so the monitor can check it.
+    await this.redis.set(
+      this.parseStartedKey(resumeId),
+      String(Date.now()),
+      "EX",
+      PARSE_LOCK_TTL_SECS + Math.ceil(STALE_PARSE_THRESHOLD_MS / 1000),
+    );
+  }
+
+  // Parse attempt counter: caps auto-recovery retries to prevent
+  // infinite LLM token waste on permanently-broken parses.
+  // TTL = 1 hour for natural expiry.
   private parseAttemptsKey(resumeId: string) {
     return `resume-parse-attempts:${resumeId}`;
   }

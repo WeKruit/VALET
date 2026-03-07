@@ -97,8 +97,6 @@ export class StaleResumeParseMonitor {
       for (const resume of stale) {
         try {
           // Skip if a parse is already in-flight (lock held by parseResume).
-          // Without this check, retried resumes with old createdAt would be
-          // re-found as "stale" every sweep, creating an infinite retry loop.
           const lockKey = `resume-parse-lock:${resume.id}`;
           const lockHeld = await this.redis.exists(lockKey);
           if (lockHeld) {
@@ -106,12 +104,23 @@ export class StaleResumeParseMonitor {
             continue;
           }
 
+          // Check actual parse-start time from Redis (not immutable createdAt).
+          // If the parse started recently (< threshold), skip — it's not truly stale.
+          // Falls back to createdAt only when no Redis record exists (first parse
+          // after VM crash where the key expired).
+          const parseStartedKey = `resume-parse-started:${resume.id}`;
+          const parseStartedVal = await this.redis.get(parseStartedKey);
+          const ageMs = parseStartedVal
+            ? Date.now() - parseInt(parseStartedVal, 10)
+            : Date.now() - new Date(resume.createdAt).getTime();
+
+          if (ageMs <= STALE_THRESHOLD_MS) {
+            skipped++;
+            continue;
+          }
+
           this.logger.warn(
-            {
-              resumeId: resume.id,
-              userId: resume.userId,
-              ageMs: Date.now() - new Date(resume.createdAt).getTime(),
-            },
+            { resumeId: resume.id, userId: resume.userId, ageMs },
             "Recovering stale resume parse",
           );
 

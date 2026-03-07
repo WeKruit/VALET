@@ -56,8 +56,11 @@ export class ResumeRepository {
   }
 
   /**
-   * Find resumes stuck in "parsing" status for longer than the given threshold.
-   * Used by the stale-parse monitor to auto-recover orphaned parses after VM restarts.
+   * Find resumes in "parsing" status created before the given threshold.
+   *
+   * This is a coarse DB-level candidate filter using immutable createdAt.
+   * Callers must perform a second check using the Redis parse-start timestamp
+   * to determine actual staleness (since createdAt doesn't update on retries).
    */
   async findStaleParsingResumes(thresholdMs: number) {
     const cutoff = new Date(Date.now() - thresholdMs);
