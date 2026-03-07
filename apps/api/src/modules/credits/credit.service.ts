@@ -3,34 +3,34 @@ import { users, creditLedger, type Database } from "@valet/db";
 import type { CreditCostType } from "@valet/shared/schemas";
 
 // ─── Credit cost configuration ───
-// Maps cost types to their credit cost, label, and description.
-// This is the single source of truth for all credit pricing.
+// Credits derived from platform costs via: credits = ceil(330 * sqrt(baseCost))
+// Base costs: task_application=$0.01, batch=$0.008, analysis=$0.08, resume=$0.03, cover_letter=$0.02
 const CREDIT_COSTS: Record<
   CreditCostType,
   { credits: number; label: string; description: string }
 > = {
   task_application: {
-    credits: 1,
+    credits: 35,
     label: "Job Application",
     description: "Submit a single job application via automation",
   },
   batch_application: {
-    credits: 1,
+    credits: 25,
     label: "Batch Application",
     description: "Each application within a batch run",
   },
   premium_analysis: {
-    credits: 5,
+    credits: 100,
     label: "Premium Job Analysis",
     description: "Deep AI analysis of job-fit scoring and recommendations",
   },
   resume_optimization: {
-    credits: 3,
+    credits: 50,
     label: "Resume Optimization",
     description: "AI-powered resume tailoring for a specific job",
   },
   cover_letter: {
-    credits: 2,
+    credits: 40,
     label: "Cover Letter Generation",
     description: "AI-generated cover letter customized to a job posting",
   },
@@ -119,13 +119,16 @@ export class CreditService {
       referenceId?: string;
       idempotencyKey?: string;
       trialExpiresAt?: Date;
+      tx?: Pick<Database, "execute">;
     } = {},
   ): Promise<{ balance: number }> {
+    const db = opts.tx ?? this.db;
+
     if (opts.idempotencyKey) {
       // Single-statement atomic grant with ON CONFLICT for idempotency.
       // If the idempotency_key already exists, the INSERT is skipped (no row returned),
       // and we fall through to read the current balance.
-      const result = await this.db.execute(sql`
+      const result = await db.execute(sql`
         WITH updated AS (
           UPDATE users
           SET credit_balance = credit_balance + ${amount},
@@ -152,7 +155,7 @@ export class CreditService {
     }
 
     // No idempotency key — simple grant (e.g. admin manual adjustment)
-    const result = await this.db.execute(sql`
+    const result = await db.execute(sql`
       WITH updated AS (
         UPDATE users
         SET credit_balance = credit_balance + ${amount},
@@ -190,7 +193,13 @@ export class CreditService {
   ): Promise<{ success: boolean; balance: number; creditsUsed: number; message?: string }> {
     // Feature flag check
     if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") {
-      return { success: true, balance: -1, creditsUsed: 0, message: "Enforcement disabled" };
+      const bal = await this.getBalance(userId);
+      return {
+        success: true,
+        balance: bal.balance,
+        creditsUsed: 0,
+        message: "Enforcement disabled",
+      };
     }
 
     const creditsToDebit = opts.costAmount ?? this.getCostForType(costType);
@@ -264,7 +273,8 @@ export class CreditService {
   ): Promise<{ success: boolean; balance: number }> {
     // Feature flag check
     if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") {
-      return { success: true, balance: -1 };
+      const bal = await this.getBalance(userId);
+      return { success: true, balance: bal.balance };
     }
 
     // Idempotency check
@@ -278,22 +288,23 @@ export class CreditService {
     }
 
     // Atomic debit with balance check (row-level lock via FOR UPDATE)
-    // DB/infra errors propagate naturally — only "balance was 0" returns success:false
+    // DB/infra errors propagate naturally — only insufficient balance returns success:false
+    const debitAmount = CREDIT_COSTS.task_application.credits;
     const result = await this.db.execute(sql`
       WITH locked AS (
         SELECT id, credit_balance FROM users WHERE id = ${userId}::uuid FOR UPDATE
       ),
       check_balance AS (
-        SELECT id, credit_balance FROM locked WHERE credit_balance > 0
+        SELECT id, credit_balance FROM locked WHERE credit_balance >= ${debitAmount}
       ),
       updated AS (
         UPDATE users
-        SET credit_balance = credit_balance - 1, updated_at = NOW()
+        SET credit_balance = credit_balance - ${debitAmount}, updated_at = NOW()
         WHERE id = (SELECT id FROM check_balance)
         RETURNING credit_balance
       )
       INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
-      SELECT ${userId}::uuid, -1, credit_balance, 'task_debit', 'Task application credit', 'task', ${taskId}, ${idempotencyKey}
+      SELECT ${userId}::uuid, ${-debitAmount}, credit_balance, 'task_debit', 'Task application credit', 'task', ${taskId}, ${idempotencyKey}
       FROM updated
       RETURNING balance_after
     `);
@@ -312,7 +323,7 @@ export class CreditService {
     idempotencyKey: string,
     reason = "Pre-accept failure refund",
   ): Promise<{ balance: number }> {
-    return this.grantCredits(userId, 1, "task_refund", {
+    return this.grantCredits(userId, CREDIT_COSTS.task_application.credits, "task_refund", {
       description: reason,
       referenceType: "task",
       referenceId: taskId,

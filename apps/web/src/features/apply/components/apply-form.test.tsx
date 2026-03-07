@@ -71,6 +71,48 @@ vi.mock("@/lib/api-client", () => ({
           isLoading: false,
         }),
       },
+      getCostConfig: {
+        useQuery: () => ({
+          data: {
+            status: 200,
+            body: {
+              costs: [
+                {
+                  costType: "task_application",
+                  credits: 35,
+                  label: "Job Application",
+                  description: "Submit a single job application",
+                },
+                {
+                  costType: "batch_application",
+                  credits: 25,
+                  label: "Batch Application",
+                  description: "Each application within a batch",
+                },
+                {
+                  costType: "premium_analysis",
+                  credits: 100,
+                  label: "Premium Job Analysis",
+                  description: "Deep AI analysis",
+                },
+                {
+                  costType: "resume_optimization",
+                  credits: 50,
+                  label: "Resume Optimization",
+                  description: "AI-powered resume tailoring",
+                },
+                {
+                  costType: "cover_letter",
+                  credits: 40,
+                  label: "Cover Letter Generation",
+                  description: "AI-generated cover letter",
+                },
+              ],
+            },
+          },
+          isLoading: false,
+        }),
+      },
     },
     desktop: {
       createHandoff: {

@@ -14,6 +14,7 @@ import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useCreditBalance } from "../hooks/use-credit-balance";
+import { CreditCostIndicator } from "@/features/credits/components/credit-cost-indicator";
 import { useBatchQueueStore } from "../stores/batch-queue.store";
 import { launchProtocolOrFallback } from "../utils/protocol-launch";
 
@@ -128,13 +129,12 @@ export function BatchConfirmDialog({
           <DialogTitle>{isAdmin ? "Confirm Batch Submission" : "Send to Desktop App"}</DialogTitle>
           <DialogDescription>
             {isAdmin ? (
-              <>
-                {count} application{count > 1 ? "s" : ""} will be submitted. This uses{" "}
-                <span className="font-medium text-[var(--wk-text-primary)]">
-                  {count} credit{count > 1 ? "s" : ""}
+              <span className="flex flex-col gap-1.5">
+                <span>
+                  {count} application{count > 1 ? "s" : ""} will be submitted.
                 </span>
-                . Balance: {balance}.
-              </>
+                <CreditCostIndicator costType="batch_application" quantity={count} showBalance />
+              </span>
             ) : (
               <>
                 {count} URL{count > 1 ? "s" : ""} will be sent to GhostHands Desktop for processing.

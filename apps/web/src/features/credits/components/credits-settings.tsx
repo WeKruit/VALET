@@ -10,10 +10,22 @@ import { Button } from "@valet/ui/components/button";
 import { Badge } from "@valet/ui/components/badge";
 import { Input } from "@valet/ui/components/input";
 import { Skeleton } from "@valet/ui/components/skeleton";
-import { Coins, Copy, Check, Share2, Mail, Users, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Coins,
+  Copy,
+  Check,
+  Share2,
+  Mail,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Gift,
+  UserPlus,
+  Clock,
+  CheckCircle,
+  Award,
+} from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { useCreditBalance } from "@/features/apply/hooks/use-credit-balance";
 import { useCreditLedger } from "../hooks/use-credit-ledger";
 import { useReferralStats } from "../hooks/use-referral-stats";
 import {
@@ -24,14 +36,11 @@ import {
   shareViaEmail,
   sendEmailInvite,
 } from "../utils/share-referral";
+import { getLedgerIcon, getLedgerBadgeVariant, formatRelativeTime } from "../utils/format-ledger";
+import { CreditBalanceCard } from "./credit-balance-card";
+import { CreditPricingCard } from "./credit-pricing-card";
 
 export function CreditsSettings() {
-  const {
-    balance,
-    trialExpiry,
-    enforcementEnabled,
-    isLoading: balanceLoading,
-  } = useCreditBalance();
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const ledger = useCreditLedger(page, pageSize);
@@ -39,38 +48,13 @@ export function CreditsSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Section A — Credit Balance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Coins className="h-5 w-5" />
-            Credit Balance
-          </CardTitle>
-          <CardDescription>Your current credit balance and account status</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {balanceLoading ? (
-            <Skeleton className="h-10 w-32" />
-          ) : (
-            <>
-              <div className="flex items-center gap-4">
-                <span className="text-4xl font-bold text-[var(--wk-text-primary)]">{balance}</span>
-                <span className="text-sm text-[var(--wk-text-secondary)]">credits</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                {trialExpiry && (
-                  <span className="text-sm text-[var(--wk-text-secondary)]">
-                    Trial expires {format(new Date(trialExpiry), "MMM d, yyyy")}
-                  </span>
-                )}
-                {enforcementEnabled && <Badge variant="default">Enforcement active</Badge>}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+      {/* Section A — Credit Balance Card (with gauge + activity) */}
+      <CreditBalanceCard />
 
-      {/* Section B — Transaction History */}
+      {/* Section B — Credit Pricing */}
+      <CreditPricingCard />
+
+      {/* Section C — Transaction History */}
       <Card>
         <CardHeader>
           <CardTitle>Transaction History</CardTitle>
@@ -132,31 +116,50 @@ export function CreditsSettings() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--wk-border-subtle)]">
-                    {ledger.entries.map((entry) => (
-                      <tr
-                        key={entry.id}
-                        className="group hover:bg-[var(--wk-surface-raised)] transition-colors"
-                      >
-                        <td className="py-3 pr-4 text-[var(--wk-text-secondary)]">
-                          {format(new Date(entry.createdAt), "MMM d, yyyy")}
-                        </td>
-                        <td className="py-3 pr-4 text-[var(--wk-text-primary)]">
-                          {entry.description ?? entry.reason}
-                        </td>
-                        <td
-                          className={`py-3 pr-4 text-right font-medium ${
-                            entry.delta > 0
-                              ? "text-[var(--wk-status-success)]"
-                              : "text-[var(--wk-text-secondary)]"
+                    {ledger.entries.map((entry) => {
+                      const Icon = getLedgerIcon(entry.reason);
+                      const badgeVariant = getLedgerBadgeVariant(entry.reason);
+                      const isPositive = entry.delta > 0;
+                      return (
+                        <tr
+                          key={entry.id}
+                          className={`group transition-colors ${
+                            isPositive
+                              ? "hover:bg-[color-mix(in_srgb,var(--wk-status-success)_4%,transparent)]"
+                              : "hover:bg-[var(--wk-surface-raised)]"
                           }`}
                         >
-                          {entry.delta > 0 ? `+${entry.delta}` : entry.delta}
-                        </td>
-                        <td className="py-3 text-right text-[var(--wk-text-secondary)]">
-                          {entry.balanceAfter}
-                        </td>
-                      </tr>
-                    ))}
+                          <td className="py-3 pr-4 text-[var(--wk-text-tertiary)]">
+                            <span title={new Date(entry.createdAt).toLocaleString()}>
+                              {formatRelativeTime(entry.createdAt)}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <span className="flex items-center gap-2">
+                              <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--wk-text-tertiary)]" />
+                              <span className="text-[var(--wk-text-primary)]">
+                                {entry.description ?? entry.reason}
+                              </span>
+                              <Badge variant={badgeVariant} className="text-[10px] px-1.5 py-0">
+                                {entry.reason.replace(/_/g, " ")}
+                              </Badge>
+                            </span>
+                          </td>
+                          <td
+                            className={`py-3 pr-4 text-right font-medium ${
+                              isPositive
+                                ? "text-[var(--wk-status-success)]"
+                                : "text-[var(--wk-text-secondary)]"
+                            }`}
+                          >
+                            {isPositive ? `+${entry.delta}` : entry.delta}
+                          </td>
+                          <td className="py-3 text-right text-[var(--wk-text-secondary)]">
+                            {entry.balanceAfter}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -188,7 +191,7 @@ export function CreditsSettings() {
         </CardContent>
       </Card>
 
-      {/* Section C — Referrals (feature-flagged) */}
+      {/* Section D — Referrals (feature-flagged) */}
       {import.meta.env.VITE_FEATURE_REFERRALS === "true" && <ReferralSection />}
     </div>
   );
@@ -204,6 +207,7 @@ function ReferralSection() {
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   const referralLink = code ? buildReferralLink(code) : "";
+  const creditsEarned = rewardedCount * 200;
 
   function handleCopyLink() {
     if (!referralLink) return;
@@ -285,6 +289,21 @@ function ReferralSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Hero banner */}
+        <div className="flex items-center gap-4 rounded-[var(--wk-radius-lg)] bg-[color-mix(in_srgb,var(--wk-accent-amber)_8%,transparent)] border border-[color-mix(in_srgb,var(--wk-accent-amber)_20%,transparent)] p-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--wk-accent-amber)_16%,transparent)]">
+            <Gift className="h-6 w-6 text-[var(--wk-accent-amber)]" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-[var(--wk-text-primary)]">
+              Give 200, get 200
+            </p>
+            <p className="text-sm text-[var(--wk-text-secondary)]">
+              Both you and your friend earn 200 credits when they complete their first application.
+            </p>
+          </div>
+        </div>
+
         {/* Referral code */}
         <div>
           <p className="mb-2 text-sm font-medium text-[var(--wk-text-primary)]">
@@ -354,23 +373,42 @@ function ReferralSection() {
           </div>
         </div>
 
-        {/* Stats grid */}
-        <div className="grid grid-cols-4 gap-4 text-center">
-          <div>
-            <p className="text-2xl font-bold text-[var(--wk-text-primary)]">{totalReferred}</p>
-            <p className="text-xs text-[var(--wk-text-secondary)]">Referred</p>
+        {/* Stats grid with icons */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)] p-3">
+            <UserPlus className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
+            <div>
+              <p className="text-xl font-bold text-[var(--wk-text-primary)]">{totalReferred}</p>
+              <p className="text-xs text-[var(--wk-text-secondary)]">Referred</p>
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-bold text-[var(--wk-text-primary)]">{pendingCount}</p>
-            <p className="text-xs text-[var(--wk-text-secondary)]">Pending</p>
+          <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)] p-3">
+            <Clock className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
+            <div>
+              <p className="text-xl font-bold text-[var(--wk-text-primary)]">{pendingCount}</p>
+              <p className="text-xs text-[var(--wk-text-secondary)]">Pending</p>
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-bold text-[var(--wk-text-primary)]">{activatedCount}</p>
-            <p className="text-xs text-[var(--wk-text-secondary)]">Activated</p>
+          <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)] p-3">
+            <CheckCircle className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
+            <div>
+              <p className="text-xl font-bold text-[var(--wk-text-primary)]">{activatedCount}</p>
+              <p className="text-xs text-[var(--wk-text-secondary)]">Activated</p>
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-bold text-[var(--wk-text-primary)]">{rewardedCount}</p>
-            <p className="text-xs text-[var(--wk-text-secondary)]">Rewarded</p>
+          <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] bg-[var(--wk-surface-page)] p-3">
+            <Award className="h-4 w-4 text-[var(--wk-text-tertiary)]" />
+            <div>
+              <p className="text-xl font-bold text-[var(--wk-text-primary)]">{rewardedCount}</p>
+              <p className="text-xs text-[var(--wk-text-secondary)]">Rewarded</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] border border-[var(--wk-border-subtle)] bg-[color-mix(in_srgb,var(--wk-status-success)_6%,transparent)] p-3">
+            <Coins className="h-4 w-4 text-[var(--wk-status-success)]" />
+            <div>
+              <p className="text-xl font-bold text-[var(--wk-status-success)]">{creditsEarned}</p>
+              <p className="text-xs text-[var(--wk-text-secondary)]">Credits earned</p>
+            </div>
           </div>
         </div>
       </CardContent>
