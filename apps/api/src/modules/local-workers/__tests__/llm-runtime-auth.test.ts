@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SignJWT } from "jose";
-import { parseLocalWorkerRuntimeToken, verifyRuntimeAccessToken } from "../llm-runtime-auth.js";
+import {
+  ManagedRuntimeAuthError,
+  parseLocalWorkerRuntimeToken,
+  verifyRuntimeAccessToken,
+} from "../llm-runtime-auth.js";
 
 function makeRuntimeToken(payload: Record<string, unknown>): string {
   return `lwrt_v1_${Buffer.from(JSON.stringify(payload)).toString("base64url")}`;
@@ -49,5 +53,11 @@ describe("llm-runtime-auth", () => {
       userId: "user-123",
       email: "ada@example.com",
     });
+  });
+
+  it("classifies invalid access tokens as managed runtime auth failures", async () => {
+    await expect(verifyRuntimeAccessToken("not-a-jwt")).rejects.toBeInstanceOf(
+      ManagedRuntimeAuthError,
+    );
   });
 });

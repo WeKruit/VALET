@@ -2,6 +2,13 @@ import * as jose from "jose";
 
 const RUNTIME_TOKEN_PREFIX = "lwrt_v1_";
 
+export class ManagedRuntimeAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ManagedRuntimeAuthError";
+  }
+}
+
 export interface LocalWorkerRuntimeTokenPayload {
   kind: "desktop_local_worker";
   accessToken: string;
@@ -11,7 +18,7 @@ export interface LocalWorkerRuntimeTokenPayload {
 
 export function parseLocalWorkerRuntimeToken(token: string): LocalWorkerRuntimeTokenPayload {
   if (!token.startsWith(RUNTIME_TOKEN_PREFIX)) {
-    throw new Error("Missing managed runtime token prefix");
+    throw new ManagedRuntimeAuthError("Missing managed runtime token prefix");
   }
 
   const encoded = token.slice(RUNTIME_TOKEN_PREFIX.length);
@@ -19,7 +26,7 @@ export function parseLocalWorkerRuntimeToken(token: string): LocalWorkerRuntimeT
   try {
     payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
   } catch {
-    throw new Error("Managed runtime token is malformed");
+    throw new ManagedRuntimeAuthError("Managed runtime token is malformed");
   }
 
   if (
@@ -30,7 +37,7 @@ export function parseLocalWorkerRuntimeToken(token: string): LocalWorkerRuntimeT
     typeof (payload as Record<string, unknown>).sessionToken !== "string" ||
     typeof (payload as Record<string, unknown>).leaseId !== "string"
   ) {
-    throw new Error("Managed runtime token payload is invalid");
+    throw new ManagedRuntimeAuthError("Managed runtime token payload is invalid");
   }
 
   return payload as LocalWorkerRuntimeTokenPayload;
@@ -45,12 +52,19 @@ export async function verifyRuntimeAccessToken(
   }
 
   const secret = new TextEncoder().encode(jwtSecret);
-  const { payload } = await jose.jwtVerify(accessToken, secret, {
-    algorithms: ["HS256"],
-  });
+  let payload: jose.JWTPayload;
+  try {
+    ({ payload } = await jose.jwtVerify(accessToken, secret, {
+      algorithms: ["HS256"],
+    }));
+  } catch {
+    throw new ManagedRuntimeAuthError("Invalid or expired managed runtime access token");
+  }
 
   if (!payload.sub || typeof payload.email !== "string") {
-    throw new Error("Managed runtime token access JWT is missing required claims");
+    throw new ManagedRuntimeAuthError(
+      "Managed runtime token access JWT is missing required claims",
+    );
   }
 
   return { userId: payload.sub, email: payload.email };

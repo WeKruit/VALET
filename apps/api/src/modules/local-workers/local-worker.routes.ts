@@ -2,7 +2,11 @@ import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { getAnthropicProxyConfig } from "./anthropic-proxy-config.js";
-import { parseLocalWorkerRuntimeToken, verifyRuntimeAccessToken } from "./llm-runtime-auth.js";
+import {
+  ManagedRuntimeAuthError,
+  parseLocalWorkerRuntimeToken,
+  verifyRuntimeAccessToken,
+} from "./llm-runtime-auth.js";
 import { LocalWorkerBrokerError } from "./local-worker-broker.service.js";
 
 const nonEmptyString = z.string().trim().min(1);
@@ -70,11 +74,21 @@ const cancelBodySchema = z.object({
   leaseId: nonEmptyString,
 });
 
-const HOP_BY_HOP_HEADERS = new Set([
-  "authorization",
+const REQUEST_TIMEOUT_MS = 30_000;
+
+const ALLOWED_UPSTREAM_HEADERS = new Set([
+  "accept",
+  "anthropic-beta",
+  "anthropic-version",
+  "content-type",
+]);
+
+const BLOCKED_RESPONSE_HEADERS = new Set([
   "connection",
+  "content-encoding",
   "content-length",
   "host",
+  "set-cookie",
   "transfer-encoding",
   "x-api-key",
   "x-local-worker-session",
@@ -94,7 +108,7 @@ function buildAnthropicUpstreamHeaders(request: FastifyRequest, providerApiKey: 
   const headers = new Headers();
 
   for (const [key, value] of Object.entries(request.headers)) {
-    if (!value || HOP_BY_HOP_HEADERS.has(key)) continue;
+    if (!value || !ALLOWED_UPSTREAM_HEADERS.has(key)) continue;
     if (Array.isArray(value)) {
       headers.set(key, value.join(", "));
     } else {
@@ -112,7 +126,7 @@ function buildAnthropicUpstreamHeaders(request: FastifyRequest, providerApiKey: 
 
 function copyResponseHeaders(reply: FastifyReply, response: Response): void {
   for (const [key, value] of response.headers.entries()) {
-    if (HOP_BY_HOP_HEADERS.has(key)) continue;
+    if (BLOCKED_RESPONSE_HEADERS.has(key)) continue;
     reply.header(key, value);
   }
   reply.header("X-Accel-Buffering", "no");
@@ -166,24 +180,28 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
         );
 
         const config = await getAnthropicProxyConfig(request.log);
-        const requestedModel =
-          isObject(request.body) && typeof request.body.model === "string"
-            ? request.body.model
-            : null;
+        const body = isObject(request.body) ? { ...request.body } : request.body;
+        const requestedModel = isObject(body) && typeof body.model === "string" ? body.model : null;
         if (requestedModel && !config.allowedModels.includes(requestedModel)) {
           return reply.status(400).send({
             error: `Model "${requestedModel}" is not allowed for managed Desktop inference`,
           });
         }
+        if (isObject(body) && !requestedModel) {
+          body.model = config.defaultModel;
+        }
 
         const controller = new AbortController();
         request.raw.on("close", () => controller.abort());
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
         const upstream = await fetch(`${config.baseUrl.replace(/\/+$/, "")}/v1/messages`, {
           method: "POST",
           headers: buildAnthropicUpstreamHeaders(request, config.apiKey),
-          body: request.body == null ? undefined : JSON.stringify(request.body),
+          body: body == null ? undefined : JSON.stringify(body),
           signal: controller.signal,
+        }).finally(() => {
+          clearTimeout(timeout);
         });
 
         reply.code(upstream.status);
@@ -195,14 +213,11 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
 
         return reply.send(Readable.fromWeb(upstream.body as never));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (
-          message.includes("Managed runtime token") ||
-          message.includes("managed runtime token") ||
-          message.includes("JWT") ||
-          message.includes("JOSE")
-        ) {
-          return reply.status(401).send({ error: message });
+        if (error instanceof ManagedRuntimeAuthError) {
+          return reply.status(401).send({ error: error.message });
+        }
+        if (error instanceof Error && error.name === "AbortError") {
+          return reply.status(504).send({ error: "Managed Anthropic upstream timed out" });
         }
         return sendBrokerError(reply, error, "Failed to proxy managed Anthropic request");
       }
