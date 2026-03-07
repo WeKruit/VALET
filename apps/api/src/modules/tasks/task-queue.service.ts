@@ -90,7 +90,7 @@ export class TaskQueueService {
    */
   async enqueueApplyJob(
     payload: GhApplyJobPayload,
-    options?: { targetWorkerId?: string },
+    options?: { targetWorkerId?: string; singletonKey?: string | null },
   ): Promise<string | null> {
     const boss = this.pgBossService.instance;
     if (!boss) {
@@ -110,11 +110,12 @@ export class TaskQueueService {
     // Fire-and-forget: ensure at least 1 GH worker is awake
     this.wakeWorkers();
 
+    const singletonKey = options?.singletonKey ?? payload.valetTaskId;
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves
       expireInSeconds: 14400, // EC10: 4h expiry (was 30min; pg-boss cap varies by version)
       // EC5: Prevent duplicate dispatch — keyed on valetTaskId for true dedup
-      ...(payload.valetTaskId ? { singletonKey: payload.valetTaskId } : {}),
+      ...(singletonKey ? { singletonKey } : {}),
     });
 
     this.logger.info(
@@ -131,7 +132,7 @@ export class TaskQueueService {
    */
   async enqueueGenericTask(
     payload: GhGenericTaskPayload,
-    options?: { targetWorkerId?: string },
+    options?: { targetWorkerId?: string; singletonKey?: string | null },
   ): Promise<string | null> {
     const boss = this.pgBossService.instance;
     if (!boss) {
@@ -150,11 +151,12 @@ export class TaskQueueService {
     // Fire-and-forget: ensure at least 1 GH worker is awake
     this.wakeWorkers();
 
+    const singletonKey = options?.singletonKey ?? payload.valetTaskId;
     const jobId = await boss.send(queueName, payload, {
       retryLimit: 0, // EC10: No auto-retry — we handle retries ourselves
       expireInSeconds: 14400, // EC10: 4h expiry (was 30min; pg-boss cap varies by version)
       // EC5: Prevent duplicate dispatch — keyed on valetTaskId for true dedup
-      ...(payload.valetTaskId ? { singletonKey: payload.valetTaskId } : {}),
+      ...(singletonKey ? { singletonKey } : {}),
     });
 
     this.logger.info(

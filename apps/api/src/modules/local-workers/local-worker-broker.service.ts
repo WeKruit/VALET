@@ -10,6 +10,12 @@ import {
   type GhApplyJobPayload,
   type TaskQueueService,
 } from "../tasks/task-queue.service.js";
+import {
+  fromLocalProfileToGhUserData,
+  LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
+  type LocalWorkerProfileV1,
+  parseLocalWorkerProfileFromInputData,
+} from "./local-worker-contracts.js";
 
 const SESSION_TTL_MS = 65 * 60 * 1000;
 const LEASE_TTL_MS = 4 * 60 * 60 * 1000;
@@ -204,6 +210,7 @@ export class LocalWorkerBrokerService {
   private async requireSessionByToken(
     sessionToken: string,
     desktopWorkerId?: string,
+    expectedUserId?: string,
   ): Promise<WorkerSession> {
     const session = await this.readSessionByToken(sessionToken);
     if (!session) {
@@ -211,6 +218,9 @@ export class LocalWorkerBrokerService {
     }
     if (desktopWorkerId && session.desktopWorkerId !== desktopWorkerId) {
       throw new LocalWorkerBrokerError(403, "WRONG_WORKER", "Worker session does not match worker");
+    }
+    if (expectedUserId && session.userId !== expectedUserId) {
+      throw new LocalWorkerBrokerError(403, "WRONG_USER", "Worker session does not match user");
     }
     return session;
   }
@@ -282,8 +292,9 @@ export class LocalWorkerBrokerService {
     sessionToken: string,
     jobId: string,
     leaseId: string,
+    expectedUserId?: string,
   ): Promise<{ session: WorkerSession; lease: ActiveLease }> {
-    const session = await this.requireSessionByToken(sessionToken);
+    const session = await this.requireSessionByToken(sessionToken, undefined, expectedUserId);
     const lease = await this.readLease(jobId);
     if (!lease) {
       throw new LocalWorkerBrokerError(409, "LEASE_NOT_FOUND", "Active lease not found for job");
@@ -389,14 +400,21 @@ export class LocalWorkerBrokerService {
     const requestId = randomUUID();
     const callbackUrl = this.buildCallbackUrl();
     const uiLabel = input.uiLabel ?? "smart_apply";
+    const normalizedProfile = parseLocalWorkerProfileFromInputData({
+      local_worker_profile: input.profile,
+    }).profile;
+    const ghUserData = fromLocalProfileToGhUserData(normalizedProfile);
 
     const ghJob = await this.ghJobRepo.createJob({
       userId: input.userId,
       jobType: "apply",
       targetUrl: input.targetUrl,
       inputData: {
-        user_data: input.profile,
+        user_data: ghUserData,
+        local_worker_profile: normalizedProfile,
+        profile_schema_version: LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
         desktop_resume_path: input.resumePath ?? null,
+        desktop_resume_id: null,
         ui_mode_label: uiLabel,
       },
       priority: 5,
@@ -426,6 +444,37 @@ export class LocalWorkerBrokerService {
       },
       { targetWorkerId: input.desktopWorkerId },
     );
+
+    if (!pgBossJobId) {
+      await this.ghJobRepo.updateStatus(ghJob.id, {
+        status: "failed",
+        completedAt: new Date(),
+        errorCode: "GH_QUEUE_UNAVAILABLE",
+        errorDetails: {
+          message: "pg-boss did not accept the desktop local-worker job (returned null)",
+        },
+        statusMessage: "Queue rejected desktop local-worker job",
+      });
+
+      await this.ghJobEventRepo.insertEvent({
+        jobId: ghJob.id,
+        eventType: "job_failed",
+        fromStatus: ghJob.status,
+        toStatus: "failed",
+        message: "Queue rejected desktop local-worker job",
+        actor: "valet",
+        metadata: {
+          code: "GH_QUEUE_UNAVAILABLE",
+          desktopWorkerId: input.desktopWorkerId,
+        },
+      });
+
+      throw new LocalWorkerBrokerError(
+        503,
+        "QUEUE_ENQUEUE_FAILED",
+        "Failed to enqueue local worker job",
+      );
+    }
 
     await this.ghJobRepo.updateStatus(ghJob.id, {
       status: "queued",
@@ -463,12 +512,16 @@ export class LocalWorkerBrokerService {
     };
   }
 
-  async claim(input: { desktopWorkerId: string; sessionToken: string }): Promise<{
+  async claim(input: { desktopWorkerId: string; sessionToken: string; userId: string }): Promise<{
     leaseId: string | null;
     job: Record<string, unknown> | null;
   }> {
     this.ensureEnabled();
-    const session = await this.requireSessionByToken(input.sessionToken, input.desktopWorkerId);
+    const session = await this.requireSessionByToken(
+      input.sessionToken,
+      input.desktopWorkerId,
+      input.userId,
+    );
     await this.refreshSession(session);
 
     const claimLockToken = await this.acquireClaimLock(session.desktopWorkerId);
@@ -530,6 +583,83 @@ export class LocalWorkerBrokerService {
         return { leaseId: null, job: null };
       }
 
+      let inputData = ghJob.inputData ?? {};
+      let normalizedProfile: LocalWorkerProfileV1;
+      let profileSource: "canonical" | "legacy_user_data" = "canonical";
+      try {
+        const resolvedProfile = parseLocalWorkerProfileFromInputData(inputData);
+        normalizedProfile = resolvedProfile.profile;
+        profileSource = resolvedProfile.source;
+      } catch (profileErr) {
+        const message =
+          profileErr instanceof Error ? profileErr.message : "Failed to normalize worker profile";
+        this.logger.error(
+          {
+            err: profileErr,
+            jobId: ghJob.id,
+            desktopWorkerId: session.desktopWorkerId,
+          },
+          "Rejecting local-worker claim due to invalid profile payload",
+        );
+        await this.completeFetchedJob(boss, queueName, fetchedJob.id);
+        const failedJob = await this.ghJobRepo.updateStatusIfNotTerminal(ghJob.id, {
+          status: "failed",
+          completedAt: new Date(),
+          errorCode: "LOCAL_WORKER_PROFILE_INVALID",
+          errorDetails: {
+            message,
+          },
+          statusMessage: "Invalid local worker profile payload",
+        });
+        if (failedJob) {
+          await this.ghJobEventRepo.insertEvent({
+            jobId: ghJob.id,
+            eventType: "job_failed",
+            fromStatus: ghJob.status,
+            toStatus: "failed",
+            message: "Invalid local worker profile payload",
+            actor: "valet",
+            metadata: {
+              code: "LOCAL_WORKER_PROFILE_INVALID",
+              message,
+            },
+          });
+        } else {
+          this.logger.warn(
+            { jobId: ghJob.id, currentStatus: ghJob.status },
+            "Skipping invalid-profile failure transition because job is already terminal",
+          );
+        }
+        return { leaseId: null, job: null };
+      }
+
+      if (profileSource === "legacy_user_data") {
+        this.logger.warn(
+          {
+            jobId: ghJob.id,
+            desktopWorkerId: session.desktopWorkerId,
+          },
+          "Local-worker claim normalized legacy snake_case profile payload",
+        );
+        const canonicalizedInputData = {
+          ...inputData,
+          local_worker_profile: normalizedProfile,
+          profile_schema_version: LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
+        };
+        try {
+          await this.ghJobRepo.updateInputData(ghJob.id, canonicalizedInputData);
+          inputData = canonicalizedInputData;
+        } catch (writeErr) {
+          this.logger.warn(
+            {
+              err: writeErr,
+              jobId: ghJob.id,
+            },
+            "Failed to persist canonical local-worker profile backfill",
+          );
+        }
+      }
+
       const leaseId = randomUUID();
       const lease: ActiveLease = {
         jobId: ghJob.id,
@@ -556,7 +686,7 @@ export class LocalWorkerBrokerService {
         // leaves the pg-boss job in a failed state. complete() removes it cleanly.
         await boss.complete(queueName, fetchedJob.id);
         // Also mark the GH job row as failed so it doesn't stay stuck in "queued"
-        await this.ghJobRepo.updateStatus(ghJob.id, {
+        const failedJob = await this.ghJobRepo.updateStatusIfNotTerminal(ghJob.id, {
           status: "failed",
           completedAt: new Date(),
           errorCode: "LEASE_WRITE_FAILED",
@@ -566,11 +696,17 @@ export class LocalWorkerBrokerService {
           },
           statusMessage: "Lease write failed after dispatch",
         });
+        if (!failedJob) {
+          this.logger.warn(
+            { jobId: ghJob.id, currentStatus: ghJob.status },
+            "Skipping lease-write failure transition because job is already terminal",
+          );
+        }
         throw leaseErr;
       }
 
       try {
-        await this.ghJobRepo.updateStatus(ghJob.id, {
+        const claimedJob = await this.ghJobRepo.updateStatusIfNotTerminal(ghJob.id, {
           status: "running",
           startedAt: ghJob.startedAt ?? new Date(),
           lastHeartbeat: new Date(),
@@ -582,6 +718,15 @@ export class LocalWorkerBrokerService {
             active_lease_id: leaseId,
           },
         });
+        if (!claimedJob) {
+          this.logger.warn(
+            { jobId: ghJob.id, desktopWorkerId: session.desktopWorkerId },
+            "Claim aborted because job became terminal before running transition",
+          );
+          await boss.complete(queueName, fetchedJob.id);
+          await this.deleteLease(lease);
+          return { leaseId: null, job: null };
+        }
 
         await this.ghJobEventRepo.insertEvent({
           jobId: ghJob.id,
@@ -608,17 +753,32 @@ export class LocalWorkerBrokerService {
         );
         await this.deleteLease(lease);
         await boss.fail(queueName, fetchedJob.id, { error: errMsg });
-        await this.ghJobRepo.updateStatus(ghJob.id, {
+        const failedJob = await this.ghJobRepo.updateStatusIfNotTerminal(ghJob.id, {
           status: "failed",
           completedAt: new Date(),
           errorCode: "CLAIM_ROLLBACK",
           errorDetails: { message: errMsg },
           statusMessage: `Claim rollback: ${errMsg}`,
         });
+        if (!failedJob) {
+          this.logger.warn(
+            { jobId: ghJob.id, currentStatus: ghJob.status },
+            "Skipping claim rollback failure transition because job is already terminal",
+          );
+        }
         throw postLeaseErr;
       }
 
-      const inputData = ghJob.inputData ?? {};
+      const resumePath =
+        typeof inputData.desktop_resume_path === "string"
+          ? inputData.desktop_resume_path
+          : undefined;
+      const resumeId =
+        typeof inputData.desktop_resume_id === "string"
+          ? inputData.desktop_resume_id
+          : typeof inputData.resume_id === "string"
+            ? inputData.resume_id
+            : undefined;
       return {
         leaseId,
         job: {
@@ -627,8 +787,10 @@ export class LocalWorkerBrokerService {
           targetUrl: ghJob.targetUrl,
           jobType: ghJob.jobType ?? "apply",
           executionMode: ghJob.executionMode ?? "mastra",
-          profile: (inputData.user_data as Record<string, unknown>) ?? {},
-          resumePath: (inputData.desktop_resume_path as string) ?? undefined,
+          profile: normalizedProfile,
+          profileSchemaVersion: LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
+          resumePath,
+          resumeId,
           metadata: ghJob.metadata ?? {},
         },
       };
@@ -638,22 +800,30 @@ export class LocalWorkerBrokerService {
   }
 
   async heartbeat(input: {
+    userId: string;
     desktopWorkerId: string;
     sessionToken: string;
     activeJobId?: string;
     leaseId?: string;
   }): Promise<void> {
     this.ensureEnabled();
-    const session = await this.requireSessionByToken(input.sessionToken, input.desktopWorkerId);
+    const session = await this.requireSessionByToken(
+      input.sessionToken,
+      input.desktopWorkerId,
+      input.userId,
+    );
     await this.refreshSession(session);
 
     if (!input.activeJobId || !input.leaseId) {
       return;
     }
 
-    const { lease } = await this.requireLease(input.sessionToken, input.activeJobId, input.leaseId);
-    await this.writeLease(lease);
-
+    const { lease } = await this.requireLease(
+      input.sessionToken,
+      input.activeJobId,
+      input.leaseId,
+      input.userId,
+    );
     const ghJob = await this.ghJobRepo.findById(input.activeJobId);
     if (!ghJob) {
       throw new LocalWorkerBrokerError(404, "JOB_NOT_FOUND", "GhostHands job not found");
@@ -668,25 +838,35 @@ export class LocalWorkerBrokerService {
         },
         "Ignoring heartbeat for job already in terminal state",
       );
+      await this.deleteLease(lease);
       return;
     }
 
+    await this.writeLease(lease);
     const nextStatus = ghJob.status === "awaiting_review" ? "awaiting_review" : "running";
-    await this.ghJobRepo.updateStatus(input.activeJobId, {
+    const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.activeJobId, {
       status: nextStatus,
       lastHeartbeat: new Date(),
     });
+    if (!updated) {
+      await this.deleteLease(lease);
+    }
   }
 
   async recordEvents(input: {
+    userId: string;
     sessionToken: string;
     jobId: string;
     leaseId: string;
     events: Array<Record<string, unknown>>;
   }): Promise<void> {
     this.ensureEnabled();
-    const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
-    await this.writeLease(lease);
+    const { lease } = await this.requireLease(
+      input.sessionToken,
+      input.jobId,
+      input.leaseId,
+      input.userId,
+    );
     const ghJob = await this.ghJobRepo.findById(input.jobId);
 
     for (const event of input.events) {
@@ -709,24 +889,34 @@ export class LocalWorkerBrokerService {
         },
         "Skipping status update for job already in terminal state (events recorded)",
       );
+      await this.deleteLease(lease);
       return;
     }
 
-    await this.ghJobRepo.updateStatus(input.jobId, {
+    await this.writeLease(lease);
+    const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
       status: ghJob?.status === "awaiting_review" ? "awaiting_review" : "running",
       lastHeartbeat: new Date(),
     });
+    if (!updated) {
+      await this.deleteLease(lease);
+    }
   }
 
   async moveToAwaitingReview(input: {
+    userId: string;
     sessionToken: string;
     jobId: string;
     leaseId: string;
     summary?: string;
   }): Promise<void> {
     this.ensureEnabled();
-    const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
-    await this.writeLease(lease);
+    const { lease } = await this.requireLease(
+      input.sessionToken,
+      input.jobId,
+      input.leaseId,
+      input.userId,
+    );
 
     const ghJob = await this.ghJobRepo.findById(input.jobId);
 
@@ -735,14 +925,20 @@ export class LocalWorkerBrokerService {
         { jobId: input.jobId, currentStatus: ghJob.status },
         "Ignoring awaiting-review transition for job already in terminal state",
       );
+      await this.deleteLease(lease);
       return;
     }
 
-    await this.ghJobRepo.updateStatus(input.jobId, {
+    await this.writeLease(lease);
+    const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
       status: "awaiting_review",
       lastHeartbeat: new Date(),
       statusMessage: input.summary ?? "Waiting for manual review",
     });
+    if (!updated) {
+      await this.deleteLease(lease);
+      return;
+    }
 
     await this.ghJobEventRepo.insertEvent({
       jobId: input.jobId,
@@ -758,6 +954,7 @@ export class LocalWorkerBrokerService {
   }
 
   async complete(input: {
+    userId: string;
     sessionToken: string;
     jobId: string;
     leaseId: string;
@@ -765,10 +962,18 @@ export class LocalWorkerBrokerService {
     summary?: string;
   }): Promise<{ actualStatus?: string }> {
     this.ensureEnabled();
-    const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
+    const session = await this.requireSessionByToken(input.sessionToken, undefined, input.userId);
     const ghJob = await this.ghJobRepo.findById(input.jobId);
 
     if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
+      const lease = await this.readLease(input.jobId);
+      if (
+        !lease ||
+        lease.desktopWorkerId !== session.desktopWorkerId ||
+        lease.leaseId !== input.leaseId
+      ) {
+        return { actualStatus: ghJob.status };
+      }
       this.logger.warn(
         { jobId: input.jobId, currentStatus: ghJob.status },
         "Ignoring complete for job already in terminal state",
@@ -779,11 +984,18 @@ export class LocalWorkerBrokerService {
       return { actualStatus: ghJob.status };
     }
 
+    const { lease } = await this.requireLease(
+      input.sessionToken,
+      input.jobId,
+      input.leaseId,
+      input.userId,
+    );
+
     const boss = this.requireBoss();
     await boss.complete(lease.queueName, lease.pgBossJobId);
 
     try {
-      await this.ghJobRepo.updateStatus(input.jobId, {
+      const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
         status: "completed",
         completedAt: new Date(),
         lastHeartbeat: new Date(),
@@ -791,6 +1003,13 @@ export class LocalWorkerBrokerService {
         resultSummary: input.summary ?? "Completed by desktop local worker",
         statusMessage: "Completed by desktop local worker",
       });
+      if (!updated) {
+        this.logger.warn(
+          { jobId: input.jobId },
+          "Skipping complete transition because job is already terminal",
+        );
+        return { actualStatus: ghJob?.status ?? "completed" };
+      }
 
       await this.ghJobEventRepo.insertEvent({
         jobId: input.jobId,
@@ -808,6 +1027,7 @@ export class LocalWorkerBrokerService {
   }
 
   async fail(input: {
+    userId: string;
     sessionToken: string;
     jobId: string;
     leaseId: string;
@@ -816,10 +1036,18 @@ export class LocalWorkerBrokerService {
     details?: Record<string, unknown>;
   }): Promise<{ actualStatus?: string }> {
     this.ensureEnabled();
-    const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
+    const session = await this.requireSessionByToken(input.sessionToken, undefined, input.userId);
     const ghJob = await this.ghJobRepo.findById(input.jobId);
 
     if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
+      const lease = await this.readLease(input.jobId);
+      if (
+        !lease ||
+        lease.desktopWorkerId !== session.desktopWorkerId ||
+        lease.leaseId !== input.leaseId
+      ) {
+        return { actualStatus: ghJob.status };
+      }
       this.logger.warn(
         { jobId: input.jobId, currentStatus: ghJob.status },
         "Ignoring fail for job already in terminal state",
@@ -830,11 +1058,18 @@ export class LocalWorkerBrokerService {
       return { actualStatus: ghJob.status };
     }
 
+    const { lease } = await this.requireLease(
+      input.sessionToken,
+      input.jobId,
+      input.leaseId,
+      input.userId,
+    );
+
     const boss = this.requireBoss();
     await boss.fail(lease.queueName, lease.pgBossJobId, { error: input.error });
 
     try {
-      await this.ghJobRepo.updateStatus(input.jobId, {
+      const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
         status: "failed",
         completedAt: new Date(),
         lastHeartbeat: new Date(),
@@ -842,6 +1077,13 @@ export class LocalWorkerBrokerService {
         errorDetails: input.details ?? { message: input.error },
         statusMessage: input.error,
       });
+      if (!updated) {
+        this.logger.warn(
+          { jobId: input.jobId },
+          "Skipping fail transition because job is already terminal",
+        );
+        return { actualStatus: ghJob?.status ?? "failed" };
+      }
 
       await this.ghJobEventRepo.insertEvent({
         jobId: input.jobId,
@@ -859,6 +1101,7 @@ export class LocalWorkerBrokerService {
   }
 
   async release(input: {
+    userId: string;
     sessionToken: string;
     jobId: string;
     leaseId: string;
@@ -874,6 +1117,7 @@ export class LocalWorkerBrokerService {
       input.sessionToken,
       input.jobId,
       input.leaseId,
+      input.userId,
     );
     const ghJob = await this.ghJobRepo.findById(input.jobId);
     const boss = this.requireBoss();
@@ -897,7 +1141,7 @@ export class LocalWorkerBrokerService {
     }
 
     if (!requeuedPgBossJobId) {
-      await this.ghJobRepo.updateStatus(input.jobId, {
+      const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
         status: "failed",
         completedAt: new Date(),
         lastHeartbeat: new Date(),
@@ -906,18 +1150,20 @@ export class LocalWorkerBrokerService {
         statusMessage: "Failed to requeue desktop local worker job",
       });
 
-      await this.ghJobEventRepo.insertEvent({
-        jobId: input.jobId,
-        eventType: "job_requeue_failed",
-        fromStatus: ghJob?.status ?? null,
-        toStatus: "failed",
-        message: "Failed to requeue desktop local worker job",
-        actor: "valet",
-        metadata: {
-          desktopWorkerId: lease.desktopWorkerId,
-          reason: input.reason,
-        },
-      });
+      if (updated) {
+        await this.ghJobEventRepo.insertEvent({
+          jobId: input.jobId,
+          eventType: "job_requeue_failed",
+          fromStatus: ghJob?.status ?? null,
+          toStatus: "failed",
+          message: "Failed to requeue desktop local worker job",
+          actor: "valet",
+          metadata: {
+            desktopWorkerId: lease.desktopWorkerId,
+            reason: input.reason,
+          },
+        });
+      }
 
       throw new LocalWorkerBrokerError(
         503,
@@ -926,7 +1172,7 @@ export class LocalWorkerBrokerService {
       );
     }
 
-    await this.ghJobRepo.updateStatus(input.jobId, {
+    const requeued = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
       status: "queued",
       lastHeartbeat: new Date(),
       statusMessage: input.reason,
@@ -936,6 +1182,13 @@ export class LocalWorkerBrokerService {
         pgBossQueueName: this.queueName(session.desktopWorkerId),
       },
     });
+    if (!requeued) {
+      this.logger.warn(
+        { jobId: input.jobId },
+        "Skipping release->queued transition because job is already terminal",
+      );
+      return;
+    }
 
     await this.ghJobEventRepo.insertEvent({
       jobId: input.jobId,
@@ -951,18 +1204,29 @@ export class LocalWorkerBrokerService {
     });
   }
 
-  async cancel(input: { sessionToken: string; jobId: string; leaseId: string }): Promise<void> {
+  async cancel(input: {
+    userId: string;
+    sessionToken: string;
+    jobId: string;
+    leaseId: string;
+  }): Promise<void> {
     return this.cancelJob({ ...input, reason: "cancelled" });
   }
 
   private async cancelJob(input: {
+    userId: string;
     sessionToken: string;
     jobId: string;
     leaseId: string;
     reason: string;
   }): Promise<void> {
     this.ensureEnabled();
-    const { lease } = await this.requireLease(input.sessionToken, input.jobId, input.leaseId);
+    const { lease } = await this.requireLease(
+      input.sessionToken,
+      input.jobId,
+      input.leaseId,
+      input.userId,
+    );
     const ghJob = await this.ghJobRepo.findById(input.jobId);
 
     if (ghJob && TERMINAL_STATUSES.has(ghJob.status)) {
@@ -980,12 +1244,19 @@ export class LocalWorkerBrokerService {
     await boss.cancel(lease.queueName, lease.pgBossJobId);
 
     try {
-      await this.ghJobRepo.updateStatus(input.jobId, {
+      const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
         status: "cancelled",
         completedAt: new Date(),
         lastHeartbeat: new Date(),
         statusMessage: input.reason ?? "Cancelled by user",
       });
+      if (!updated) {
+        this.logger.warn(
+          { jobId: input.jobId },
+          "Skipping cancel transition because job is already terminal",
+        );
+        return;
+      }
 
       await this.ghJobEventRepo.insertEvent({
         jobId: input.jobId,

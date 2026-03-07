@@ -327,13 +327,51 @@ export async function ghosthandsWebhookRoute(fastify: FastifyInstance) {
         }
       }
 
+      const ghJobMetadataUpdate = {
+        statusMessage: ghJobUpdate.statusMessage as string | null | undefined,
+        errorCode: ghJobUpdate.errorCode as string | null | undefined,
+        errorDetails: ghJobUpdate.errorDetails as Record<string, unknown> | null | undefined,
+        startedAt: ghJobUpdate.startedAt as Date | null | undefined,
+        completedAt: ghJobUpdate.completedAt as Date | null | undefined,
+        lastHeartbeat: ghJobUpdate.lastHeartbeat as Date | null | undefined,
+        resultData: ghJobUpdate.resultData as Record<string, unknown> | null | undefined,
+        resultSummary: ghJobUpdate.resultSummary as string | null | undefined,
+        actionCount: ghJobUpdate.actionCount as number | null | undefined,
+        totalTokens: ghJobUpdate.totalTokens as number | null | undefined,
+        llmCostCents: ghJobUpdate.llmCostCents as number | null | undefined,
+        interactionType: ghJobUpdate.interactionType as string | null | undefined,
+        interactionData: ghJobUpdate.interactionData as Record<string, unknown> | null | undefined,
+        pausedAt: ghJobUpdate.pausedAt as Date | null | undefined,
+        workerId: ghJobUpdate.workerId as string | null | undefined,
+        metadata: ghJobUpdate.metadata as Record<string, unknown> | null | undefined,
+      };
+
       // Attempt with one immediate retry on failure
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          await ghJobRepo.updateStatus(
+          const updated = await ghJobRepo.updateStatusIfNotTerminal(
             payload.job_id,
-            ghJobUpdate as Parameters<typeof ghJobRepo.updateStatus>[1],
+            ghJobUpdate as Parameters<typeof ghJobRepo.updateStatusIfNotTerminal>[1],
           );
+          if (!updated) {
+            const existingJob = await ghJobRepo.findById(payload.job_id);
+            if (existingJob?.status === payload.status) {
+              await ghJobRepo.updateFields(payload.job_id, ghJobMetadataUpdate);
+              request.log.info(
+                { jobId: payload.job_id, incomingStatus: payload.status },
+                "Merged gh_automation_jobs metadata onto existing terminal job",
+              );
+            } else {
+              request.log.warn(
+                {
+                  jobId: payload.job_id,
+                  incomingStatus: payload.status,
+                  currentStatus: existingJob?.status ?? null,
+                },
+                "Skipped gh_automation_jobs sync because job is already terminal with a different status",
+              );
+            }
+          }
           break; // success
         } catch (err) {
           if (attempt === 0) {

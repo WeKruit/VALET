@@ -148,6 +148,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/claim",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const body = parseOrThrow(claimBodySchema, request.body);
@@ -156,6 +160,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         const result = await localWorkerBrokerService.claim({
+          userId: request.userId,
           desktopWorkerId: body.desktopWorkerId,
           sessionToken: token,
         });
@@ -169,6 +174,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/:desktopWorkerId/heartbeat",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const params = parseOrThrow(heartbeatParamsSchema, request.params);
@@ -178,6 +187,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         await localWorkerBrokerService.heartbeat({
+          userId: request.userId,
           desktopWorkerId: params.desktopWorkerId,
           sessionToken: token,
           activeJobId: body.activeJobId,
@@ -193,6 +203,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/events",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const params = parseOrThrow(jobParamsSchema, request.params);
@@ -202,6 +216,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         await localWorkerBrokerService.recordEvents({
+          userId: request.userId,
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,
@@ -217,6 +232,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/awaiting-review",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const params = parseOrThrow(jobParamsSchema, request.params);
@@ -226,6 +245,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         await localWorkerBrokerService.moveToAwaitingReview({
+          userId: request.userId,
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,
@@ -241,6 +261,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/complete",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const params = parseOrThrow(jobParamsSchema, request.params);
@@ -250,6 +274,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         const result = await localWorkerBrokerService.complete({
+          userId: request.userId,
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,
@@ -266,6 +291,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/fail",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const params = parseOrThrow(jobParamsSchema, request.params);
@@ -275,6 +304,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         const result = await localWorkerBrokerService.fail({
+          userId: request.userId,
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,
@@ -292,6 +322,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/release",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const params = parseOrThrow(jobParamsSchema, request.params);
@@ -301,6 +335,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         await localWorkerBrokerService.release({
+          userId: request.userId,
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,
@@ -316,6 +351,10 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api/v1/local-workers/jobs/:jobId/cancel",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       try {
         const { localWorkerBrokerService } = request.diScope.cradle;
         const params = parseOrThrow(jobParamsSchema, request.params);
@@ -325,6 +364,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           return reply.status(401).send({ error: "Missing worker session token" });
         }
         await localWorkerBrokerService.cancel({
+          userId: request.userId,
           sessionToken: token,
           jobId: params.jobId,
           leaseId: body.leaseId,

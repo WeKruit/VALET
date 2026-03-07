@@ -31,6 +31,10 @@ import { publishToUser } from "../../websocket/handler.js";
 import type { CreditService } from "../credits/credit.service.js";
 import type { UserRepository } from "../users/user.repository.js";
 import type { LocalWorkerBrokerService } from "../local-workers/local-worker-broker.service.js";
+import {
+  fromGhUserDataToLocalProfile,
+  LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
+} from "../local-workers/local-worker-contracts.js";
 import { isSupportedJobUrl } from "@valet/shared/schemas";
 
 function useQueueDispatch(): boolean {
@@ -44,6 +48,13 @@ const CANCELLABLE_STATUSES = new Set([
   "in_progress",
   "waiting_human",
 ]);
+
+const TERMINAL_GH_TO_TASK_STATUS: Partial<Record<string, TaskStatus>> = {
+  completed: "completed",
+  failed: "failed",
+  cancelled: "cancelled",
+  expired: "failed",
+};
 
 function csvEscape(value: string): string {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -758,6 +769,10 @@ export class TaskService {
     const profile = this.buildGhosthandsProfile(
       resume.parsedData as Record<string, unknown> | null,
     );
+    const localWorkerProfile =
+      target === "desktop"
+        ? fromGhUserDataToLocalProfile(profile as unknown as Record<string, unknown>)
+        : undefined;
 
     // Fetch QA bank answers for the user
     const qaEntries = await this.qaBankRepo.findByUserId(userId);
@@ -795,18 +810,25 @@ export class TaskService {
     if (useQueueDispatch()) {
       // ── Queue dispatch path (pg-boss) ──
       try {
+        const inputData: Record<string, unknown> = {
+          user_data: profile,
+          qa_overrides: Object.keys(qaAnswers).length > 0 ? qaAnswers : {},
+          tier: body.mode === "autopilot" ? "free" : "starter",
+          platform: task.platform,
+          resume_ref: { storage_path: resume?.fileKey ?? "" },
+        };
+        if (target === "desktop" && localWorkerProfile) {
+          inputData.local_worker_profile = localWorkerProfile;
+          inputData.profile_schema_version = LOCAL_WORKER_PROFILE_SCHEMA_VERSION;
+          inputData.desktop_resume_id = body.resumeId;
+        }
+
         let ghJob = await this.ghJobRepo.createJob({
           userId,
           jobType: "apply",
           targetUrl: task.jobUrl,
           taskDescription: `Apply to ${task.jobUrl}`,
-          inputData: {
-            user_data: profile,
-            qa_overrides: Object.keys(qaAnswers).length > 0 ? qaAnswers : {},
-            tier: body.mode === "autopilot" ? "free" : "starter",
-            platform: task.platform,
-            resume_ref: { storage_path: resume?.fileKey ?? "" },
-          },
+          inputData,
           priority: 5,
           maxRetries: 1,
           tags: ["valet", "apply"],
@@ -1423,6 +1445,7 @@ export class TaskService {
       });
 
       // Retry to general queue — any available worker picks it up (no affinity guarantee on retry)
+      const retrySingletonKey = `${id}:retry:${Date.now()}`;
       const pgBossJobId = await this.taskQueueService.enqueueApplyJob(
         {
           ghJobId: ghJob.id,
@@ -1433,7 +1456,7 @@ export class TaskService {
           jobType: "apply",
           callbackUrl,
         },
-        {},
+        { singletonKey: retrySingletonKey },
       );
 
       if (pgBossJobId) {
@@ -1448,6 +1471,24 @@ export class TaskService {
             pgBossQueueName: QUEUE_APPLY_JOB,
           },
         });
+      } else {
+        await this.ghJobRepo.updateStatus(ghJob.id, {
+          status: "failed",
+          completedAt: new Date(),
+          errorCode: "GH_QUEUE_UNAVAILABLE",
+          errorDetails: { message: "Retry dispatch rejected by queue (null pg-boss job ID)" },
+          statusMessage: "Retry dispatch rejected by queue",
+        });
+        await this.ghJobEventRepo.insertEvent({
+          jobId: ghJob.id,
+          eventType: "job_failed",
+          fromStatus: ghJob.status,
+          toStatus: "failed",
+          message: "Retry dispatch rejected by queue",
+          actor: "valet",
+          metadata: { code: "GH_QUEUE_UNAVAILABLE" },
+        });
+        throw new Error("Failed to enqueue retry job");
       }
 
       // Update task to point to the new job
@@ -1490,36 +1531,67 @@ export class TaskService {
       // In queue mode, mark GH job as cancelled first, then cancel pg-boss job
       if (useQueueDispatch() && this.taskQueueService.isAvailable) {
         // EC1: GH job update MUST succeed — do not swallow errors
-        await this.ghJobRepo.updateStatus(task.workflowRunId, {
+        const ghCancelled = await this.ghJobRepo.updateStatusIfNotTerminal(task.workflowRunId, {
           status: "cancelled",
           completedAt: new Date(),
           statusMessage: "Cancelled by user via VALET",
         });
+        if (!ghCancelled) {
+          const currentGhJob = await this.ghJobRepo.findById(task.workflowRunId);
+          const syncedTaskStatus = currentGhJob?.status
+            ? TERMINAL_GH_TO_TASK_STATUS[currentGhJob.status]
+            : undefined;
 
-        // EC2: NOTIFY for instant cancellation (best-effort)
-        try {
-          await this.ghJobRepo.notifyCancel(task.workflowRunId);
-        } catch (notifyErr) {
-          this.logger.warn(
-            { err: notifyErr, jobId: task.workflowRunId },
-            "Failed to send cancel NOTIFY",
-          );
-        }
-
-        // pg-boss cancel is best-effort
-        try {
-          const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
-          const pgBossJobId = ghJob?.metadata?.pgBossJobId as string | undefined;
-          const pgBossQueueName = ghJob?.metadata?.pgBossQueueName as string | undefined;
-
-          if (pgBossJobId) {
-            await this.taskQueueService.cancelJob(pgBossJobId, pgBossQueueName);
+          if (syncedTaskStatus) {
+            const syncedTask = await this.taskRepo.updateStatusGuarded(id, syncedTaskStatus);
+            if (!syncedTask) {
+              this.logger.info(
+                { taskId: id, ghStatus: currentGhJob?.status ?? null },
+                "Skipping task status sync because task is already terminal",
+              );
+            }
+            this.logger.info(
+              {
+                taskId: id,
+                jobId: task.workflowRunId,
+                ghStatus: currentGhJob?.status ?? null,
+                taskStatus: syncedTaskStatus,
+              },
+              "Skipping cancel because GH job is already terminal; synced task state",
+            );
+            return;
           }
-        } catch (err) {
-          this.logger.warn(
-            { err, taskId: id, jobId: task.workflowRunId },
-            "Failed to cancel pg-boss job (best-effort)",
+
+          this.logger.info(
+            { taskId: id, jobId: task.workflowRunId },
+            "GH job row missing during cancel; continuing with best-effort task cancellation",
           );
+        } else {
+          // EC2: NOTIFY for instant cancellation (best-effort)
+          try {
+            await this.ghJobRepo.notifyCancel(task.workflowRunId);
+          } catch (notifyErr) {
+            this.logger.warn(
+              { err: notifyErr, jobId: task.workflowRunId },
+              "Failed to send cancel NOTIFY",
+            );
+          }
+
+          // pg-boss cancel is best-effort
+          try {
+            const ghJob = await this.ghJobRepo.findById(task.workflowRunId);
+            const pgBossJobId = ghJob?.metadata?.pgBossJobId as string | undefined;
+            const pgBossQueueName = ghJob?.metadata?.pgBossQueueName as string | undefined;
+
+            if (pgBossJobId) {
+              await this.taskQueueService.cancelJob(pgBossJobId, pgBossQueueName);
+            }
+          } catch (err) {
+            this.logger.warn(
+              { err, taskId: id, jobId: task.workflowRunId },
+              "Failed to cancel pg-boss job (best-effort)",
+            );
+          }
         }
       }
 
@@ -1535,7 +1607,10 @@ export class TaskService {
     }
 
     // Cancel the task record AFTER GH job is marked cancelled
-    await this.taskRepo.cancel(id);
+    const cancelledTask = await this.taskRepo.updateStatusGuarded(id, "cancelled");
+    if (!cancelledTask) {
+      this.logger.info({ taskId: id }, "Skipping task cancel because task is already terminal");
+    }
   }
 
   /**
