@@ -799,6 +799,7 @@ export class TaskService {
           userId,
           jobType: "apply",
           targetUrl: task.jobUrl,
+          taskDescription: `Apply to ${task.jobUrl}`,
           inputData: {
             user_data: profile,
             qa_overrides: Object.keys(qaAnswers).length > 0 ? qaAnswers : {},
@@ -849,15 +850,34 @@ export class TaskService {
                 : QUEUE_APPLY_JOB,
             },
           });
+
+          await this.taskRepo.updateStatus(task.id, "queued");
+
+          await publishToUser(this.redis, userId, {
+            type: "task_update",
+            taskId: task.id,
+            status: "queued",
+          });
+        } else {
+          this.logger.warn(
+            { taskId: task.id, ghJobId: ghJob.id },
+            "pg-boss returned null jobId — task not enqueued",
+          );
+          await this.taskRepo.updateStatus(task.id, "failed");
+          await this.taskRepo.updateGhosthandsResult(task.id, {
+            ghJobId: ghJob.id,
+            result: null,
+            error: {
+              code: "GH_QUEUE_UNAVAILABLE",
+              message: "pg-boss did not accept the job (returned null)",
+            },
+            completedAt: null,
+          });
+          await this.refundCreditIfDebited(userId, task.id, userRole);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (task as any).status = "failed";
+          (task as any).errorMessage = "pg-boss did not accept the job (returned null)";
         }
-
-        await this.taskRepo.updateStatus(task.id, "queued");
-
-        await publishToUser(this.redis, userId, {
-          type: "task_update",
-          taskId: task.id,
-          status: "queued",
-        });
       } catch (err) {
         this.logger.error({ err, taskId: task.id }, "Failed to enqueue job via pg-boss");
         await this.taskRepo.updateStatus(task.id, "failed");
@@ -872,6 +892,9 @@ export class TaskService {
         });
         // Refund credit — dispatch failed before GH received the job
         await this.refundCreditIfDebited(userId, task.id, userRole);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (task as any).status = "failed";
+        (task as any).errorMessage = err instanceof Error ? err.message : "Failed to enqueue job";
       }
     } else {
       // ── REST dispatch path (legacy, only when TASK_DISPATCH_MODE != queue) ──
@@ -1044,13 +1067,24 @@ export class TaskService {
           userId,
           userRole,
         );
-        results.push({
-          jobUrl: entry.original,
-          status: "created",
-          taskId: task.id,
-          workflowRunId: task.workflowRunId ?? undefined,
-        });
-        created++;
+        // create() catches enqueue errors internally — check actual task status
+        if (task.status === "failed") {
+          results.push({
+            jobUrl: entry.original,
+            status: "failed",
+            taskId: task.id,
+            error: task.errorMessage ?? "Task dispatch failed",
+          });
+          failed++;
+        } else {
+          results.push({
+            jobUrl: entry.original,
+            status: "created",
+            taskId: task.id,
+            workflowRunId: task.workflowRunId ?? undefined,
+          });
+          created++;
+        }
       } catch (err) {
         if (err instanceof AppError) {
           // Expected user/input/payment error — record and continue
