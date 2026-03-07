@@ -67,6 +67,7 @@ export class ResumeRepository {
       .where(and(eq(resumes.status, "parsing"), lt(resumes.createdAt, cutoff)));
   }
 
+  /** Mark a specific resume as the user's default (un-defaulting all others). */
   async setDefault(id: string, userId: string) {
     // First unset all defaults for this user
     await this.db.update(resumes).set({ isDefault: false }).where(eq(resumes.userId, userId));

@@ -273,6 +273,15 @@ export class ResumeService {
       throw AppError.conflict("Resume is already parsed");
     }
 
+    // If a parse is already in-flight (lock held), don't reset data — just return.
+    // This prevents corrupting parsedData while parseResume() is actively writing it.
+    const lockKey = `resume-parse-lock:${id}`;
+    const lockHeld = await this.redis.exists(lockKey);
+    if (lockHeld) {
+      this.logger.info({ resumeId: id }, "Parse already in progress, skipping retry");
+      return { id, status: "parsing" as const };
+    }
+
     // Reset status to parsing
     await this.resumeRepo.update(id, {
       status: "parsing",
