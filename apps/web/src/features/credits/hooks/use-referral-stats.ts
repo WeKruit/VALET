@@ -3,7 +3,7 @@ import { useAuth } from "@/features/auth/hooks/use-auth";
 
 export function useReferralStats() {
   const { user } = useAuth();
-  const { data, isLoading } = api.referrals.getMyReferral.useQuery({
+  const { data, isLoading, isError } = api.referrals.getMyReferral.useQuery({
     queryKey: ["referrals", "me", user?.id],
     queryData: {},
     enabled: !!user,
@@ -19,5 +19,6 @@ export function useReferralStats() {
     activatedCount: body?.activatedCount ?? 0,
     rewardedCount: body?.rewardedCount ?? 0,
     isLoading,
+    isError,
   };
 }

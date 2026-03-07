@@ -1,7 +1,7 @@
 import { api } from "@/lib/api-client";
 
 export function useCreditLedger(page = 1, pageSize = 20) {
-  const { data, isLoading } = api.credits.getLedger.useQuery({
+  const { data, isLoading, isError } = api.credits.getLedger.useQuery({
     queryKey: ["credits", "ledger", page, pageSize],
     queryData: { query: { page, pageSize } },
     staleTime: 1000 * 30,
@@ -15,5 +15,6 @@ export function useCreditLedger(page = 1, pageSize = 20) {
     page: body?.page ?? page,
     pageSize: body?.pageSize ?? pageSize,
     isLoading,
+    isError,
   };
 }

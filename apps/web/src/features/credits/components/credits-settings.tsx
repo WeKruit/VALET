@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -83,6 +83,12 @@ export function CreditsSettings() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : ledger.isError ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-[var(--wk-status-error)]">
+                Failed to load transaction history. Please try again later.
+              </p>
+            </div>
           ) : ledger.entries.length === 0 ? (
             <div className="py-12 text-center">
               <Coins className="mx-auto h-10 w-10 text-[var(--wk-text-tertiary)]" />
@@ -96,19 +102,31 @@ export function CreditsSettings() {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" aria-label="Credit transaction history">
                   <thead>
                     <tr className="border-b border-[var(--wk-border-subtle)]">
-                      <th className="pb-3 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
+                      <th
+                        scope="col"
+                        className="pb-3 pr-4 text-left font-medium text-[var(--wk-text-secondary)]"
+                      >
                         Date
                       </th>
-                      <th className="pb-3 pr-4 text-left font-medium text-[var(--wk-text-secondary)]">
+                      <th
+                        scope="col"
+                        className="pb-3 pr-4 text-left font-medium text-[var(--wk-text-secondary)]"
+                      >
                         Description
                       </th>
-                      <th className="pb-3 pr-4 text-right font-medium text-[var(--wk-text-secondary)]">
+                      <th
+                        scope="col"
+                        className="pb-3 pr-4 text-right font-medium text-[var(--wk-text-secondary)]"
+                      >
                         Amount
                       </th>
-                      <th className="pb-3 text-right font-medium text-[var(--wk-text-secondary)]">
+                      <th
+                        scope="col"
+                        className="pb-3 text-right font-medium text-[var(--wk-text-secondary)]"
+                      >
                         Balance
                       </th>
                     </tr>
@@ -181,23 +199,37 @@ function ReferralSection() {
     useReferralStats();
   const [copied, setCopied] = useState(false);
   const [emailInput, setEmailInput] = useState("");
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   const referralLink = code ? buildReferralLink(code) : "";
 
   function handleCopyLink() {
     if (!referralLink) return;
-    navigator.clipboard.writeText(referralLink).then(() => {
-      setCopied(true);
-      toast.success("Referral link copied!");
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard.writeText(referralLink).then(
+      () => {
+        setCopied(true);
+        toast.success("Referral link copied!");
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+      },
+      () => {
+        toast.error("Failed to copy link");
+      },
+    );
   }
 
   function handleCopyCode() {
     if (!code) return;
-    navigator.clipboard.writeText(code).then(() => {
-      toast.success("Referral code copied!");
-    });
+    navigator.clipboard.writeText(code).then(
+      () => {
+        toast.success("Referral code copied!");
+      },
+      () => {
+        toast.error("Failed to copy code");
+      },
+    );
   }
 
   function handleEmailInvite() {
