@@ -26,7 +26,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   it("submit test task → 201 with task ID", async () => {
     const res = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/1000001",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
         executionTarget: "cloud" as const,
@@ -52,7 +52,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   it("task transitions to in_progress within 30s", async () => {
     const createRes = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-lifecycle",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/1000002",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
         executionTarget: "cloud" as const,
@@ -89,7 +89,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   it("task reaches terminal state within 120s", async () => {
     const createRes = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-terminal",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/1000003",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
         executionTarget: "cloud" as const,
@@ -126,7 +126,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   it("cancel in-progress task → cancelled status", async () => {
     const createRes = await client.api.post("/api/v1/tasks", {
       body: {
-        jobUrl: "https://www.google.com/about/careers/applications/jobs/results/?q=test-cancel",
+        jobUrl: "https://boards.greenhouse.io/example/jobs/1000004",
         mode: "copilot",
         resumeId: TEST_RESUME_ID,
         executionTarget: "cloud" as const,
