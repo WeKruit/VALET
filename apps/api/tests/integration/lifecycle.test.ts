@@ -44,10 +44,13 @@ function createMockTaskRepo() {
 }
 
 function createMockGhJobRepo() {
+  const updateStatus = vi.fn();
   return {
     findById: vi.fn(),
     findByValetTaskId: vi.fn(),
-    updateStatus: vi.fn(),
+    updateStatus,
+    updateStatusIfNotTerminal: updateStatus,
+    updateFields: vi.fn(),
     findStuckJobs: vi.fn(),
   };
 }

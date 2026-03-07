@@ -76,6 +76,15 @@ const ROUTE_LIMITS: RouteLimit[] = [
     message: "Too many waitlist submissions. Try again later.",
     keyByIp: true,
   },
+  {
+    path: "/api/v1/local-workers/claim",
+    method: "POST",
+    max: 30,
+    windowSecs: 60,
+    keyPrefix: "rl:local-worker-claim",
+    message: "Claim polling limit reached. Slow down and retry.",
+    keyByIp: true,
+  },
 ];
 
 /**

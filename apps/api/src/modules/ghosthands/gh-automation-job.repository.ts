@@ -161,6 +161,141 @@ export class GhAutomationJobRepository {
     return row ? toRecord(row as Record<string, unknown>) : null;
   }
 
+  async updateFields(
+    id: string,
+    data: {
+      statusMessage?: string | null;
+      errorCode?: string | null;
+      errorDetails?: Record<string, unknown> | null;
+      startedAt?: Date | null;
+      completedAt?: Date | null;
+      lastHeartbeat?: Date | null;
+      resultData?: Record<string, unknown> | null;
+      resultSummary?: string | null;
+      actionCount?: number | null;
+      totalTokens?: number | null;
+      llmCostCents?: number | null;
+      interactionType?: string | null;
+      interactionData?: Record<string, unknown> | null;
+      pausedAt?: Date | null;
+      workerId?: string | null;
+      metadata?: Record<string, unknown> | null;
+      targetWorkerId?: string | null;
+      executionAttemptId?: string | null;
+    },
+  ): Promise<GhJobRecord | null> {
+    const updates: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+    if (data.statusMessage !== undefined) updates.statusMessage = data.statusMessage;
+    if (data.errorCode !== undefined) updates.errorCode = data.errorCode;
+    if (data.errorDetails !== undefined) updates.errorDetails = data.errorDetails;
+    if (data.startedAt !== undefined) updates.startedAt = data.startedAt;
+    if (data.completedAt !== undefined) updates.completedAt = data.completedAt;
+    if (data.lastHeartbeat !== undefined) updates.lastHeartbeat = data.lastHeartbeat;
+    if (data.resultData !== undefined) updates.resultData = data.resultData;
+    if (data.resultSummary !== undefined) updates.resultSummary = data.resultSummary;
+    if (data.actionCount !== undefined) updates.actionCount = data.actionCount;
+    if (data.totalTokens !== undefined) updates.totalTokens = data.totalTokens;
+    if (data.llmCostCents !== undefined) updates.llmCostCents = data.llmCostCents;
+    if (data.interactionType !== undefined) updates.interactionType = data.interactionType;
+    if (data.interactionData !== undefined) updates.interactionData = data.interactionData;
+    if (data.pausedAt !== undefined) updates.pausedAt = data.pausedAt;
+    if (data.workerId !== undefined) updates.workerId = data.workerId;
+    if (data.metadata !== undefined) updates.metadata = data.metadata;
+    if (data.targetWorkerId !== undefined) updates.targetWorkerId = data.targetWorkerId;
+    if (data.executionAttemptId !== undefined) updates.executionAttemptId = data.executionAttemptId;
+
+    const rows = await this.db
+      .update(ghAutomationJobs)
+      .set(updates)
+      .where(eq(ghAutomationJobs.id, id))
+      .returning();
+    const row = rows[0];
+    return row ? toRecord(row as Record<string, unknown>) : null;
+  }
+
+  /**
+   * Atomically update status only when the current row is not terminal.
+   * Prevents webhook/broker/task races from overwriting terminal outcomes.
+   */
+  async updateStatusIfNotTerminal(
+    id: string,
+    data: {
+      status: string;
+      statusMessage?: string | null;
+      errorCode?: string | null;
+      errorDetails?: Record<string, unknown> | null;
+      startedAt?: Date | null;
+      completedAt?: Date | null;
+      lastHeartbeat?: Date | null;
+      resultData?: Record<string, unknown> | null;
+      resultSummary?: string | null;
+      actionCount?: number | null;
+      totalTokens?: number | null;
+      llmCostCents?: number | null;
+      interactionType?: string | null;
+      interactionData?: Record<string, unknown> | null;
+      pausedAt?: Date | null;
+      workerId?: string | null;
+      metadata?: Record<string, unknown> | null;
+      targetWorkerId?: string | null;
+      executionAttemptId?: string | null;
+    },
+  ): Promise<GhJobRecord | null> {
+    const updates: Record<string, unknown> = {
+      status: data.status,
+      updatedAt: new Date(),
+    };
+    if (data.statusMessage !== undefined) updates.statusMessage = data.statusMessage;
+    if (data.errorCode !== undefined) updates.errorCode = data.errorCode;
+    if (data.errorDetails !== undefined) updates.errorDetails = data.errorDetails;
+    if (data.startedAt !== undefined) updates.startedAt = data.startedAt;
+    if (data.completedAt !== undefined) updates.completedAt = data.completedAt;
+    if (data.lastHeartbeat !== undefined) updates.lastHeartbeat = data.lastHeartbeat;
+    if (data.resultData !== undefined) updates.resultData = data.resultData;
+    if (data.resultSummary !== undefined) updates.resultSummary = data.resultSummary;
+    if (data.actionCount !== undefined) updates.actionCount = data.actionCount;
+    if (data.totalTokens !== undefined) updates.totalTokens = data.totalTokens;
+    if (data.llmCostCents !== undefined) updates.llmCostCents = data.llmCostCents;
+    if (data.interactionType !== undefined) updates.interactionType = data.interactionType;
+    if (data.interactionData !== undefined) updates.interactionData = data.interactionData;
+    if (data.pausedAt !== undefined) updates.pausedAt = data.pausedAt;
+    if (data.workerId !== undefined) updates.workerId = data.workerId;
+    if (data.metadata !== undefined) updates.metadata = data.metadata;
+    if (data.targetWorkerId !== undefined) updates.targetWorkerId = data.targetWorkerId;
+    if (data.executionAttemptId !== undefined) updates.executionAttemptId = data.executionAttemptId;
+
+    const rows = await this.db
+      .update(ghAutomationJobs)
+      .set(updates)
+      .where(
+        and(
+          eq(ghAutomationJobs.id, id),
+          sql`${ghAutomationJobs.status} NOT IN ('completed', 'failed', 'cancelled')`,
+        ),
+      )
+      .returning();
+    const row = rows[0];
+    return row ? toRecord(row as Record<string, unknown>) : null;
+  }
+
+  async updateInputData(
+    id: string,
+    inputData: Record<string, unknown>,
+  ): Promise<GhJobRecord | null> {
+    const rows = await this.db
+      .update(ghAutomationJobs)
+      .set({
+        inputData,
+        updatedAt: new Date(),
+      })
+      .where(eq(ghAutomationJobs.id, id))
+      .returning();
+    const row = rows[0];
+    return row ? toRecord(row as Record<string, unknown>) : null;
+  }
+
   /**
    * Create a gh_automation_jobs record directly from VALET.
    * Used when dispatching via pg-boss queue instead of GH REST API.
