@@ -188,6 +188,8 @@ export class ResumeService {
             "Stale parse exceeded max attempts, marking as failed",
           );
           await this.resumeRepo.update(id, { status: "parse_failed" });
+          // Return updated status so the caller (and API response) reflects reality
+          return { ...resume, status: "parse_failed" as const };
         } else {
           this.logger.warn(
             { resumeId: id, ageMs: age, attempts },
