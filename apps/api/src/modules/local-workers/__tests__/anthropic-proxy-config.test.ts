@@ -57,7 +57,7 @@ describe("anthropic-proxy-config", () => {
     expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://atm.internal/internal/llm-proxy-config?provider=anthropic",
+      "https://atm.internal/internal/llm-runtime-profiles/desktop-default",
       expect.objectContaining({
         headers: {
           Authorization: "Bearer atm-service-token",

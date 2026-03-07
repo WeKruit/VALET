@@ -37,7 +37,7 @@ async function fetchFromAtm(logger: FastifyBaseLogger): Promise<AnthropicProxyCo
 
   try {
     const response = await fetch(
-      `${getAtmBaseUrl()}/internal/llm-proxy-config?provider=anthropic`,
+      `${getAtmBaseUrl()}/internal/llm-runtime-profiles/desktop-default`,
       {
         headers: {
           Authorization: `Bearer ${getAtmToken()}`,
