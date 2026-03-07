@@ -194,7 +194,7 @@ export class CreditService {
     }
 
     const creditsToDebit = opts.costAmount ?? this.getCostForType(costType);
-    const desc = opts.description ?? CREDIT_COSTS[costType].label;
+    const costDescription = opts.description ?? CREDIT_COSTS[costType].label;
     const idempotencyKey = opts.idempotencyKey ?? undefined;
 
     // Idempotency check
@@ -227,7 +227,7 @@ export class CreditService {
         RETURNING credit_balance
       )
       INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
-      SELECT ${userId}::uuid, ${-creditsToDebit}, credit_balance, ${costType}, ${desc}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${idempotencyKey ?? null}
+      SELECT ${userId}::uuid, ${-creditsToDebit}, credit_balance, ${costType}, ${costDescription}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${idempotencyKey ?? null}
       FROM updated
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING balance_after

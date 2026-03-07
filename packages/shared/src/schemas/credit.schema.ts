@@ -70,7 +70,7 @@ export const consumeCreditsResponse = z.object({
 // ─── Admin grant request/response ───
 export const adminGrantCreditsRequest = z.object({
   userId: z.string().uuid(),
-  amount: z.number().int(),
+  amount: z.number().int().min(1),
   reason: z.string().min(1).max(30),
   description: z.string().max(500).optional(),
 });
