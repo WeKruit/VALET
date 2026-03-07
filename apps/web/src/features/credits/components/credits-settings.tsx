@@ -195,7 +195,7 @@ export function CreditsSettings() {
 }
 
 function ReferralSection() {
-  const { code, totalReferred, pendingCount, activatedCount, rewardedCount, isLoading } =
+  const { code, totalReferred, pendingCount, activatedCount, rewardedCount, isLoading, isError } =
     useReferralStats();
   const [copied, setCopied] = useState(false);
   const [emailInput, setEmailInput] = useState("");
@@ -250,6 +250,24 @@ function ReferralSection() {
         </CardHeader>
         <CardContent>
           <Skeleton className="h-32 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Referrals
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-[var(--wk-status-error)]">
+            Failed to load referral data. Please try again later.
+          </p>
         </CardContent>
       </Card>
     );
