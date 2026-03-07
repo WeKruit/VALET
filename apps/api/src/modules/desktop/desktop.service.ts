@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type { UserService } from "../users/user.service.js";
 import type { CreditService } from "../credits/credit.service.js";
@@ -6,6 +7,7 @@ import type { ReferralService } from "../referrals/referral.service.js";
 import type { ResumeService } from "../resumes/resume.service.js";
 import type { TaskService } from "../tasks/task.service.js";
 import type { DesktopBootstrapResponse } from "@valet/shared/schemas";
+import { getAnthropicProxyReadiness } from "../local-workers/anthropic-proxy-config.js";
 
 const HANDOFF_PREFIX = "handoff:";
 const HANDOFF_TTL_SECONDS = 15 * 60; // 15 minutes
@@ -21,6 +23,7 @@ interface HandoffData {
 
 export class DesktopService {
   private redis: Redis;
+  private logger: FastifyBaseLogger;
   private userService: UserService;
   private creditService: CreditService;
   private referralService: ReferralService;
@@ -29,6 +32,7 @@ export class DesktopService {
 
   constructor({
     redis,
+    logger,
     userService,
     creditService,
     referralService,
@@ -36,6 +40,7 @@ export class DesktopService {
     taskService,
   }: {
     redis: Redis;
+    logger: FastifyBaseLogger;
     userService: UserService;
     creditService: CreditService;
     referralService: ReferralService;
@@ -43,6 +48,7 @@ export class DesktopService {
     taskService: TaskService;
   }) {
     this.redis = redis;
+    this.logger = logger;
     this.userService = userService;
     this.creditService = creditService;
     this.referralService = referralService;
@@ -111,7 +117,7 @@ export class DesktopService {
   }
 
   async bootstrap(userId: string): Promise<DesktopBootstrapResponse> {
-    const [user, credits, referrals, resumes, tasksResult] = await Promise.all([
+    const [user, credits, referrals, resumes, tasksResult, automation] = await Promise.all([
       this.userService.getById(userId),
       this.creditService.getBalance(userId),
       this.referralService.getStats(userId),
@@ -122,6 +128,7 @@ export class DesktopService {
         sortBy: "createdAt",
         sortOrder: "desc",
       }),
+      getAnthropicProxyReadiness(this.logger),
     ]);
 
     const userRecord = user as Record<string, unknown>;
@@ -170,6 +177,7 @@ export class DesktopService {
         status: t.status,
         createdAt: t.createdAt.toISOString(),
       })),
+      automation,
     };
   }
 }

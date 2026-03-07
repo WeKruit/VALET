@@ -90,19 +90,21 @@ web --> contracts, shared, ui
 
 Copy `.env.example` to `.env` and configure. Key required variables:
 
-| Variable               | Description                            |
-| ---------------------- | -------------------------------------- |
-| `DATABASE_URL`         | PostgreSQL connection string (pooler)  |
-| `DATABASE_DIRECT_URL`  | PostgreSQL direct connection (for DDL) |
-| `REDIS_URL`            | Redis/Upstash URL                      |
-| `JWT_SECRET`           | JWT signing secret (min 32 chars)      |
-| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                 |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret             |
-| `ANTHROPIC_API_KEY`    | Anthropic API key                      |
-| `OPENAI_API_KEY`       | OpenAI API key                         |
-| `S3_ENDPOINT`          | Supabase Storage S3 endpoint           |
-| `GHOSTHANDS_API_URL`   | GhostHands API URL (EC2)               |
-| `GH_SERVICE_SECRET`    | Service-to-service auth key            |
+| Variable               | Description                                               |
+| ---------------------- | --------------------------------------------------------- |
+| `DATABASE_URL`         | PostgreSQL connection string (pooler)                     |
+| `DATABASE_DIRECT_URL`  | PostgreSQL direct connection (for DDL)                    |
+| `REDIS_URL`            | Redis/Upstash URL                                         |
+| `JWT_SECRET`           | JWT signing secret (min 32 chars)                         |
+| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                                    |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret                                |
+| `ANTHROPIC_API_KEY`    | Anthropic API key                                         |
+| `OPENAI_API_KEY`       | OpenAI API key                                            |
+| `S3_ENDPOINT`          | Supabase Storage S3 endpoint                              |
+| `GHOSTHANDS_API_URL`   | GhostHands API URL (EC2)                                  |
+| `GH_SERVICE_SECRET`    | Service-to-service auth key                               |
+| `ATM_BASE_URL`         | ATM gateway base URL for managed Desktop inference        |
+| `VALET_ATM_TOKEN`      | Dedicated VALET -> ATM token for runtime LLM proxy config |
 
 See `.env.example` for the full list with defaults.
 
