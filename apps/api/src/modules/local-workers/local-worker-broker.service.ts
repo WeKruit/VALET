@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type Redis from "ioredis";
 import type { Job, PgBoss } from "pg-boss";
 import type { PgBossService } from "../../services/pgboss.service.js";
+import { publishToUser } from "../../websocket/handler.js";
 import type { GhAutomationJobRepository } from "../ghosthands/gh-automation-job.repository.js";
 import type { GhJobEventRepository } from "../ghosthands/gh-job-event.repository.js";
 import {
@@ -10,6 +11,7 @@ import {
   type GhApplyJobPayload,
   type TaskQueueService,
 } from "../tasks/task-queue.service.js";
+import type { TaskRepository } from "../tasks/task.repository.js";
 import {
   fromLocalProfileToGhUserData,
   LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
@@ -78,6 +80,7 @@ export class LocalWorkerBrokerService {
   private readonly ghJobRepo: GhAutomationJobRepository;
   private readonly ghJobEventRepo: GhJobEventRepository;
   private readonly taskQueueService: TaskQueueService;
+  private readonly taskRepo?: TaskRepository;
   private readonly redis: Redis;
 
   constructor({
@@ -86,6 +89,7 @@ export class LocalWorkerBrokerService {
     ghJobRepo,
     ghJobEventRepo,
     taskQueueService,
+    taskRepo,
     redis,
   }: {
     logger: FastifyBaseLogger;
@@ -93,6 +97,7 @@ export class LocalWorkerBrokerService {
     ghJobRepo: GhAutomationJobRepository;
     ghJobEventRepo: GhJobEventRepository;
     taskQueueService: TaskQueueService;
+    taskRepo?: TaskRepository;
     redis: Redis;
   }) {
     this.logger = logger;
@@ -100,6 +105,7 @@ export class LocalWorkerBrokerService {
     this.ghJobRepo = ghJobRepo;
     this.ghJobEventRepo = ghJobEventRepo;
     this.taskQueueService = taskQueueService;
+    this.taskRepo = taskRepo;
     this.redis = redis;
   }
 
@@ -326,6 +332,57 @@ export class LocalWorkerBrokerService {
 
   private async completeFetchedJob(boss: PgBoss, queueName: string, id: string): Promise<void> {
     await boss.complete(queueName, id);
+  }
+
+  private async syncValetTaskStatus(
+    ghJob: {
+      id: string;
+      userId?: string | null;
+      valetTaskId?: string | null;
+    },
+    status: "queued" | "in_progress" | "waiting_human" | "completed" | "failed" | "cancelled",
+    options?: {
+      error?: {
+        code?: string;
+        message: string;
+        details?: Record<string, unknown> | null;
+      };
+      result?: Record<string, unknown> | null;
+      completedAt?: Date;
+    },
+  ): Promise<void> {
+    if (!this.taskRepo || !ghJob.valetTaskId) {
+      return;
+    }
+
+    const updatedTask = await this.taskRepo.updateStatusGuarded(ghJob.valetTaskId, status);
+    if (!updatedTask) {
+      return;
+    }
+
+    if (status === "completed" || status === "failed") {
+      await this.taskRepo.updateGhosthandsResult(ghJob.valetTaskId, {
+        ghJobId: ghJob.id,
+        result: status === "completed" ? (options?.result ?? {}) : null,
+        error:
+          status === "failed"
+            ? {
+                code: options?.error?.code ?? "LOCAL_WORKER_FAILED",
+                message: options?.error?.message ?? "Local worker failed",
+                ...(options?.error?.details ? { details: options.error.details } : {}),
+              }
+            : null,
+        completedAt: (options?.completedAt ?? new Date()).toISOString(),
+      });
+    }
+
+    if (ghJob.userId) {
+      await publishToUser(this.redis, ghJob.userId, {
+        type: "task_update",
+        taskId: ghJob.valetTaskId,
+        status,
+      });
+    }
   }
 
   async registerWorker(input: {
@@ -612,6 +669,13 @@ export class LocalWorkerBrokerService {
           statusMessage: "Invalid local worker profile payload",
         });
         if (failedJob) {
+          await this.syncValetTaskStatus(failedJob, "failed", {
+            error: {
+              code: "LOCAL_WORKER_PROFILE_INVALID",
+              message,
+            },
+            completedAt: new Date(),
+          });
           await this.ghJobEventRepo.insertEvent({
             jobId: ghJob.id,
             eventType: "job_failed",
@@ -702,6 +766,16 @@ export class LocalWorkerBrokerService {
             "Skipping lease-write failure transition because job is already terminal",
           );
         }
+        await this.syncValetTaskStatus(ghJob, "failed", {
+          error: {
+            code: "LEASE_WRITE_FAILED",
+            message: "Lease write failed after dispatch",
+            details: {
+              originalError: leaseErr instanceof Error ? leaseErr.message : String(leaseErr),
+            },
+          },
+          completedAt: new Date(),
+        });
         throw leaseErr;
       }
 
@@ -740,6 +814,7 @@ export class LocalWorkerBrokerService {
             leaseId,
           },
         });
+        await this.syncValetTaskStatus(claimedJob, "in_progress");
       } catch (postLeaseErr) {
         const errMsg = postLeaseErr instanceof Error ? postLeaseErr.message : String(postLeaseErr);
         this.logger.error(
@@ -766,6 +841,13 @@ export class LocalWorkerBrokerService {
             "Skipping claim rollback failure transition because job is already terminal",
           );
         }
+        await this.syncValetTaskStatus(ghJob, "failed", {
+          error: {
+            code: "CLAIM_ROLLBACK",
+            message: errMsg,
+          },
+          completedAt: new Date(),
+        });
         throw postLeaseErr;
       }
 
@@ -951,6 +1033,7 @@ export class LocalWorkerBrokerService {
         leaseId: lease.leaseId,
       },
     });
+    await this.syncValetTaskStatus(updated, "waiting_human");
   }
 
   async complete(input: {
@@ -1019,6 +1102,10 @@ export class LocalWorkerBrokerService {
         message: input.summary ?? "Completed by desktop local worker",
         actor: "desktop_worker",
         metadata: input.result ?? null,
+      });
+      await this.syncValetTaskStatus(updated, "completed", {
+        result: input.result ?? null,
+        completedAt: new Date(),
       });
     } finally {
       await this.deleteLease(lease);
@@ -1093,6 +1180,14 @@ export class LocalWorkerBrokerService {
         message: input.error,
         actor: "desktop_worker",
         metadata: input.details ?? null,
+      });
+      await this.syncValetTaskStatus(updated, "failed", {
+        error: {
+          code: input.code ?? "LOCAL_WORKER_FAILED",
+          message: input.error,
+          details: input.details ?? null,
+        },
+        completedAt: new Date(),
       });
     } finally {
       await this.deleteLease(lease);
@@ -1202,6 +1297,7 @@ export class LocalWorkerBrokerService {
         pgBossJobId: requeuedPgBossJobId,
       },
     });
+    await this.syncValetTaskStatus(requeued, "queued");
   }
 
   async cancel(input: {
@@ -1270,6 +1366,7 @@ export class LocalWorkerBrokerService {
           leaseId: lease.leaseId,
         },
       });
+      await this.syncValetTaskStatus(updated, "cancelled");
     } finally {
       await this.deleteLease(lease);
     }
