@@ -9,6 +9,7 @@ import { JobPreferencesSettings } from "../components/job-preferences-settings";
 import { NotificationSettings } from "../components/notification-settings";
 import { SessionSettings } from "../components/session-settings";
 import { CredentialSettings } from "../components/credential-settings";
+import { CreditsSettings } from "../../credits/components/credits-settings";
 
 const VALID_TABS = [
   "resumes",
@@ -19,6 +20,7 @@ const VALID_TABS = [
   "job-preferences",
   "notifications",
   "sessions",
+  "credits",
   "billing",
 ] as const;
 type SettingsTab = (typeof VALID_TABS)[number];
@@ -73,6 +75,9 @@ export function SettingsPage() {
           <TabsTrigger value="sessions" className="whitespace-nowrap">
             Sessions
           </TabsTrigger>
+          <TabsTrigger value="credits" className="whitespace-nowrap">
+            Credits
+          </TabsTrigger>
           <TabsTrigger value="billing" className="whitespace-nowrap">
             Billing
           </TabsTrigger>
@@ -108,6 +113,10 @@ export function SettingsPage() {
 
         <TabsContent value="sessions" aria-label="Sessions settings panel">
           <SessionSettings />
+        </TabsContent>
+
+        <TabsContent value="credits" aria-label="Credits settings panel">
+          <CreditsSettings />
         </TabsContent>
 
         <TabsContent value="billing" aria-label="Billing settings panel">
