@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { ReferralService } from "../referral.service.js";
+import type { CreditService } from "../../credits/credit.service.js";
+
+const mockCreditService = {
+  grantCredits: vi.fn().mockResolvedValue({ balance: 100 }),
+} as unknown as CreditService;
 
 // ── Mock DB that tracks sequential query chains ──
 
@@ -62,7 +67,7 @@ describe("ReferralService", () => {
         [],
       ]);
 
-      const service = new ReferralService({ db: db as never });
+      const service = new ReferralService({ db: db as never, creditService: mockCreditService });
       const result = await service.activateReferral("referred-user");
 
       expect(result).toEqual({ id: "ref-1", referrerUserId: "referrer-user" });
@@ -74,7 +79,7 @@ describe("ReferralService", () => {
         [],
       ]);
 
-      const service = new ReferralService({ db: db as never });
+      const service = new ReferralService({ db: db as never, creditService: mockCreditService });
       const result = await service.activateReferral("user-no-referral");
 
       expect(result).toBeNull();
@@ -85,7 +90,7 @@ describe("ReferralService", () => {
     it("calls update with the correct referral id and amount", async () => {
       const { db, chain } = makeMockDb([[]]);
 
-      const service = new ReferralService({ db: db as never });
+      const service = new ReferralService({ db: db as never, creditService: mockCreditService });
       await service.updateRewardCreditsIssued("ref-123", 5);
 
       expect(db.update).toHaveBeenCalled();
@@ -107,7 +112,7 @@ describe("ReferralService", () => {
         [{ count: 1 }],
       ]);
 
-      const service = new ReferralService({ db: db as never });
+      const service = new ReferralService({ db: db as never, creditService: mockCreditService });
       const stats = await service.getStats("user-1");
 
       expect(stats.code).toBe("ABC123");
@@ -124,7 +129,7 @@ describe("ReferralService", () => {
         [{ count: 0 }],
       ]);
 
-      const service = new ReferralService({ db: db as never });
+      const service = new ReferralService({ db: db as never, creditService: mockCreditService });
       const stats = await service.getStats("user-2");
 
       expect(stats.rewardedCount).toBe(0);

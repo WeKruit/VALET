@@ -1,11 +1,61 @@
 import { eq, sql, desc } from "drizzle-orm";
 import { users, creditLedger, type Database } from "@valet/db";
+import type { CreditCostType } from "@valet/shared/schemas";
+
+// ─── Credit cost configuration ───
+// Maps cost types to their credit cost, label, and description.
+// This is the single source of truth for all credit pricing.
+const CREDIT_COSTS: Record<
+  CreditCostType,
+  { credits: number; label: string; description: string }
+> = {
+  task_application: {
+    credits: 1,
+    label: "Job Application",
+    description: "Submit a single job application via automation",
+  },
+  batch_application: {
+    credits: 1,
+    label: "Batch Application",
+    description: "Each application within a batch run",
+  },
+  premium_analysis: {
+    credits: 5,
+    label: "Premium Job Analysis",
+    description: "Deep AI analysis of job-fit scoring and recommendations",
+  },
+  resume_optimization: {
+    credits: 3,
+    label: "Resume Optimization",
+    description: "AI-powered resume tailoring for a specific job",
+  },
+  cover_letter: {
+    credits: 2,
+    label: "Cover Letter Generation",
+    description: "AI-generated cover letter customized to a job posting",
+  },
+};
 
 export class CreditService {
   private db: Database;
 
   constructor({ db }: { db: Database }) {
     this.db = db;
+  }
+
+  /** Return the full cost configuration for all operation types */
+  getCostConfig() {
+    return {
+      costs: Object.entries(CREDIT_COSTS).map(([costType, config]) => ({
+        costType: costType as CreditCostType,
+        ...config,
+      })),
+    };
+  }
+
+  /** Look up the credit cost for a given cost type */
+  getCostForType(costType: CreditCostType): number {
+    return CREDIT_COSTS[costType].credits;
   }
 
   async getBalance(userId: string) {
@@ -120,6 +170,76 @@ export class CreditService {
     const newBalance =
       (result as unknown as { rows: Array<{ balance_after: number }> }).rows[0]?.balance_after ?? 0;
     return { balance: newBalance };
+  }
+
+  /**
+   * Unified cost endpoint: consume credits for any operation type.
+   * Resolves the credit cost from the cost config (or uses override),
+   * then atomically debits the user's balance.
+   */
+  async consumeCredits(
+    userId: string,
+    costType: CreditCostType,
+    opts: {
+      costAmount?: number;
+      referenceType?: string;
+      referenceId?: string;
+      description?: string;
+      idempotencyKey?: string;
+    } = {},
+  ): Promise<{ success: boolean; balance: number; creditsUsed: number; message?: string }> {
+    // Feature flag check
+    if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") {
+      return { success: true, balance: -1, creditsUsed: 0, message: "Enforcement disabled" };
+    }
+
+    const creditsToDebit = opts.costAmount ?? this.getCostForType(costType);
+    const desc = opts.description ?? CREDIT_COSTS[costType].label;
+    const idempotencyKey = opts.idempotencyKey ?? undefined;
+
+    // Idempotency check
+    if (idempotencyKey) {
+      const existing = await this.db
+        .select({ id: creditLedger.id, balanceAfter: creditLedger.balanceAfter })
+        .from(creditLedger)
+        .where(eq(creditLedger.idempotencyKey, idempotencyKey))
+        .limit(1);
+      if (existing[0]) {
+        return { success: true, balance: existing[0].balanceAfter, creditsUsed: creditsToDebit };
+      }
+    }
+
+    // Atomic debit with balance check
+    const result = await this.db.execute(sql`
+      WITH locked AS (
+        SELECT id, credit_balance FROM users WHERE id = ${userId}::uuid FOR UPDATE
+      ),
+      check_balance AS (
+        SELECT id, credit_balance FROM locked WHERE credit_balance >= ${creditsToDebit}
+      ),
+      updated AS (
+        UPDATE users
+        SET credit_balance = credit_balance - ${creditsToDebit}, updated_at = NOW()
+        WHERE id = (SELECT id FROM check_balance)
+        RETURNING credit_balance
+      )
+      INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
+      SELECT ${userId}::uuid, ${-creditsToDebit}, credit_balance, ${costType}, ${desc}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${idempotencyKey ?? null}
+      FROM updated
+      RETURNING balance_after
+    `);
+
+    const rows = (result as unknown as { rows: Array<{ balance_after: number }> }).rows;
+    if (!rows[0]) {
+      const bal = await this.getBalance(userId);
+      return {
+        success: false,
+        balance: bal.balance,
+        creditsUsed: 0,
+        message: `Insufficient credits. Need ${creditsToDebit}, have ${bal.balance}`,
+      };
+    }
+    return { success: true, balance: rows[0].balance_after, creditsUsed: creditsToDebit };
   }
 
   async debitForTask(
