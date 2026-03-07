@@ -7,6 +7,10 @@ import type { ResumeRepository } from "./resume.repository.js";
 const SWEEP_INTERVAL_MS = 2 * 60 * 1000;
 /** Resumes stuck in "parsing" longer than this are considered stale. */
 const STALE_THRESHOLD_MS = 60 * 1000; // 1 minute
+/** Redis key for distributed sweep lock (prevents duplicate sweeps across VMs). */
+const SWEEP_LOCK_KEY = "stale-resume-sweep-lock";
+/** Sweep lock TTL — must be less than SWEEP_INTERVAL_MS to avoid skipping cycles. */
+const SWEEP_LOCK_TTL_SECS = 90; // 1.5 minutes
 
 /**
  * Periodic monitor that recovers orphaned resume parses.
@@ -16,6 +20,8 @@ const STALE_THRESHOLD_MS = 60 * 1000; // 1 minute
  *   1. Runs immediately on startup (onReady hook) to sweep orphans from the last crash.
  *   2. Runs every 2 minutes to catch any that slip through getById-level recovery.
  *   3. Checks Redis parse lock before retrying — skips resumes with active in-flight parses.
+ *   4. Uses a Redis NX sweep lock so only one VM runs the sweep in multi-instance deploys.
+ *   5. Passes isAutoRecovery=true to retryParse, which enforces a max attempt limit (5).
  */
 export class StaleResumeParseMonitor {
   private resumeService: ResumeService;
@@ -69,6 +75,14 @@ export class StaleResumeParseMonitor {
       return;
     }
 
+    // Distributed lock: only one VM runs the sweep at a time.
+    // NX = set-if-not-exists, EX = TTL in seconds.
+    const acquired = await this.redis.set(SWEEP_LOCK_KEY, "1", "EX", SWEEP_LOCK_TTL_SECS, "NX");
+    if (!acquired) {
+      this.logger.debug("Another instance is running the sweep, skipping");
+      return;
+    }
+
     this.running = true;
     try {
       const stale = await this.resumeRepo.findStaleParsingResumes(STALE_THRESHOLD_MS);
@@ -101,7 +115,7 @@ export class StaleResumeParseMonitor {
             "Recovering stale resume parse",
           );
 
-          await this.resumeService.retryParse(resume.id, resume.userId);
+          await this.resumeService.retryParse(resume.id, resume.userId, { isAutoRecovery: true });
           recovered++;
         } catch (err) {
           errors++;

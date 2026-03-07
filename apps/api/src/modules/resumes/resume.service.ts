@@ -15,6 +15,8 @@ const MAX_RESUMES = 5;
 const STALE_PARSE_THRESHOLD_MS = 60 * 1000; // 1 minute
 /** Redis lock TTL to prevent duplicate concurrent parses (must exceed max expected parse time). */
 const PARSE_LOCK_TTL_SECS = 300; // 5 minutes
+/** Max number of times the monitor/auto-recovery will retry a stale parse before giving up. */
+const MAX_PARSE_ATTEMPTS = 5;
 const ALLOWED_MIME_TYPES: Set<string> = new Set(UPLOAD_LIMITS.ALLOWED_MIME_TYPES);
 const ALLOWED_EXTENSIONS: Set<string> = new Set([".pdf", ".docx"]);
 const S3_BUCKET = process.env.S3_BUCKET_RESUMES ?? "resumes";
@@ -174,10 +176,22 @@ export class ResumeService {
     if (resume.status === "parsing") {
       const age = Date.now() - new Date(resume.createdAt).getTime();
       if (age > STALE_PARSE_THRESHOLD_MS) {
-        this.logger.warn({ resumeId: id, ageMs: age }, "Stale parse detected, auto-retrying");
-        void this.parseResume(id, resume.fileKey, userId).catch((err) => {
-          this.logger.error({ err, resumeId: id }, "Stale parse auto-retry failed");
-        });
+        const attempts = await this.getParseAttempts(id);
+        if (attempts >= MAX_PARSE_ATTEMPTS) {
+          this.logger.warn(
+            { resumeId: id, attempts },
+            "Stale parse exceeded max attempts, marking as failed",
+          );
+          await this.resumeRepo.update(id, { status: "parse_failed" });
+        } else {
+          this.logger.warn(
+            { resumeId: id, ageMs: age, attempts },
+            "Stale parse detected, auto-retrying",
+          );
+          void this.parseResume(id, resume.fileKey, userId).catch((err) => {
+            this.logger.error({ err, resumeId: id }, "Stale parse auto-retry failed");
+          });
+        }
       }
     }
 
@@ -253,7 +267,11 @@ export class ResumeService {
   }
 
   async delete(id: string, userId: string) {
-    const resume = await this.getById(id, userId);
+    // Use findById directly (not getById) to avoid triggering getById's
+    // stale-parse auto-recovery — no point starting a parse for a resume
+    // that's about to be deleted.
+    const resume = await this.resumeRepo.findById(id, userId);
+    if (!resume) throw AppError.notFound("Resume not found");
     await this.s3.send(
       new DeleteObjectCommand({
         Bucket: S3_BUCKET,
@@ -263,7 +281,7 @@ export class ResumeService {
     await this.resumeRepo.delete(id);
   }
 
-  async retryParse(id: string, userId: string) {
+  async retryParse(id: string, userId: string, { isAutoRecovery = false } = {}) {
     // Use findById directly (not getById) to avoid triggering getById's
     // stale-parse auto-recovery, which would fire a second concurrent parse.
     const resume = await this.resumeRepo.findById(id, userId);
@@ -280,6 +298,24 @@ export class ResumeService {
     if (lockHeld) {
       this.logger.info({ resumeId: id }, "Parse already in progress, skipping retry");
       return { id, status: "parsing" as const };
+    }
+
+    // For auto-recovery (monitor/getById), enforce max attempt limit to prevent
+    // infinite LLM token waste on permanently-broken parses.
+    // Manual user retries reset the counter.
+    if (isAutoRecovery) {
+      const attempts = await this.getParseAttempts(id);
+      if (attempts >= MAX_PARSE_ATTEMPTS) {
+        this.logger.warn(
+          { resumeId: id, attempts },
+          "Auto-recovery exceeded max attempts, marking as failed",
+        );
+        await this.resumeRepo.update(id, { status: "parse_failed" });
+        return { id, status: "parse_failed" as const };
+      }
+    } else {
+      // Manual retry: reset counter so user gets a fresh set of attempts
+      await this.resetParseAttempts(id);
     }
 
     // Reset status to parsing
@@ -313,6 +349,10 @@ export class ResumeService {
       this.logger.info({ resumeId }, "Resume parse already in progress (lock held), skipping");
       return;
     }
+
+    // Track attempt count for auto-recovery retry limiting.
+    // TTL = 1 hour: if no attempts for 1 hour, counter resets naturally.
+    await this.incrementParseAttempts(resumeId);
 
     try {
       this.logger.info({ resumeId }, "Starting resume parse");
@@ -533,6 +573,28 @@ export class ResumeService {
       // On VM crash, TTL handles expiry instead.
       await this.redis.del(lockKey).catch(() => {});
     }
+  }
+
+  // ── Parse attempt counter (Redis-backed) ────────────────────────
+  // Used to cap auto-recovery retries and prevent infinite LLM token waste
+  // on permanently-broken parses. TTL = 1 hour for natural expiry.
+  private parseAttemptsKey(resumeId: string) {
+    return `resume-parse-attempts:${resumeId}`;
+  }
+
+  private async getParseAttempts(resumeId: string): Promise<number> {
+    const val = await this.redis.get(this.parseAttemptsKey(resumeId));
+    return val ? parseInt(val, 10) : 0;
+  }
+
+  private async incrementParseAttempts(resumeId: string): Promise<void> {
+    const key = this.parseAttemptsKey(resumeId);
+    await this.redis.incr(key);
+    await this.redis.expire(key, 3600); // 1 hour TTL
+  }
+
+  private async resetParseAttempts(resumeId: string): Promise<void> {
+    await this.redis.del(this.parseAttemptsKey(resumeId));
   }
 
   /**
