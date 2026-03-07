@@ -26,7 +26,7 @@ export const creditRouter = s.router(creditContract, {
   consume: async ({ request, body }) => {
     const { creditService } = request.diScope.cradle;
     const result = await creditService.consumeCredits(request.userId, body.costType, {
-      costAmount: body.costAmount,
+      // costAmount intentionally omitted — always use server-side CREDIT_COSTS pricing
       referenceType: body.referenceType,
       referenceId: body.referenceId,
       description: body.description,

@@ -54,7 +54,6 @@ export const costConfigResponse = z.object({
 // ─── Consume credits request/response ───
 export const consumeCreditsRequest = z.object({
   costType: creditCostType,
-  costAmount: z.number().int().min(1).optional(),
   referenceType: z.string().max(30).optional(),
   referenceId: z.string().uuid().optional(),
   description: z.string().max(500).optional(),
