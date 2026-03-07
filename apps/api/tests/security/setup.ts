@@ -135,7 +135,7 @@ export async function buildTestApp(): Promise<FastifyInstance> {
   // -- Rate limiting --
   const rateLimit = await import("@fastify/rate-limit");
   await app.register(rateLimit.default, {
-    max: 100,
+    max: 300,
     timeWindow: "1 minute",
     keyGenerator: (request) => (request as any).userId ?? request.ip,
     errorResponseBuilder: (_req, context) => ({
@@ -175,7 +175,11 @@ export async function buildTestApp(): Promise<FastifyInstance> {
     }
 
     if (!authHeader?.startsWith("Bearer ")) {
-      throw { statusCode: 401, code: "UNAUTHORIZED", message: "Missing or invalid authorization header" };
+      throw {
+        statusCode: 401,
+        code: "UNAUTHORIZED",
+        message: "Missing or invalid authorization header",
+      };
     }
 
     const token = authHeader.slice(7);

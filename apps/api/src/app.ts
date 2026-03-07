@@ -191,12 +191,14 @@ export async function buildApp() {
       autoScaleMonitor,
       pgBossService,
       staleTaskReconciliation,
+      staleResumeParseMonitor,
       instanceDiscoveryService,
     } = diContainer.cradle;
     sandboxHealthMonitor.start();
     autoStopMonitor.start();
     autoScaleMonitor.start();
     staleTaskReconciliation.start();
+    staleResumeParseMonitor.start();
     instanceDiscoveryService.start();
     // Start pg-boss (non-blocking — logs warning if DATABASE_DIRECT_URL not set)
     await pgBossService.start().catch((err) => {
@@ -212,12 +214,14 @@ export async function buildApp() {
       autoScaleMonitor,
       pgBossService,
       staleTaskReconciliation,
+      staleResumeParseMonitor,
       instanceDiscoveryService,
     } = diContainer.cradle;
     sandboxHealthMonitor.stop();
     autoStopMonitor.stop();
     autoScaleMonitor.stop();
     staleTaskReconciliation.stop();
+    staleResumeParseMonitor.stop();
     instanceDiscoveryService.stop();
     await pgBossService.stop();
   });

@@ -11,6 +11,10 @@ import { UPLOAD_LIMITS } from "@valet/shared/constants";
 import { publishToUser } from "../../websocket/handler.js";
 
 const MAX_RESUMES = 5;
+/** If a resume is stuck in "parsing" for longer than this, auto-retry. */
+const STALE_PARSE_THRESHOLD_MS = 60 * 1000; // 1 minute
+/** Redis lock TTL for stale-parse auto-retry to prevent duplicate kicks. */
+const STALE_PARSE_LOCK_TTL_SECS = 90; // 1.5 minutes
 const ALLOWED_MIME_TYPES: Set<string> = new Set(UPLOAD_LIMITS.ALLOWED_MIME_TYPES);
 const ALLOWED_EXTENSIONS: Set<string> = new Set([".pdf", ".docx"]);
 const S3_BUCKET = process.env.S3_BUCKET_RESUMES ?? "resumes";
@@ -163,6 +167,23 @@ export class ResumeService {
   async getById(id: string, userId: string) {
     const resume = await this.resumeRepo.findById(id, userId);
     if (!resume) throw AppError.notFound("Resume not found");
+
+    // Auto-recover stale parses: if stuck in "parsing" for > 5 min, retry automatically.
+    // This handles cases where the background promise was lost (VM restart, deploy, etc.).
+    if (resume.status === "parsing") {
+      const age = Date.now() - new Date(resume.createdAt).getTime();
+      if (age > STALE_PARSE_THRESHOLD_MS) {
+        const lockKey = `resume-parse-lock:${id}`;
+        const acquired = await this.redis.set(lockKey, "1", "EX", STALE_PARSE_LOCK_TTL_SECS, "NX");
+        if (acquired) {
+          this.logger.warn({ resumeId: id, ageMs: age }, "Stale parse detected, auto-retrying");
+          void this.parseResume(id, resume.fileKey, userId).catch((err) => {
+            this.logger.error({ err, resumeId: id }, "Stale parse auto-retry failed");
+          });
+        }
+      }
+    }
+
     return resume;
   }
 

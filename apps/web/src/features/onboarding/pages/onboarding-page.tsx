@@ -245,8 +245,16 @@ export function OnboardingPage() {
   });
 
   const updateProfile = api.users.updateProfile.useMutation({
-    onError: () => {
-      toast.error("Failed to save profile. Please try again.");
+    onError: (err) => {
+      const detail =
+        err && typeof err === "object" && "body" in err
+          ? String((err as Record<string, unknown>).body ?? "")
+          : err instanceof Error
+            ? err.message
+            : "";
+      toast.error(
+        detail ? `Failed to save profile: ${detail}` : "Failed to save profile. Please try again.",
+      );
     },
   });
 
