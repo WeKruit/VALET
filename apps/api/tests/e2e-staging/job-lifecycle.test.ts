@@ -12,15 +12,70 @@ import { isAvailable, getStagingClient, waitForStatus, ensureWorkerUp } from "./
 
 type Client = ReturnType<typeof getStagingClient>;
 
-/** Known resume ID for staging E2E tests — must exist in the staging DB. */
-const TEST_RESUME_ID = "c815652b-e55f-4a63-bb4c-b3ae9295a8d5";
+interface StagingResume {
+  id: string;
+  isDefault?: boolean;
+  status?: string;
+}
+
+/** Preferred resume ID for staging E2E tests — falls back if deleted. */
+const PREFERRED_TEST_RESUME_ID = "c815652b-e55f-4a63-bb4c-b3ae9295a8d5";
+
+async function resolveTestResumeId(client: Client, preferredResumeId: string): Promise<string> {
+  const preferred = await client.api.get(`/api/v1/resumes/${preferredResumeId}`, {
+    timeoutMs: 10_000,
+  });
+
+  if (preferred.status === 200) {
+    return preferredResumeId;
+  }
+
+  // Preserve current skip behavior when JWT is missing/invalid.
+  if (preferred.status === 401) {
+    return preferredResumeId;
+  }
+
+  if (preferred.status !== 404) {
+    console.log(
+      `[e2e] Resume lookup returned ${preferred.status}; continuing with configured resume ID`,
+    );
+    return preferredResumeId;
+  }
+
+  const list = await client.api.get("/api/v1/resumes", { timeoutMs: 10_000 });
+  if (!list.ok) {
+    console.log(
+      `[e2e] Resume fallback list returned ${list.status}; continuing with configured resume ID`,
+    );
+    return preferredResumeId;
+  }
+
+  const resumes = (((list.data as any) ?? {}).data ?? []) as StagingResume[];
+  const fallbackResume =
+    resumes.find((resume) => resume.isDefault === true && resume.status === "parsed") ??
+    resumes.find((resume) => resume.status === "parsed") ??
+    resumes.find((resume) => resume.isDefault === true) ??
+    resumes[0];
+
+  if (!fallbackResume?.id) {
+    console.log("[e2e] No fallback resumes found; continuing with configured resume ID");
+    return preferredResumeId;
+  }
+
+  console.log(
+    `[e2e] Preferred resume missing; using fallback resume ID ${fallbackResume.id} instead`,
+  );
+  return fallbackResume.id;
+}
 
 describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
   let client: Client;
+  let testResumeId = PREFERRED_TEST_RESUME_ID;
 
   beforeAll(async () => {
     await ensureWorkerUp();
     client = getStagingClient();
+    testResumeId = await resolveTestResumeId(client, PREFERRED_TEST_RESUME_ID);
   }, 180_000);
 
   it("submit test task → 201 with task ID", async () => {
@@ -28,7 +83,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       body: {
         jobUrl: "https://boards.greenhouse.io/example/jobs/1000001",
         mode: "copilot",
-        resumeId: TEST_RESUME_ID,
+        resumeId: testResumeId,
         executionTarget: "cloud" as const,
         notes: "[e2e-test] E2E staging test — safe to ignore",
       },
@@ -54,7 +109,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       body: {
         jobUrl: "https://boards.greenhouse.io/example/jobs/1000002",
         mode: "copilot",
-        resumeId: TEST_RESUME_ID,
+        resumeId: testResumeId,
         executionTarget: "cloud" as const,
         notes: "[e2e-test] E2E staging lifecycle test",
       },
@@ -91,7 +146,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       body: {
         jobUrl: "https://boards.greenhouse.io/example/jobs/1000003",
         mode: "copilot",
-        resumeId: TEST_RESUME_ID,
+        resumeId: testResumeId,
         executionTarget: "cloud" as const,
         notes: "[e2e-test] E2E staging terminal test",
       },
@@ -128,7 +183,7 @@ describe.runIf(isAvailable())("Staging E2E: Job Lifecycle", () => {
       body: {
         jobUrl: "https://boards.greenhouse.io/example/jobs/1000004",
         mode: "copilot",
-        resumeId: TEST_RESUME_ID,
+        resumeId: testResumeId,
         executionTarget: "cloud" as const,
         notes: "[e2e-test] E2E staging cancel test",
       },
