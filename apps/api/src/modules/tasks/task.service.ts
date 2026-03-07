@@ -737,6 +737,10 @@ export class TaskService {
     // Desktop tasks: route to per-worker queue
     if (target === "desktop" && body.desktopWorkerId) {
       queueTargetWorkerId = body.desktopWorkerId;
+    } else if (target === "desktop") {
+      // Defensive: enforceExecutionTargetPolicy already validates desktopWorkerId,
+      // but guard against silent fallthrough to general/sandbox queue.
+      throw AppError.badRequest("desktopWorkerId is required for desktop queue routing.");
     } else if (resolvedSandboxId) {
       // Cloud tasks: use sandbox → worker resolution
       const ghWorkerId = await this.sandboxRepo.resolveWorkerId(resolvedSandboxId);
@@ -810,6 +814,9 @@ export class TaskService {
             ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
             ...(body.visionModel ? { image_model: body.visionModel } : {}),
           },
+          ...(target === "desktop" && body.desktopWorkerId
+            ? { targetWorkerId: body.desktopWorkerId }
+            : {}),
           callbackUrl,
           valetTaskId: task.id,
         });
