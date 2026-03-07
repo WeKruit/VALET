@@ -169,6 +169,13 @@ export class TaskService {
     }
 
     // executionTarget === "desktop"
+
+    // Admin/superadmin: skip onboarding + resume checks, but still validate the desktop worker
+    if (userRole === "admin" || userRole === "superadmin") {
+      await this.validateDesktopWorkerSession(userId, desktopWorkerId);
+      return;
+    }
+
     // 1. Check onboarding completed
     const user = await this.userRepo.findById(userId);
     if (!user) {
@@ -186,6 +193,16 @@ export class TaskService {
     }
 
     // 3. Check desktop worker is registered and belongs to user
+    await this.validateDesktopWorkerSession(userId, desktopWorkerId);
+  }
+
+  /**
+   * Validate that the desktop worker session exists, belongs to the user, and is not expired.
+   */
+  private async validateDesktopWorkerSession(
+    userId: string,
+    desktopWorkerId?: string,
+  ): Promise<void> {
     if (!desktopWorkerId) {
       throw AppError.badRequest("desktopWorkerId is required when executionTarget is 'desktop'.");
     }
@@ -714,9 +731,18 @@ export class TaskService {
       }
     }
 
-    // Resolve sandbox UUID → GH worker UUID for queue routing
+    // Resolve queue routing: desktop tasks use per-worker queue, cloud uses sandbox → worker
     let queueTargetWorkerId: string | undefined;
-    if (resolvedSandboxId) {
+
+    // Desktop tasks: route to per-worker queue
+    if (target === "desktop" && body.desktopWorkerId) {
+      queueTargetWorkerId = body.desktopWorkerId;
+    } else if (target === "desktop") {
+      // Defensive: enforceExecutionTargetPolicy already validates desktopWorkerId,
+      // but guard against silent fallthrough to general/sandbox queue.
+      throw AppError.badRequest("desktopWorkerId is required for desktop queue routing.");
+    } else if (resolvedSandboxId) {
+      // Cloud tasks: use sandbox → worker resolution
       const ghWorkerId = await this.sandboxRepo.resolveWorkerId(resolvedSandboxId);
       if (ghWorkerId) {
         queueTargetWorkerId = ghWorkerId;
@@ -788,6 +814,9 @@ export class TaskService {
             ...(body.reasoningModel ? { model: body.reasoningModel } : {}),
             ...(body.visionModel ? { image_model: body.visionModel } : {}),
           },
+          ...(target === "desktop" && body.desktopWorkerId
+            ? { targetWorkerId: body.desktopWorkerId }
+            : {}),
           callbackUrl,
           valetTaskId: task.id,
         });
@@ -815,7 +844,9 @@ export class TaskService {
             metadata: {
               ...(ghJob.metadata ?? {}),
               pgBossJobId,
-              pgBossQueueName: QUEUE_APPLY_JOB,
+              pgBossQueueName: queueTargetWorkerId
+                ? `${QUEUE_APPLY_JOB}/${queueTargetWorkerId}`
+                : QUEUE_APPLY_JOB,
             },
           });
         }

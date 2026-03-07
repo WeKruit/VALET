@@ -111,17 +111,22 @@ describe("TaskService.createBatch()", () => {
 
   it("rejects the whole batch with 402 when enforcement is on and balance is insufficient", async () => {
     vi.stubEnv("FEATURE_CREDITS_ENFORCEMENT", "true");
+    // Bypass execution target policy — this test is about credit enforcement, not target policy
+    vi.spyOn(service as never, "enforceExecutionTargetPolicy" as never).mockResolvedValue(
+      undefined as never,
+    );
     (deps.creditService.getBalance as ReturnType<typeof vi.fn>).mockResolvedValue({
       balance: 1,
       trialExpiry: null,
       enforcementEnabled: true,
     });
 
+    // Use non-admin role so credit enforcement actually applies (admin is exempt)
     await expect(
       service.createBatch(
         { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
         ADMIN_USER_ID,
-        ADMIN_ROLE,
+        "early_access",
       ),
     ).rejects.toThrow(AppError);
 
@@ -129,7 +134,7 @@ describe("TaskService.createBatch()", () => {
       service.createBatch(
         { ...BATCH_BASE, jobUrls: ["https://a.com/1", "https://b.com/2", "https://c.com/3"] },
         ADMIN_USER_ID,
-        ADMIN_ROLE,
+        "early_access",
       ),
     ).rejects.toThrow(/Insufficient credits/);
 
