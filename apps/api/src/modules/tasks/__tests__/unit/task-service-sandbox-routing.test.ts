@@ -322,6 +322,11 @@ describe("TaskService — createTestTask routing", () => {
 
     await service.retry("task-uuid-1", "user-uuid-1");
 
-    expect(deps.taskQueueService.enqueueApplyJob).toHaveBeenCalledWith(expect.anything(), {});
+    expect(deps.taskQueueService.enqueueApplyJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        singletonKey: expect.stringMatching(/^task-uuid-1:retry:/),
+      }),
+    );
   });
 });
