@@ -80,10 +80,16 @@ export function Header() {
       <div className="flex items-center gap-2">
         {/* Credit balance pill */}
         {!creditsLoading && (
-          <Badge variant="default" className="gap-1 text-[11px] px-2 py-0.5">
-            <Coins className="h-3 w-3 text-[var(--wk-accent-amber)]" />
-            {balance} credits
-          </Badge>
+          <button
+            onClick={() => navigate("/settings?tab=credits")}
+            className="cursor-pointer rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wk-ring)]"
+            aria-label={`${balance} credits — view credit details`}
+          >
+            <Badge variant="default" className="gap-1 text-[11px] px-2 py-0.5">
+              <Coins className="h-3 w-3 text-[var(--wk-accent-amber)]" />
+              {balance} credits
+            </Badge>
+          </button>
         )}
 
         {/* Notification bell */}
