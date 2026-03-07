@@ -31,6 +31,11 @@ function makeMockRequest(overrides: {
         select: dbSelect ?? defaultDbSelect,
       },
     },
+    log: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
   } as unknown as FastifyRequest;
 }
 
@@ -119,14 +124,15 @@ describe("resolveCurrentRole", () => {
     expect(role).toBe("user");
   });
 
-  it("returns jwtRole when DB returns no rows", async () => {
+  it("throws unauthorized when DB returns no rows (deleted/orphaned user)", async () => {
     const dbSelect = makeDbSelect([]);
     const request = makeMockRequest({
       redisGet: vi.fn().mockResolvedValue(null),
       dbSelect,
     });
 
-    const role = await resolveCurrentRole(request, userId, jwtRole);
-    expect(role).toBe("user");
+    await expect(resolveCurrentRole(request, userId, jwtRole)).rejects.toThrow(
+      "User account not found",
+    );
   });
 });

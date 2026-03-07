@@ -152,17 +152,18 @@ export async function resolveCurrentRole(
       .where(eq(users.id, userId))
       .limit(1);
 
-    const dbRole = rows[0]?.role ?? jwtRole;
-    request.log.info(
-      {
-        userId,
-        resolvedRole: dbRole,
-        source: rows[0] ? "db" : "db-empty-fallback",
-        jwtRole,
-        rowCount: rows.length,
-      },
-      "resolveCurrentRole",
-    );
+    if (!rows[0]) {
+      // User ID from JWT doesn't exist in DB — token references a deleted/orphaned user.
+      // Reject rather than silently falling back to jwtRole (which would give a gated "user" role).
+      request.log.warn(
+        { userId, jwtRole },
+        "resolveCurrentRole: user not found in DB — rejecting token",
+      );
+      throw AppError.unauthorized("User account not found");
+    }
+
+    const dbRole = rows[0].role;
+    request.log.info({ userId, resolvedRole: dbRole, source: "db", jwtRole }, "resolveCurrentRole");
 
     // Stage 3: Try cache write (best-effort)
     try {
@@ -173,6 +174,7 @@ export async function resolveCurrentRole(
 
     return dbRole;
   } catch (err) {
+    if (err instanceof AppError) throw err;
     request.log.error(
       { userId, jwtRole, err: (err as Error).message },
       "resolveCurrentRole: DB query failed, falling back to jwtRole",

@@ -134,4 +134,18 @@ describe("AuthService.refreshTokens", () => {
 
     await expect(service.refreshTokens(token)).rejects.toThrow();
   });
+
+  it("rejects refresh when user no longer exists in DB", async () => {
+    const dbSelect = makeDbSelect([]); // 0 rows = user deleted
+    const { service } = buildAuthService(dbSelect);
+
+    const token = await signRefreshToken({
+      sub: "deleted-user",
+      email: "ghost@example.com",
+      role: "user",
+      tokenVersion: 0,
+    });
+
+    await expect(service.refreshTokens(token)).rejects.toThrow("Token has been revoked");
+  });
 });

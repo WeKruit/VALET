@@ -301,8 +301,13 @@ export class AuthService {
           .from(users)
           .where(eq(users.id, payload.sub))
           .limit(1);
-        if (rows[0]?.role) currentRole = rows[0].role;
-      } catch {
+        if (!rows[0]) {
+          // User no longer exists — reject the refresh rather than issuing tokens for a ghost user
+          throw new Error("Token has been revoked");
+        }
+        currentRole = rows[0].role;
+      } catch (err) {
+        if (err instanceof Error && err.message === "Token has been revoked") throw err;
         // DB unavailable — fall back to JWT role
       }
 
