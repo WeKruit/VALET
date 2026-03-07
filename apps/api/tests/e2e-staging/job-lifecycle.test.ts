@@ -8,6 +8,7 @@
  * Gated: STAGING_E2E=true + staging env vars set.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { readFile } from "node:fs/promises";
 import { isAvailable, getStagingClient, waitForStatus, ensureWorkerUp } from "./_setup.js";
 
 type Client = ReturnType<typeof getStagingClient>;
@@ -20,6 +21,45 @@ interface StagingResume {
 
 /** Preferred resume ID for staging E2E tests — falls back if deleted. */
 const PREFERRED_TEST_RESUME_ID = "c815652b-e55f-4a63-bb4c-b3ae9295a8d5";
+
+async function uploadFallbackResume(): Promise<string | null> {
+  const jwt = process.env.STAGING_JWT;
+  if (!jwt) return null;
+
+  const apiUrl = (process.env.STAGING_API_URL ?? "https://valet-api-stg.fly.dev").replace(
+    /\/$/,
+    "",
+  );
+  const filePath = new URL("../../../../tests/fixtures/test-resume.pdf", import.meta.url);
+  const fileBytes = await readFile(filePath);
+
+  const formData = new FormData();
+  formData.append("file", new Blob([fileBytes], { type: "application/pdf" }), "test-resume.pdf");
+
+  const response = await fetch(`${apiUrl}/api/v1/resumes/upload`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.log(`[e2e] Resume upload fallback failed (${response.status}): ${body}`);
+    return null;
+  }
+
+  const body = (await response.json()) as { id?: unknown };
+  const uploadedId = typeof body?.id === "string" ? body.id : null;
+  if (!uploadedId) {
+    console.log("[e2e] Resume upload fallback succeeded but no id returned");
+    return null;
+  }
+
+  console.log(`[e2e] Uploaded fallback resume ID ${uploadedId}`);
+  return uploadedId;
+}
 
 async function resolveTestResumeId(client: Client, preferredResumeId: string): Promise<string> {
   const preferred = await client.api.get(`/api/v1/resumes/${preferredResumeId}`, {
@@ -58,6 +98,9 @@ async function resolveTestResumeId(client: Client, preferredResumeId: string): P
     resumes[0];
 
   if (!fallbackResume?.id) {
+    const uploadedResumeId = await uploadFallbackResume();
+    if (uploadedResumeId) return uploadedResumeId;
+
     console.log("[e2e] No fallback resumes found; continuing with configured resume ID");
     return preferredResumeId;
   }
