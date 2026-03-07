@@ -66,6 +66,10 @@ export const desktopBootstrapResponse = z.object({
   }),
   defaultResume: bootstrapResume.nullable(),
   recentTasks: z.array(bootstrapTaskSummary),
+  automation: z.object({
+    llmRuntimeReady: z.boolean(),
+    message: z.string().nullable(),
+  }),
 });
 
 // ─── Inferred Types ───

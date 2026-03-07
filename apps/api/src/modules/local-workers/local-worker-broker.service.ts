@@ -318,6 +318,22 @@ export class LocalWorkerBrokerService {
     return { session, lease };
   }
 
+  async requireCurrentLease(
+    sessionToken: string,
+    leaseId: string,
+    expectedUserId?: string,
+  ): Promise<{ session: WorkerSession; lease: ActiveLease }> {
+    const session = await this.requireSessionByToken(sessionToken, undefined, expectedUserId);
+    const lease = await this.readWorkerLease(session.desktopWorkerId);
+    if (!lease) {
+      throw new LocalWorkerBrokerError(409, "LEASE_NOT_FOUND", "Worker has no active lease");
+    }
+    if (lease.leaseId !== leaseId) {
+      throw new LocalWorkerBrokerError(409, "LEASE_MISMATCH", "Lease does not match active job");
+    }
+    return { session, lease };
+  }
+
   private requireBoss(): PgBoss {
     const boss = this.pgBossService.instance;
     if (!boss) {
