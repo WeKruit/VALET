@@ -323,6 +323,7 @@ export class LocalWorkerBrokerService {
     leaseId: string,
     expectedUserId?: string,
   ): Promise<{ session: WorkerSession; lease: ActiveLease }> {
+    this.ensureEnabled();
     const session = await this.requireSessionByToken(sessionToken, undefined, expectedUserId);
     const lease = await this.readWorkerLease(session.desktopWorkerId);
     if (!lease) {
