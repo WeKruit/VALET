@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { LocalWorkerBrokerService } from "../../src/modules/local-workers/local-worker-broker.service.js";
+import { createManagedRuntimeGrant } from "../../src/modules/local-workers/llm-runtime-auth.js";
 
 describe("LocalWorkerBrokerService complete/fail terminal handling", () => {
   it("returns actualStatus when the job is terminal and the lease is already gone", async () => {
@@ -255,5 +256,118 @@ describe("LocalWorkerBrokerService claim error handling", () => {
     });
     expect(result.runtimeGrant).toMatch(/^lwrg_v1_/);
     expect(result.runtimeGrantExpiresAt).toEqual(expect.any(String));
+  });
+});
+
+describe("LocalWorkerBrokerService requireRuntimeGrant", () => {
+  it("rejects expired runtime grants", async () => {
+    const grant = createManagedRuntimeGrant();
+    const redis = {
+      get: vi.fn().mockResolvedValue(null),
+      del: vi.fn().mockResolvedValue(1),
+    };
+    const service = new LocalWorkerBrokerService({
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      pgBossService: { instance: null } as any,
+      ghJobRepo: {} as any,
+      ghJobEventRepo: {} as any,
+      taskQueueService: {} as any,
+      redis: redis as any,
+    });
+
+    (service as any).readJson = vi.fn().mockResolvedValue({
+      userId: "user-1",
+      desktopWorkerId: "desktop-worker-1",
+      sessionToken: "session-token-1",
+      jobId: "gh-job-1",
+      leaseId: "lease-1",
+      expiresAt: Date.now() - 1_000,
+    });
+
+    await expect(service.requireRuntimeGrant(grant)).rejects.toMatchObject({
+      statusCode: 401,
+      code: "INVALID_RUNTIME_GRANT",
+    });
+    expect(redis.del).toHaveBeenCalled();
+  });
+
+  it("rejects mismatched session or lease ownership", async () => {
+    const grant = createManagedRuntimeGrant();
+    const redis = {
+      get: vi.fn().mockResolvedValue(null),
+      del: vi.fn().mockResolvedValue(1),
+    };
+    const service = new LocalWorkerBrokerService({
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      pgBossService: { instance: null } as any,
+      ghJobRepo: {} as any,
+      ghJobEventRepo: {} as any,
+      taskQueueService: {} as any,
+      redis: redis as any,
+    });
+
+    (service as any).readJson = vi.fn().mockResolvedValue({
+      userId: "user-1",
+      desktopWorkerId: "desktop-worker-1",
+      sessionToken: "session-token-1",
+      jobId: "gh-job-1",
+      leaseId: "lease-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    (service as any).requireSessionByToken = vi.fn().mockResolvedValue({
+      userId: "user-1",
+      desktopWorkerId: "desktop-worker-2",
+      sessionToken: "session-token-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    (service as any).readLease = vi.fn().mockResolvedValue({
+      jobId: "gh-job-1",
+      leaseId: "lease-1",
+      desktopWorkerId: "desktop-worker-1",
+    });
+
+    await expect(service.requireRuntimeGrant(grant)).rejects.toMatchObject({
+      statusCode: 401,
+      code: "INVALID_RUNTIME_GRANT",
+    });
+    expect(redis.del).toHaveBeenCalled();
+  });
+
+  it("rejects revoked runtime grants after lease deletion", async () => {
+    const grant = createManagedRuntimeGrant();
+    const redis = {
+      get: vi.fn().mockResolvedValue(null),
+      del: vi.fn().mockResolvedValue(1),
+    };
+    const service = new LocalWorkerBrokerService({
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      pgBossService: { instance: null } as any,
+      ghJobRepo: {} as any,
+      ghJobEventRepo: {} as any,
+      taskQueueService: {} as any,
+      redis: redis as any,
+    });
+
+    (service as any).readJson = vi.fn().mockResolvedValue({
+      userId: "user-1",
+      desktopWorkerId: "desktop-worker-1",
+      sessionToken: "session-token-1",
+      jobId: "gh-job-1",
+      leaseId: "lease-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    (service as any).requireSessionByToken = vi.fn().mockResolvedValue({
+      userId: "user-1",
+      desktopWorkerId: "desktop-worker-1",
+      sessionToken: "session-token-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    (service as any).readLease = vi.fn().mockResolvedValue(null);
+
+    await expect(service.requireRuntimeGrant(grant)).rejects.toMatchObject({
+      statusCode: 401,
+      code: "INVALID_RUNTIME_GRANT",
+    });
+    expect(redis.del).toHaveBeenCalled();
   });
 });
