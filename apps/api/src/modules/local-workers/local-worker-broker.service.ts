@@ -957,6 +957,35 @@ export class LocalWorkerBrokerService {
           },
         });
         await this.syncValetTaskStatus(claimedJob, "in_progress");
+        const runtimeGrant = await this.issueRuntimeGrant(session, lease);
+
+        const resumePath =
+          typeof inputData.desktop_resume_path === "string"
+            ? inputData.desktop_resume_path
+            : undefined;
+        const resumeId =
+          typeof inputData.desktop_resume_id === "string"
+            ? inputData.desktop_resume_id
+            : typeof inputData.resume_id === "string"
+              ? inputData.resume_id
+              : undefined;
+        return {
+          leaseId,
+          runtimeGrant: runtimeGrant.runtimeGrant,
+          runtimeGrantExpiresAt: runtimeGrant.runtimeGrantExpiresAt,
+          job: {
+            jobId: ghJob.id,
+            leaseId,
+            targetUrl: ghJob.targetUrl,
+            jobType: ghJob.jobType ?? "apply",
+            executionMode: ghJob.executionMode ?? "mastra",
+            profile: normalizedProfile,
+            profileSchemaVersion: LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
+            resumePath,
+            resumeId,
+            metadata: ghJob.metadata ?? {},
+          },
+        };
       } catch (postLeaseErr) {
         const errMsg = postLeaseErr instanceof Error ? postLeaseErr.message : String(postLeaseErr);
         this.logger.error(
@@ -992,36 +1021,6 @@ export class LocalWorkerBrokerService {
         });
         throw postLeaseErr;
       }
-
-      const runtimeGrant = await this.issueRuntimeGrant(session, lease);
-
-      const resumePath =
-        typeof inputData.desktop_resume_path === "string"
-          ? inputData.desktop_resume_path
-          : undefined;
-      const resumeId =
-        typeof inputData.desktop_resume_id === "string"
-          ? inputData.desktop_resume_id
-          : typeof inputData.resume_id === "string"
-            ? inputData.resume_id
-            : undefined;
-      return {
-        leaseId,
-        runtimeGrant: runtimeGrant.runtimeGrant,
-        runtimeGrantExpiresAt: runtimeGrant.runtimeGrantExpiresAt,
-        job: {
-          jobId: ghJob.id,
-          leaseId,
-          targetUrl: ghJob.targetUrl,
-          jobType: ghJob.jobType ?? "apply",
-          executionMode: ghJob.executionMode ?? "mastra",
-          profile: normalizedProfile,
-          profileSchemaVersion: LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
-          resumePath,
-          resumeId,
-          metadata: ghJob.metadata ?? {},
-        },
-      };
     } finally {
       await this.releaseClaimLock(session.desktopWorkerId, claimLockToken);
     }
