@@ -209,13 +209,16 @@ export class CreditService {
       }
     }
 
-    // Atomic debit with balance check
+    // Atomic debit with balance check + inline idempotency guard
     const result = await this.db.execute(sql`
       WITH locked AS (
         SELECT id, credit_balance FROM users WHERE id = ${userId}::uuid FOR UPDATE
       ),
       check_balance AS (
-        SELECT id, credit_balance FROM locked WHERE credit_balance >= ${creditsToDebit}
+        SELECT id, credit_balance FROM locked
+        WHERE credit_balance >= ${creditsToDebit}
+          AND (${idempotencyKey ?? null}::text IS NULL
+               OR NOT EXISTS (SELECT 1 FROM credit_ledger WHERE idempotency_key = ${idempotencyKey ?? null}))
       ),
       updated AS (
         UPDATE users
@@ -226,11 +229,23 @@ export class CreditService {
       INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
       SELECT ${userId}::uuid, ${-creditsToDebit}, credit_balance, ${costType}, ${desc}, ${opts.referenceType ?? null}, ${opts.referenceId ?? null}, ${idempotencyKey ?? null}
       FROM updated
+      ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING balance_after
     `);
 
     const rows = (result as unknown as { rows: Array<{ balance_after: number }> }).rows;
     if (!rows[0]) {
+      // Could be insufficient balance OR idempotent duplicate — check which
+      if (idempotencyKey) {
+        const dup = await this.db
+          .select({ balanceAfter: creditLedger.balanceAfter })
+          .from(creditLedger)
+          .where(eq(creditLedger.idempotencyKey, idempotencyKey))
+          .limit(1);
+        if (dup[0]) {
+          return { success: true, balance: dup[0].balanceAfter, creditsUsed: creditsToDebit };
+        }
+      }
       const bal = await this.getBalance(userId);
       return {
         success: false,

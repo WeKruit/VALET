@@ -43,8 +43,16 @@ export const creditRouter = s.router(creditContract, {
   adminGrant: async ({ request, body }) => {
     // Admin-only check
     const { creditService, userService } = request.diScope.cradle;
-    const currentUser = await userService.getById(request.userId);
-    if (!currentUser || (currentUser.role !== "admin" && currentUser.role !== "superadmin")) {
+    let currentUser;
+    try {
+      currentUser = await userService.getById(request.userId);
+    } catch {
+      return {
+        status: 403 as const,
+        body: { error: "FORBIDDEN", message: "Admin access required" },
+      };
+    }
+    if (currentUser.role !== "admin" && currentUser.role !== "superadmin") {
       return {
         status: 403 as const,
         body: { error: "FORBIDDEN", message: "Admin access required" },
