@@ -18,9 +18,16 @@ import {
   type LocalWorkerProfileV1,
   parseLocalWorkerProfileFromInputData,
 } from "./local-worker-contracts.js";
+import {
+  ManagedRuntimeAuthError,
+  createManagedRuntimeGrant,
+  hashManagedRuntimeGrant,
+  normalizeManagedRuntimeGrant,
+} from "./llm-runtime-auth.js";
 
 const SESSION_TTL_MS = 65 * 60 * 1000;
 const LEASE_TTL_MS = 4 * 60 * 60 * 1000;
+const RUNTIME_GRANT_TTL_MS = LEASE_TTL_MS;
 const CLAIM_LOCK_TTL_MS = 30_000;
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -42,6 +49,15 @@ interface ActiveLease {
   pgBossJobId: string;
   queueName: string;
   queuePayload: GhApplyJobPayload;
+}
+
+interface RuntimeGrant {
+  userId: string;
+  desktopWorkerId: string;
+  sessionToken: string;
+  jobId: string;
+  leaseId: string;
+  expiresAt: number;
 }
 
 export interface SubmitLocalWorkerJobInput {
@@ -143,6 +159,14 @@ export class LocalWorkerBrokerService {
 
   private workerLeaseKey(desktopWorkerId: string): string {
     return `gh:local-worker:worker-lease:${desktopWorkerId}`;
+  }
+
+  private runtimeGrantKey(grantHash: string): string {
+    return `gh:local-worker:runtime-grant:${grantHash}`;
+  }
+
+  private leaseRuntimeGrantKey(leaseId: string): string {
+    return `gh:local-worker:lease-runtime-grant:${leaseId}`;
   }
 
   private workerClaimLockKey(desktopWorkerId: string): string {
@@ -265,7 +289,100 @@ export class LocalWorkerBrokerService {
   }
 
   private async deleteLease(lease: ActiveLease): Promise<void> {
-    await this.redis.del(this.leaseKey(lease.jobId), this.workerLeaseKey(lease.desktopWorkerId));
+    const runtimeGrantHash = await this.redis.get(this.leaseRuntimeGrantKey(lease.leaseId));
+    const keys = [
+      this.leaseKey(lease.jobId),
+      this.workerLeaseKey(lease.desktopWorkerId),
+      this.leaseRuntimeGrantKey(lease.leaseId),
+    ];
+    if (runtimeGrantHash) {
+      keys.push(this.runtimeGrantKey(runtimeGrantHash));
+    }
+    await this.redis.del(...keys);
+  }
+
+  private async issueRuntimeGrant(
+    session: WorkerSession,
+    lease: ActiveLease,
+  ): Promise<{ runtimeGrant: string; runtimeGrantExpiresAt: string }> {
+    const runtimeGrant = createManagedRuntimeGrant();
+    const grantHash = hashManagedRuntimeGrant(runtimeGrant);
+    const expiresAt = Date.now() + RUNTIME_GRANT_TTL_MS;
+    const grant: RuntimeGrant = {
+      userId: session.userId,
+      desktopWorkerId: session.desktopWorkerId,
+      sessionToken: session.sessionToken,
+      jobId: lease.jobId,
+      leaseId: lease.leaseId,
+      expiresAt,
+    };
+
+    const results = await this.redis
+      .multi()
+      .set(this.runtimeGrantKey(grantHash), JSON.stringify(grant), "PX", RUNTIME_GRANT_TTL_MS)
+      .set(this.leaseRuntimeGrantKey(lease.leaseId), grantHash, "PX", RUNTIME_GRANT_TTL_MS)
+      .exec();
+    assertMultiExecSuccess(results, "issueRuntimeGrant");
+
+    return {
+      runtimeGrant,
+      runtimeGrantExpiresAt: new Date(expiresAt).toISOString(),
+    };
+  }
+
+  async requireRuntimeGrant(
+    runtimeGrant: string,
+  ): Promise<{ session: WorkerSession; lease: ActiveLease; grant: RuntimeGrant }> {
+    this.ensureEnabled();
+
+    let normalizedGrant: string;
+    try {
+      normalizedGrant = normalizeManagedRuntimeGrant(runtimeGrant);
+    } catch (error) {
+      if (error instanceof ManagedRuntimeAuthError) {
+        throw new LocalWorkerBrokerError(
+          401,
+          "INVALID_RUNTIME_GRANT",
+          "Invalid or expired managed runtime grant",
+        );
+      }
+      throw error;
+    }
+
+    const grantHash = hashManagedRuntimeGrant(normalizedGrant);
+    const grant = await this.readJson<RuntimeGrant>(this.runtimeGrantKey(grantHash));
+    if (!grant || grant.expiresAt <= Date.now()) {
+      await this.redis.del(this.runtimeGrantKey(grantHash));
+      throw new LocalWorkerBrokerError(
+        401,
+        "INVALID_RUNTIME_GRANT",
+        "Invalid or expired managed runtime grant",
+      );
+    }
+
+    const session = await this.requireSessionByToken(
+      grant.sessionToken,
+      grant.desktopWorkerId,
+      grant.userId,
+    );
+    const lease = await this.readLease(grant.jobId);
+    if (
+      !lease ||
+      lease.leaseId !== grant.leaseId ||
+      lease.desktopWorkerId !== session.desktopWorkerId
+    ) {
+      await this.redis.del(
+        this.runtimeGrantKey(grantHash),
+        this.leaseRuntimeGrantKey(grant.leaseId),
+      );
+      throw new LocalWorkerBrokerError(
+        401,
+        "INVALID_RUNTIME_GRANT",
+        "Invalid or expired managed runtime grant",
+      );
+    }
+
+    return { session, lease, grant };
   }
 
   private async acquireClaimLock(desktopWorkerId: string): Promise<string | null> {
@@ -314,6 +431,23 @@ export class LocalWorkerBrokerService {
         "WRONG_LEASE_OWNER",
         "Worker session does not own this lease",
       );
+    }
+    return { session, lease };
+  }
+
+  async requireCurrentLease(
+    sessionToken: string,
+    leaseId: string,
+    expectedUserId?: string,
+  ): Promise<{ session: WorkerSession; lease: ActiveLease }> {
+    this.ensureEnabled();
+    const session = await this.requireSessionByToken(sessionToken, undefined, expectedUserId);
+    const lease = await this.readWorkerLease(session.desktopWorkerId);
+    if (!lease) {
+      throw new LocalWorkerBrokerError(409, "LEASE_NOT_FOUND", "Worker has no active lease");
+    }
+    if (lease.leaseId !== leaseId) {
+      throw new LocalWorkerBrokerError(409, "LEASE_MISMATCH", "Lease does not match active job");
     }
     return { session, lease };
   }
@@ -572,8 +706,16 @@ export class LocalWorkerBrokerService {
   async claim(input: { desktopWorkerId: string; sessionToken: string; userId: string }): Promise<{
     leaseId: string | null;
     job: Record<string, unknown> | null;
+    runtimeGrant: string | null;
+    runtimeGrantExpiresAt: string | null;
   }> {
     this.ensureEnabled();
+    const emptyClaim = {
+      leaseId: null,
+      job: null,
+      runtimeGrant: null,
+      runtimeGrantExpiresAt: null,
+    };
     const session = await this.requireSessionByToken(
       input.sessionToken,
       input.desktopWorkerId,
@@ -589,7 +731,7 @@ export class LocalWorkerBrokerService {
         },
         "Worker attempted a concurrent claim while another claim was already in progress",
       );
-      return { leaseId: null, job: null };
+      return emptyClaim;
     }
 
     try {
@@ -602,7 +744,7 @@ export class LocalWorkerBrokerService {
           },
           "Worker attempted to claim while already holding a lease",
         );
-        return { leaseId: null, job: null };
+        return emptyClaim;
       }
 
       const boss = this.requireBoss();
@@ -612,19 +754,19 @@ export class LocalWorkerBrokerService {
       const fetched = await boss.fetch<GhApplyJobPayload>(queueName, { batchSize: 1 });
       const fetchedJob: Job<GhApplyJobPayload> | undefined = fetched[0];
       if (!fetchedJob) {
-        return { leaseId: null, job: null };
+        return emptyClaim;
       }
 
       const queuePayload = fetchedJob.data ?? ({} as GhApplyJobPayload);
       if (!queuePayload.ghJobId) {
         await this.completeFetchedJob(boss, queueName, fetchedJob.id);
-        return { leaseId: null, job: null };
+        return emptyClaim;
       }
 
       const ghJob = await this.ghJobRepo.findById(queuePayload.ghJobId);
       if (!ghJob || ghJob.userId !== session.userId) {
         await this.completeFetchedJob(boss, queueName, fetchedJob.id);
-        return { leaseId: null, job: null };
+        return emptyClaim;
       }
 
       if (TERMINAL_STATUSES.has(ghJob.status)) {
@@ -637,7 +779,7 @@ export class LocalWorkerBrokerService {
           "Rejecting claim for job already in terminal state",
         );
         await this.completeFetchedJob(boss, queueName, fetchedJob.id);
-        return { leaseId: null, job: null };
+        return emptyClaim;
       }
 
       let inputData = ghJob.inputData ?? {};
@@ -694,7 +836,7 @@ export class LocalWorkerBrokerService {
             "Skipping invalid-profile failure transition because job is already terminal",
           );
         }
-        return { leaseId: null, job: null };
+        return emptyClaim;
       }
 
       if (profileSource === "legacy_user_data") {
@@ -799,7 +941,7 @@ export class LocalWorkerBrokerService {
           );
           await boss.complete(queueName, fetchedJob.id);
           await this.deleteLease(lease);
-          return { leaseId: null, job: null };
+          return emptyClaim;
         }
 
         await this.ghJobEventRepo.insertEvent({
@@ -815,6 +957,35 @@ export class LocalWorkerBrokerService {
           },
         });
         await this.syncValetTaskStatus(claimedJob, "in_progress");
+        const runtimeGrant = await this.issueRuntimeGrant(session, lease);
+
+        const resumePath =
+          typeof inputData.desktop_resume_path === "string"
+            ? inputData.desktop_resume_path
+            : undefined;
+        const resumeId =
+          typeof inputData.desktop_resume_id === "string"
+            ? inputData.desktop_resume_id
+            : typeof inputData.resume_id === "string"
+              ? inputData.resume_id
+              : undefined;
+        return {
+          leaseId,
+          runtimeGrant: runtimeGrant.runtimeGrant,
+          runtimeGrantExpiresAt: runtimeGrant.runtimeGrantExpiresAt,
+          job: {
+            jobId: ghJob.id,
+            leaseId,
+            targetUrl: ghJob.targetUrl,
+            jobType: ghJob.jobType ?? "apply",
+            executionMode: ghJob.executionMode ?? "mastra",
+            profile: normalizedProfile,
+            profileSchemaVersion: LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
+            resumePath,
+            resumeId,
+            metadata: ghJob.metadata ?? {},
+          },
+        };
       } catch (postLeaseErr) {
         const errMsg = postLeaseErr instanceof Error ? postLeaseErr.message : String(postLeaseErr);
         this.logger.error(
@@ -850,32 +1021,6 @@ export class LocalWorkerBrokerService {
         });
         throw postLeaseErr;
       }
-
-      const resumePath =
-        typeof inputData.desktop_resume_path === "string"
-          ? inputData.desktop_resume_path
-          : undefined;
-      const resumeId =
-        typeof inputData.desktop_resume_id === "string"
-          ? inputData.desktop_resume_id
-          : typeof inputData.resume_id === "string"
-            ? inputData.resume_id
-            : undefined;
-      return {
-        leaseId,
-        job: {
-          jobId: ghJob.id,
-          leaseId,
-          targetUrl: ghJob.targetUrl,
-          jobType: ghJob.jobType ?? "apply",
-          executionMode: ghJob.executionMode ?? "mastra",
-          profile: normalizedProfile,
-          profileSchemaVersion: LOCAL_WORKER_PROFILE_SCHEMA_VERSION,
-          resumePath,
-          resumeId,
-          metadata: ghJob.metadata ?? {},
-        },
-      };
     } finally {
       await this.releaseClaimLock(session.desktopWorkerId, claimLockToken);
     }
