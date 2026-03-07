@@ -4,7 +4,7 @@ import { SECURITY_EVENT_TYPES } from "../../services/security-logger.service.js"
 
 export async function registerRateLimit(fastify: FastifyInstance) {
   await fastify.register(rateLimit, {
-    max: 100,
+    max: 300,
     timeWindow: "1 minute",
     keyGenerator: (request) => {
       return request.userId ?? request.ip;
@@ -37,23 +37,23 @@ const ROUTE_LIMITS: RouteLimit[] = [
   {
     path: "/api/v1/resumes/upload",
     method: "POST",
-    max: 10,
+    max: 30,
     windowSecs: 3600,
     keyPrefix: "rl:resume-upload",
-    message: "Resume upload limit reached. Maximum 10 per hour.",
+    message: "Resume upload limit reached. Maximum 30 per hour.",
   },
   {
     path: "/api/v1/tasks",
     method: "POST",
-    max: 20,
+    max: 60,
     windowSecs: 3600,
     keyPrefix: "rl:task-create",
-    message: "Task creation limit reached. Maximum 20 per hour.",
+    message: "Task creation limit reached. Maximum 60 per hour.",
   },
   {
     path: "/api/v1/auth/google",
     method: "POST",
-    max: 5,
+    max: 20,
     windowSecs: 900,
     keyPrefix: "rl:oauth",
     message: "Too many authentication attempts. Try again in 15 minutes.",
@@ -62,15 +62,15 @@ const ROUTE_LIMITS: RouteLimit[] = [
   {
     path: "/api/v1/qa-bank/discover",
     method: "POST",
-    max: 10,
+    max: 30,
     windowSecs: 3600,
     keyPrefix: "rl:qa-discover",
-    message: "Q&A discover limit reached. Maximum 10 per hour.",
+    message: "Q&A discover limit reached. Maximum 30 per hour.",
   },
   {
     path: "/api/v1/early-access",
     method: "POST",
-    max: 10,
+    max: 20,
     windowSecs: 3600,
     keyPrefix: "rl:early-access",
     message: "Too many waitlist submissions. Try again later.",

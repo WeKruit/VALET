@@ -13,12 +13,12 @@ afterAll(async () => {
 });
 
 describe("Rate Limiting", () => {
-  it("returns 429 after exceeding 100 requests per minute", async () => {
+  it("returns 429 after exceeding 300 requests per minute", async () => {
     const token = await createToken({ sub: "rate-limit-test-user" });
 
-    // Send 101 requests -- the 101st should be rate-limited
+    // Send 301 requests -- the 301st should be rate-limited
     const results: number[] = [];
-    for (let i = 0; i < 101; i++) {
+    for (let i = 0; i < 301; i++) {
       const res = await app.inject({
         method: "GET",
         url: "/api/v1/health",
@@ -28,14 +28,14 @@ describe("Rate Limiting", () => {
     }
 
     expect(results.filter((s) => s === 429).length).toBeGreaterThanOrEqual(1);
-    expect(results.slice(0, 100).every((s) => s === 200)).toBe(true);
+    expect(results.slice(0, 300).every((s) => s === 200)).toBe(true);
   });
 
   it("returns correct rate limit error response format", async () => {
     const token = await createToken({ sub: "rate-format-test-user" });
 
     // Exhaust rate limit
-    for (let i = 0; i < 101; i++) {
+    for (let i = 0; i < 301; i++) {
       await app.inject({
         method: "GET",
         url: "/api/v1/health",
@@ -75,7 +75,7 @@ describe("Rate Limiting", () => {
     const userB = await createToken({ sub: "rate-user-b" });
 
     // Exhaust user A's limit
-    for (let i = 0; i < 101; i++) {
+    for (let i = 0; i < 301; i++) {
       await app.inject({
         method: "GET",
         url: "/api/v1/health",

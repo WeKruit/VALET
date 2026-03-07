@@ -11,6 +11,12 @@ import { UPLOAD_LIMITS } from "@valet/shared/constants";
 import { publishToUser } from "../../websocket/handler.js";
 
 const MAX_RESUMES = 5;
+/** If a resume is stuck in "parsing" for longer than this, auto-retry. */
+const STALE_PARSE_THRESHOLD_MS = 60 * 1000; // 1 minute
+/** Redis lock TTL to prevent duplicate concurrent parses (must exceed max expected parse time). */
+const PARSE_LOCK_TTL_SECS = 300; // 5 minutes
+/** Max number of times the monitor/auto-recovery will retry a stale parse before giving up. */
+const MAX_PARSE_ATTEMPTS = 5;
 const ALLOWED_MIME_TYPES: Set<string> = new Set(UPLOAD_LIMITS.ALLOWED_MIME_TYPES);
 const ALLOWED_EXTENSIONS: Set<string> = new Set([".pdf", ".docx"]);
 const S3_BUCKET = process.env.S3_BUCKET_RESUMES ?? "resumes";
@@ -163,6 +169,39 @@ export class ResumeService {
   async getById(id: string, userId: string) {
     const resume = await this.resumeRepo.findById(id, userId);
     if (!resume) throw AppError.notFound("Resume not found");
+
+    // Auto-recover stale parses: if stuck in "parsing" for > 1 min, retry automatically.
+    // This handles cases where the background promise was lost (VM restart, deploy, etc.).
+    // parseResume() acquires its own Redis NX lock to prevent duplicate concurrent parses.
+    //
+    // Uses Redis parse-start timestamp (not immutable createdAt) so that retried
+    // resumes aren't immediately re-detected as stale. Falls back to createdAt only
+    // if no Redis record exists (first parse, or Redis key expired after VM crash).
+    if (resume.status === "parsing") {
+      const parseAge = await this.getParseAge(id);
+      const age = parseAge ?? Date.now() - new Date(resume.createdAt).getTime();
+      if (age > STALE_PARSE_THRESHOLD_MS) {
+        const attempts = await this.getParseAttempts(id);
+        if (attempts >= MAX_PARSE_ATTEMPTS) {
+          this.logger.warn(
+            { resumeId: id, attempts },
+            "Stale parse exceeded max attempts, marking as failed",
+          );
+          await this.resumeRepo.update(id, { status: "parse_failed" });
+          // Return updated status so the caller (and API response) reflects reality
+          return { ...resume, status: "parse_failed" as const };
+        } else {
+          this.logger.warn(
+            { resumeId: id, ageMs: age, attempts },
+            "Stale parse detected, auto-retrying",
+          );
+          void this.parseResume(id, resume.fileKey, userId).catch((err) => {
+            this.logger.error({ err, resumeId: id }, "Stale parse auto-retry failed");
+          });
+        }
+      }
+    }
+
     return resume;
   }
 
@@ -235,7 +274,11 @@ export class ResumeService {
   }
 
   async delete(id: string, userId: string) {
-    const resume = await this.getById(id, userId);
+    // Use findById directly (not getById) to avoid triggering getById's
+    // stale-parse auto-recovery — no point starting a parse for a resume
+    // that's about to be deleted.
+    const resume = await this.resumeRepo.findById(id, userId);
+    if (!resume) throw AppError.notFound("Resume not found");
     await this.s3.send(
       new DeleteObjectCommand({
         Bucket: S3_BUCKET,
@@ -245,11 +288,41 @@ export class ResumeService {
     await this.resumeRepo.delete(id);
   }
 
-  async retryParse(id: string, userId: string) {
-    const resume = await this.getById(id, userId);
+  async retryParse(id: string, userId: string, { isAutoRecovery = false } = {}) {
+    // Use findById directly (not getById) to avoid triggering getById's
+    // stale-parse auto-recovery, which would fire a second concurrent parse.
+    const resume = await this.resumeRepo.findById(id, userId);
+    if (!resume) throw AppError.notFound("Resume not found");
 
     if (resume.status === "parsed") {
       throw AppError.conflict("Resume is already parsed");
+    }
+
+    // If a parse is already in-flight (lock held), don't reset data — just return.
+    // This prevents corrupting parsedData while parseResume() is actively writing it.
+    const lockKey = `resume-parse-lock:${id}`;
+    const lockHeld = await this.redis.exists(lockKey);
+    if (lockHeld) {
+      this.logger.info({ resumeId: id }, "Parse already in progress, skipping retry");
+      return { id, status: "parsing" as const };
+    }
+
+    // For auto-recovery (monitor/getById), enforce max attempt limit to prevent
+    // infinite LLM token waste on permanently-broken parses.
+    // Manual user retries reset the counter.
+    if (isAutoRecovery) {
+      const attempts = await this.getParseAttempts(id);
+      if (attempts >= MAX_PARSE_ATTEMPTS) {
+        this.logger.warn(
+          { resumeId: id, attempts },
+          "Auto-recovery exceeded max attempts, marking as failed",
+        );
+        await this.resumeRepo.update(id, { status: "parse_failed" });
+        return { id, status: "parse_failed" as const };
+      }
+    } else {
+      // Manual retry: reset counter so user gets a fresh set of attempts
+      await this.resetParseAttempts(id);
     }
 
     // Reset status to parsing
@@ -274,219 +347,291 @@ export class ResumeService {
    * Runs as a background task (fire-and-forget from upload/retryParse).
    */
   private async parseResume(resumeId: string, storageKey: string, userId: string): Promise<void> {
-    this.logger.info({ resumeId }, "Starting resume parse");
-
-    // ── Step 1: Extract text ─────────────────────────────────────
-    let extractedText: string;
-    try {
-      const response = await this.s3.send(
-        new GetObjectCommand({
-          Bucket: S3_BUCKET,
-          Key: storageKey,
-        }),
-      );
-      const bodyStream = response.Body;
-      if (!bodyStream) throw new Error("Empty response from S3");
-
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of bodyStream as AsyncIterable<Uint8Array>) {
-        chunks.push(chunk);
-      }
-      const fileBuffer = Buffer.concat(chunks);
-
-      const contentType = response.ContentType ?? "application/pdf";
-      if (contentType.includes("pdf")) {
-        const { PDFParse } = await import("pdf-parse");
-        const parser = new PDFParse({ data: fileBuffer });
-        const result = await parser.getText();
-        extractedText = result.text;
-        await parser.destroy();
-      } else if (
-        contentType.includes("wordprocessingml") ||
-        contentType.includes("msword") ||
-        storageKey.endsWith(".docx")
-      ) {
-        const mammoth = await import("mammoth");
-        const result = await mammoth.extractRawText({ buffer: fileBuffer });
-        extractedText = result.value;
-      } else {
-        extractedText = fileBuffer.toString("utf-8");
-      }
-
-      if (!extractedText.trim()) {
-        throw new Error("No text could be extracted from the resume");
-      }
-
-      this.logger.info({ resumeId, textLength: extractedText.length }, "Text extracted");
-    } catch (err) {
-      this.logger.error({ err, resumeId }, "Text extraction failed");
-      await this.resumeRepo.update(resumeId, { status: "parse_failed" });
-      await publishToUser(this.redis, userId, {
-        type: "resume_parse_failed",
-        resumeId,
-        error: err instanceof Error ? err.message : "Text extraction failed",
-      });
+    // Acquire lock to prevent duplicate concurrent parses.
+    // If the VM crashes mid-parse, the TTL ensures eventual lock expiry
+    // so the stale-parse monitor can retry.
+    const lockKey = `resume-parse-lock:${resumeId}`;
+    const acquired = await this.redis.set(lockKey, "1", "EX", PARSE_LOCK_TTL_SECS, "NX");
+    if (!acquired) {
+      this.logger.info({ resumeId }, "Resume parse already in progress (lock held), skipping");
       return;
     }
 
-    // ── Step 1b: Verify content looks like a resume ──────────────
-    const resumeConfidence = this.scoreResumeConfidence(extractedText);
-    this.logger.info({ resumeId, resumeConfidence }, "Resume content confidence score");
+    // Record parse start time — used by staleness checks instead of immutable createdAt.
+    await this.recordParseStart(resumeId);
 
-    if (resumeConfidence < 0.3) {
-      this.logger.warn({ resumeId, resumeConfidence }, "File does not appear to be a resume");
-      await this.resumeRepo.update(resumeId, {
-        status: "parse_failed",
-        parsingConfidence: resumeConfidence,
-      });
-      await publishToUser(this.redis, userId, {
-        type: "resume_parse_failed",
-        resumeId,
-        error:
-          "The uploaded file does not appear to be a resume. Please upload a valid resume (PDF or DOCX).",
-      });
-      return;
-    }
+    // Track attempt count for auto-recovery retry limiting.
+    // TTL = 1 hour: if no attempts for 1 hour, counter resets naturally.
+    await this.incrementParseAttempts(resumeId);
 
-    // ── Step 2: LLM parse ────────────────────────────────────────
-    let parsedData: Record<string, unknown>;
-    let inferredAnswers: Array<{
-      question: string;
-      answer: string;
-      confidence: number;
-      category: string;
-    }>;
     try {
-      const llm = new LLMRouter({
-        anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
-        openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-      });
+      this.logger.info({ resumeId }, "Starting resume parse");
 
-      const response = await llm.complete({
-        taskType: "answer_generation",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a precise resume parser. Always return valid JSON. Never include markdown formatting.",
-          },
-          {
-            role: "user",
-            content: RESUME_PARSE_PROMPT + extractedText,
-          },
-        ],
-        temperature: 0.1,
-        maxTokens: 4000,
-        responseFormat: "json",
-      });
+      // ── Step 1: Extract text ─────────────────────────────────────
+      let extractedText: string;
+      try {
+        const response = await this.s3.send(
+          new GetObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: storageKey,
+          }),
+        );
+        const bodyStream = response.Body;
+        if (!bodyStream) throw new Error("Empty response from S3");
 
-      const parsed = JSON.parse(response.content);
-
-      inferredAnswers = ((parsed.inferredAnswers as Array<Record<string, unknown>>) ?? []).map(
-        (a) => ({
-          question: String(a.question ?? ""),
-          answer: String(a.answer ?? ""),
-          confidence: Number(a.confidence ?? 0.5),
-          category: String(a.category ?? "personal"),
-        }),
-      );
-
-      // Remove inferredAnswers from parsedData (stored separately in qa_bank)
-      const { inferredAnswers: _removed, ...rest } = parsed;
-      parsedData = rest;
-
-      this.logger.info(
-        { resumeId, confidence: parsedData.parseConfidence, model: response.model },
-        "LLM parsing complete",
-      );
-    } catch (err) {
-      this.logger.error({ err, resumeId }, "LLM parsing failed");
-      await this.resumeRepo.update(resumeId, { status: "parse_failed" });
-      await publishToUser(this.redis, userId, {
-        type: "resume_parse_failed",
-        resumeId,
-        error: err instanceof Error ? err.message : "LLM parsing failed",
-      });
-      return;
-    }
-
-    // ── Step 3: Save results ─────────────────────────────────────
-    try {
-      await this.resumeRepo.update(resumeId, {
-        parsedData,
-        parsingConfidence: Number(parsedData.parseConfidence ?? 0),
-        rawText: extractedText,
-        status: "parsed",
-        parsedAt: new Date(),
-      });
-
-      if (inferredAnswers.length > 0) {
-        // Map LLM category names to our QA bank enum values
-        const categoryMap: Record<
-          string,
-          | "identity"
-          | "experience"
-          | "work_authorization"
-          | "compensation"
-          | "availability"
-          | "custom"
-        > = {
-          personal: "identity",
-          experience: "experience",
-          education: "experience",
-          skills: "experience",
-          preferences: "availability",
-          work_authorization: "work_authorization",
-          compensation: "compensation",
-          availability: "availability",
-          identity: "identity",
-        };
-        for (const a of inferredAnswers) {
-          await this.qaBankRepo.create({
-            userId,
-            category: categoryMap[a.category] ?? "custom",
-            question: a.question,
-            answer: a.answer,
-            usageMode: "always_use",
-            source: "resume_inferred",
-          });
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of bodyStream as AsyncIterable<Uint8Array>) {
+          chunks.push(chunk);
         }
+        const fileBuffer = Buffer.concat(chunks);
+
+        const contentType = response.ContentType ?? "application/pdf";
+        if (contentType.includes("pdf")) {
+          const { PDFParse } = await import("pdf-parse");
+          const parser = new PDFParse({ data: fileBuffer });
+          const result = await parser.getText();
+          extractedText = result.text;
+          await parser.destroy();
+        } else if (
+          contentType.includes("wordprocessingml") ||
+          contentType.includes("msword") ||
+          storageKey.endsWith(".docx")
+        ) {
+          const mammoth = await import("mammoth");
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
+          extractedText = result.value;
+        } else {
+          extractedText = fileBuffer.toString("utf-8");
+        }
+
+        if (!extractedText.trim()) {
+          throw new Error("No text could be extracted from the resume");
+        }
+
+        this.logger.info({ resumeId, textLength: extractedText.length }, "Text extracted");
+      } catch (err) {
+        this.logger.error({ err, resumeId }, "Text extraction failed");
+        await this.resumeRepo.update(resumeId, { status: "parse_failed" });
+        await publishToUser(this.redis, userId, {
+          type: "resume_parse_failed",
+          resumeId,
+          error: err instanceof Error ? err.message : "Text extraction failed",
+        });
+        return;
       }
 
-      this.logger.info(
-        { resumeId, answersCount: inferredAnswers.length },
-        "Resume parse results saved",
-      );
+      // ── Step 1b: Verify content looks like a resume ──────────────
+      const resumeConfidence = this.scoreResumeConfidence(extractedText);
+      this.logger.info({ resumeId, resumeConfidence }, "Resume content confidence score");
 
-      await publishToUser(this.redis, userId, {
-        type: "resume_parsed",
-        resumeId,
-        parseConfidence: parsedData.parseConfidence,
-        parsedData: {
-          fullName: parsedData.fullName ?? null,
-          email: parsedData.email ?? null,
-          phone: parsedData.phone ?? null,
-          location: parsedData.location ?? null,
-          summary: parsedData.summary ?? null,
-          workHistory: parsedData.workHistory ?? [],
-          education: parsedData.education ?? [],
-          skills: parsedData.skills ?? [],
-          totalYearsExperience: parsedData.totalYearsExperience ?? null,
-          workAuthorization: parsedData.workAuthorization ?? null,
-          websites: parsedData.websites ?? [],
-          certifications: parsedData.certifications ?? [],
-          projects: parsedData.projects ?? [],
-        },
-      });
-    } catch (err) {
-      this.logger.error({ err, resumeId }, "Failed to save parse results");
-      await this.resumeRepo.update(resumeId, { status: "parse_failed" });
-      await publishToUser(this.redis, userId, {
-        type: "resume_parse_failed",
-        resumeId,
-        error: "Failed to save parsed results",
-      });
+      if (resumeConfidence < 0.3) {
+        this.logger.warn({ resumeId, resumeConfidence }, "File does not appear to be a resume");
+        await this.resumeRepo.update(resumeId, {
+          status: "parse_failed",
+          parsingConfidence: resumeConfidence,
+        });
+        await publishToUser(this.redis, userId, {
+          type: "resume_parse_failed",
+          resumeId,
+          error:
+            "The uploaded file does not appear to be a resume. Please upload a valid resume (PDF or DOCX).",
+        });
+        return;
+      }
+
+      // ── Step 2: LLM parse ────────────────────────────────────────
+      let parsedData: Record<string, unknown>;
+      let inferredAnswers: Array<{
+        question: string;
+        answer: string;
+        confidence: number;
+        category: string;
+      }>;
+      try {
+        const llm = new LLMRouter({
+          anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+          openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+        });
+
+        const response = await llm.complete({
+          taskType: "answer_generation",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a precise resume parser. Always return valid JSON. Never include markdown formatting.",
+            },
+            {
+              role: "user",
+              content: RESUME_PARSE_PROMPT + extractedText,
+            },
+          ],
+          temperature: 0.1,
+          maxTokens: 4000,
+          responseFormat: "json",
+        });
+
+        const parsed = JSON.parse(response.content);
+
+        inferredAnswers = ((parsed.inferredAnswers as Array<Record<string, unknown>>) ?? []).map(
+          (a) => ({
+            question: String(a.question ?? ""),
+            answer: String(a.answer ?? ""),
+            confidence: Number(a.confidence ?? 0.5),
+            category: String(a.category ?? "personal"),
+          }),
+        );
+
+        // Remove inferredAnswers from parsedData (stored separately in qa_bank)
+        const { inferredAnswers: _removed, ...rest } = parsed;
+        parsedData = rest;
+
+        this.logger.info(
+          { resumeId, confidence: parsedData.parseConfidence, model: response.model },
+          "LLM parsing complete",
+        );
+      } catch (err) {
+        this.logger.error({ err, resumeId }, "LLM parsing failed");
+        await this.resumeRepo.update(resumeId, { status: "parse_failed" });
+        await publishToUser(this.redis, userId, {
+          type: "resume_parse_failed",
+          resumeId,
+          error: err instanceof Error ? err.message : "LLM parsing failed",
+        });
+        return;
+      }
+
+      // ── Step 3: Save results ─────────────────────────────────────
+      try {
+        await this.resumeRepo.update(resumeId, {
+          parsedData,
+          parsingConfidence: Number(parsedData.parseConfidence ?? 0),
+          rawText: extractedText,
+          status: "parsed",
+          parsedAt: new Date(),
+        });
+
+        if (inferredAnswers.length > 0) {
+          // Map LLM category names to our QA bank enum values
+          const categoryMap: Record<
+            string,
+            | "identity"
+            | "experience"
+            | "work_authorization"
+            | "compensation"
+            | "availability"
+            | "custom"
+          > = {
+            personal: "identity",
+            experience: "experience",
+            education: "experience",
+            skills: "experience",
+            preferences: "availability",
+            work_authorization: "work_authorization",
+            compensation: "compensation",
+            availability: "availability",
+            identity: "identity",
+          };
+          for (const a of inferredAnswers) {
+            await this.qaBankRepo.create({
+              userId,
+              category: categoryMap[a.category] ?? "custom",
+              question: a.question,
+              answer: a.answer,
+              usageMode: "always_use",
+              source: "resume_inferred",
+            });
+          }
+        }
+
+        this.logger.info(
+          { resumeId, answersCount: inferredAnswers.length },
+          "Resume parse results saved",
+        );
+
+        await publishToUser(this.redis, userId, {
+          type: "resume_parsed",
+          resumeId,
+          parseConfidence: parsedData.parseConfidence,
+          parsedData: {
+            fullName: parsedData.fullName ?? null,
+            email: parsedData.email ?? null,
+            phone: parsedData.phone ?? null,
+            location: parsedData.location ?? null,
+            summary: parsedData.summary ?? null,
+            workHistory: parsedData.workHistory ?? [],
+            education: parsedData.education ?? [],
+            skills: parsedData.skills ?? [],
+            totalYearsExperience: parsedData.totalYearsExperience ?? null,
+            workAuthorization: parsedData.workAuthorization ?? null,
+            websites: parsedData.websites ?? [],
+            certifications: parsedData.certifications ?? [],
+            projects: parsedData.projects ?? [],
+          },
+        });
+      } catch (err) {
+        this.logger.error({ err, resumeId }, "Failed to save parse results");
+        await this.resumeRepo.update(resumeId, { status: "parse_failed" });
+        await publishToUser(this.redis, userId, {
+          type: "resume_parse_failed",
+          resumeId,
+          error: "Failed to save parsed results",
+        });
+      }
+    } finally {
+      // Release lock so retries are possible after completion/failure.
+      // On VM crash, TTL handles expiry instead.
+      await this.redis.del(lockKey).catch(() => {});
     }
+  }
+
+  // ── Parse tracking (Redis-backed) ───────────────────────────────
+
+  // Parse-start timestamp: records when the most recent parse began.
+  // Used for staleness checks instead of immutable createdAt, so that
+  // retried resumes aren't immediately re-detected as stale.
+  private parseStartedKey(resumeId: string) {
+    return `resume-parse-started:${resumeId}`;
+  }
+
+  /** Returns ms since the current/last parse started, or null if no record. */
+  private async getParseAge(resumeId: string): Promise<number | null> {
+    const val = await this.redis.get(this.parseStartedKey(resumeId));
+    if (!val) return null;
+    return Date.now() - parseInt(val, 10);
+  }
+
+  private async recordParseStart(resumeId: string): Promise<void> {
+    // TTL = lock TTL + threshold — ensures the key outlives both the parse
+    // and the staleness window so the monitor can check it.
+    await this.redis.set(
+      this.parseStartedKey(resumeId),
+      String(Date.now()),
+      "EX",
+      PARSE_LOCK_TTL_SECS + Math.ceil(STALE_PARSE_THRESHOLD_MS / 1000),
+    );
+  }
+
+  // Parse attempt counter: caps auto-recovery retries to prevent
+  // infinite LLM token waste on permanently-broken parses.
+  // TTL = 1 hour for natural expiry.
+  private parseAttemptsKey(resumeId: string) {
+    return `resume-parse-attempts:${resumeId}`;
+  }
+
+  private async getParseAttempts(resumeId: string): Promise<number> {
+    const val = await this.redis.get(this.parseAttemptsKey(resumeId));
+    return val ? parseInt(val, 10) : 0;
+  }
+
+  private async incrementParseAttempts(resumeId: string): Promise<void> {
+    const key = this.parseAttemptsKey(resumeId);
+    await this.redis.incr(key);
+    await this.redis.expire(key, 3600); // 1 hour TTL
+  }
+
+  private async resetParseAttempts(resumeId: string): Promise<void> {
+    await this.redis.del(this.parseAttemptsKey(resumeId));
   }
 
   /**

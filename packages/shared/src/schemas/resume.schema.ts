@@ -4,7 +4,7 @@ export const resumeStatus = z.enum(["uploading", "parsing", "parsed", "parse_fai
 
 export const educationEntry = z.object({
   school: z.string(),
-  degree: z.string(),
+  degree: z.string().default(""),
   fieldOfStudy: z.string().optional(),
   gpa: z.string().nullable().optional(),
   startDate: z.string().nullable().optional(),

@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, lt } from "drizzle-orm";
 import { resumes, type Database } from "@valet/db";
 
 export class ResumeRepository {
@@ -47,11 +47,7 @@ export class ResumeRepository {
   }
 
   async update(id: string, data: Record<string, unknown>) {
-    const rows = await this.db
-      .update(resumes)
-      .set(data)
-      .where(eq(resumes.id, id))
-      .returning();
+    const rows = await this.db.update(resumes).set(data).where(eq(resumes.id, id)).returning();
     return rows[0] ?? null;
   }
 
@@ -59,12 +55,25 @@ export class ResumeRepository {
     await this.db.delete(resumes).where(eq(resumes.id, id));
   }
 
+  /**
+   * Find resumes in "parsing" status created before the given threshold.
+   *
+   * This is a coarse DB-level candidate filter using immutable createdAt.
+   * Callers must perform a second check using the Redis parse-start timestamp
+   * to determine actual staleness (since createdAt doesn't update on retries).
+   */
+  async findStaleParsingResumes(thresholdMs: number) {
+    const cutoff = new Date(Date.now() - thresholdMs);
+    return this.db
+      .select()
+      .from(resumes)
+      .where(and(eq(resumes.status, "parsing"), lt(resumes.createdAt, cutoff)));
+  }
+
+  /** Mark a specific resume as the user's default (un-defaulting all others). */
   async setDefault(id: string, userId: string) {
     // First unset all defaults for this user
-    await this.db
-      .update(resumes)
-      .set({ isDefault: false })
-      .where(eq(resumes.userId, userId));
+    await this.db.update(resumes).set({ isDefault: false }).where(eq(resumes.userId, userId));
 
     // Then set the target resume as default
     const rows = await this.db
