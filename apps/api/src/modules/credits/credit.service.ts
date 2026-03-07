@@ -149,9 +149,12 @@ export class CreditService {
       if (rows[0]) {
         return { balance: rows[0].balance_after };
       }
-      // Idempotent duplicate — read current balance
-      const bal = await this.getBalance(userId);
-      return { balance: bal.balance };
+      // Idempotent duplicate — read current balance via same db/tx handle
+      const balRow = await db.execute(
+        sql`SELECT credit_balance FROM users WHERE id = ${userId}::uuid`,
+      );
+      const balRows = (balRow as unknown as { rows: Array<{ credit_balance: number }> }).rows;
+      return { balance: balRows[0]?.credit_balance ?? 0 };
     }
 
     // No idempotency key — simple grant (e.g. admin manual adjustment)
@@ -271,50 +274,14 @@ export class CreditService {
     taskId: string,
     idempotencyKey: string,
   ): Promise<{ success: boolean; balance: number }> {
-    // Feature flag check
-    if (process.env.FEATURE_CREDITS_ENFORCEMENT !== "true") {
-      const bal = await this.getBalance(userId);
-      return { success: true, balance: bal.balance };
-    }
+    const result = await this.consumeCredits(userId, "task_application", {
+      referenceType: "task",
+      referenceId: taskId,
+      idempotencyKey,
+      description: "Task application credit",
+    });
 
-    // Idempotency check
-    const existing = await this.db
-      .select({ id: creditLedger.id, balanceAfter: creditLedger.balanceAfter })
-      .from(creditLedger)
-      .where(eq(creditLedger.idempotencyKey, idempotencyKey))
-      .limit(1);
-    if (existing[0]) {
-      return { success: true, balance: existing[0].balanceAfter };
-    }
-
-    // Atomic debit with balance check (row-level lock via FOR UPDATE)
-    // DB/infra errors propagate naturally — only insufficient balance returns success:false
-    const debitAmount = CREDIT_COSTS.task_application.credits;
-    const result = await this.db.execute(sql`
-      WITH locked AS (
-        SELECT id, credit_balance FROM users WHERE id = ${userId}::uuid FOR UPDATE
-      ),
-      check_balance AS (
-        SELECT id, credit_balance FROM locked WHERE credit_balance >= ${debitAmount}
-      ),
-      updated AS (
-        UPDATE users
-        SET credit_balance = credit_balance - ${debitAmount}, updated_at = NOW()
-        WHERE id = (SELECT id FROM check_balance)
-        RETURNING credit_balance
-      )
-      INSERT INTO credit_ledger (user_id, delta, balance_after, reason, description, reference_type, reference_id, idempotency_key)
-      SELECT ${userId}::uuid, ${-debitAmount}, credit_balance, 'task_debit', 'Task application credit', 'task', ${taskId}, ${idempotencyKey}
-      FROM updated
-      RETURNING balance_after
-    `);
-
-    const rows = (result as unknown as { rows: Array<{ balance_after: number }> }).rows;
-    if (!rows[0]) {
-      // Balance was 0 — no update happened
-      return { success: false, balance: 0 };
-    }
-    return { success: true, balance: rows[0].balance_after };
+    return { success: result.success, balance: result.balance };
   }
 
   async refundTask(

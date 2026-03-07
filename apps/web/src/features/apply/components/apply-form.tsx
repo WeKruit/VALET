@@ -33,6 +33,7 @@ import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useCreditBalance } from "../hooks/use-credit-balance";
+import { useCreditCost } from "@/features/credits/hooks/use-credit-cost";
 import { CreditCostIndicator } from "@/features/credits/components/credit-cost-indicator";
 import { QualitySelector } from "./quality-selector";
 import { WorkerSelector } from "./worker-selector";
@@ -112,8 +113,9 @@ export function ApplyForm() {
   const { setSelectedTaskId } = useWorkbenchStore();
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
-  const { balance, enforcementEnabled } = useCreditBalance();
-  const insufficientCredits = enforcementEnabled && balance < 1;
+  const { enforcementEnabled } = useCreditBalance();
+  const { canAfford } = useCreditCost("task_application");
+  const insufficientCredits = enforcementEnabled && !canAfford;
   const addToQueue = useBatchQueueStore((s) => s.addUrl);
   const queueHasItems = useBatchQueueStore((s) => s.items.length > 0);
 

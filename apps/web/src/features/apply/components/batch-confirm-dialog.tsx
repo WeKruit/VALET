@@ -14,6 +14,7 @@ import { api } from "@/lib/api-client";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useCreditBalance } from "../hooks/use-credit-balance";
+import { useCreditCost } from "@/features/credits/hooks/use-credit-cost";
 import { CreditCostIndicator } from "@/features/credits/components/credit-cost-indicator";
 import { useBatchQueueStore } from "../stores/batch-queue.store";
 import { launchProtocolOrFallback } from "../utils/protocol-launch";
@@ -44,10 +45,11 @@ export function BatchConfirmDialog({
   const queryClient = useQueryClient();
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
-  const { balance, enforcementEnabled } = useCreditBalance();
+  const { enforcementEnabled } = useCreditBalance();
   const { applyBatchResults, clearSuccessful } = useBatchQueueStore();
   const count = jobUrls.length;
-  const insufficientCredits = enforcementEnabled && balance < count;
+  const { canAfford, totalCost, balance } = useCreditCost("batch_application", count);
+  const insufficientCredits = enforcementEnabled && !canAfford;
 
   const createBatch = api.tasks.createBatch.useMutation({
     onSuccess: (data) => {
@@ -148,7 +150,7 @@ export function BatchConfirmDialog({
           <div className="flex items-center gap-2 rounded-[var(--wk-radius-lg)] bg-[color-mix(in_srgb,var(--wk-status-error)_8%,transparent)] border border-[color-mix(in_srgb,var(--wk-status-error)_20%,transparent)] px-3 py-2">
             <AlertTriangle className="h-4 w-4 text-[var(--wk-status-error)] shrink-0" />
             <span className="text-sm text-[var(--wk-status-error)]">
-              Insufficient credits. You need {count} but have {balance}.
+              Insufficient credits. You need {totalCost} but have {balance}.
             </span>
           </div>
         )}

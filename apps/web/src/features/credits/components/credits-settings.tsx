@@ -26,6 +26,7 @@ import {
   Award,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CREDITS } from "@valet/shared/constants";
 import { useCreditLedger } from "../hooks/use-credit-ledger";
 import { useReferralStats } from "../hooks/use-referral-stats";
 import {
@@ -207,7 +208,7 @@ function ReferralSection() {
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   const referralLink = code ? buildReferralLink(code) : "";
-  const creditsEarned = rewardedCount * 200;
+  const creditsEarned = rewardedCount * CREDITS.REFERRAL_REWARD;
 
   function handleCopyLink() {
     if (!referralLink) return;
@@ -296,10 +297,11 @@ function ReferralSection() {
           </div>
           <div>
             <p className="text-base font-semibold text-[var(--wk-text-primary)]">
-              Give 200, get 200
+              Give {CREDITS.REFERRAL_REWARD}, get {CREDITS.REFERRAL_REWARD}
             </p>
             <p className="text-sm text-[var(--wk-text-secondary)]">
-              Both you and your friend earn 200 credits when they complete their first application.
+              Both you and your friend earn {CREDITS.REFERRAL_REWARD} credits when they complete
+              their first application.
             </p>
           </div>
         </div>

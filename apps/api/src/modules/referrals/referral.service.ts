@@ -1,12 +1,10 @@
 import { eq, sql, and } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { users, referrals, type Database } from "@valet/db";
+import { CREDITS } from "@valet/shared/constants";
 import type { CreditService } from "../credits/credit.service.js";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-/** Credits granted to each party when a referral is activated */
-const REFERRAL_REWARD_CREDITS = 200;
 
 function generateCode(length = 8): string {
   const bytes = randomBytes(length);
@@ -160,7 +158,7 @@ export class ReferralService {
     const ref = await this.activateReferral(referredUserId);
     if (!ref) return null;
 
-    const rewardAmount = Number(process.env.REFERRAL_REWARD_CREDITS) || REFERRAL_REWARD_CREDITS;
+    const rewardAmount = CREDITS.REFERRAL_REWARD;
     const idempotencyPrefix = `referral_reward_${ref.id}`;
 
     return this.db.transaction(async (tx) => {

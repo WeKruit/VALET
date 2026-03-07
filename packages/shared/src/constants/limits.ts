@@ -43,3 +43,11 @@ export const TASK_STEPS = [
 ] as const;
 
 export type TaskStep = (typeof TASK_STEPS)[number];
+
+/** Credit economy defaults */
+export const CREDITS = {
+  /** Credits granted to each party (referrer + referee) on referral activation */
+  REFERRAL_REWARD: 200,
+  /** Balance threshold below which we show a low-balance warning */
+  LOW_BALANCE_THRESHOLD: 25,
+} as const;

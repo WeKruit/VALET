@@ -11,6 +11,7 @@ import { Progress } from "@valet/ui/components/progress";
 import { Skeleton } from "@valet/ui/components/skeleton";
 import { Coins, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
+import { CREDITS } from "@valet/shared/constants";
 import { useCreditBalance } from "@/features/apply/hooks/use-credit-balance";
 import { useCreditLedger } from "../hooks/use-credit-ledger";
 import { getLedgerIcon } from "../utils/format-ledger";
@@ -19,7 +20,6 @@ interface ActivitySummary {
   reason: string;
   label: string;
   count: number;
-  total: number;
 }
 
 const reasonLabels: Record<string, string> = {
@@ -45,22 +45,15 @@ export function CreditBalanceCard() {
 
   const activitySummary = useMemo<ActivitySummary[]>(() => {
     if (!ledger.entries.length) return [];
-    const grouped = new Map<string, { count: number; total: number }>();
+    const grouped = new Map<string, number>();
     for (const entry of ledger.entries) {
-      const existing = grouped.get(entry.reason);
-      if (existing) {
-        existing.count += 1;
-        existing.total += Math.abs(entry.delta);
-      } else {
-        grouped.set(entry.reason, { count: 1, total: Math.abs(entry.delta) });
-      }
+      grouped.set(entry.reason, (grouped.get(entry.reason) ?? 0) + 1);
     }
     return Array.from(grouped.entries())
-      .map(([reason, { count, total }]) => ({
+      .map(([reason, count]) => ({
         reason,
         label: reasonLabels[reason] ?? reason,
         count,
-        total,
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 4);
@@ -87,7 +80,7 @@ export function CreditBalanceCard() {
     );
   }
 
-  const lowBalance = balance < 10;
+  const lowBalance = balance < CREDITS.LOW_BALANCE_THRESHOLD;
 
   return (
     <Card>
