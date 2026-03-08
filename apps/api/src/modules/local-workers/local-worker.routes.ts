@@ -31,6 +31,15 @@ const heartbeatParamsSchema = z.object({
 const heartbeatBodySchema = z.object({
   activeJobId: z.string().trim().min(1).optional(),
   leaseId: z.string().trim().min(1).optional(),
+  reviewLeases: z
+    .array(
+      z.object({
+        jobId: nonEmptyString,
+        leaseId: nonEmptyString,
+      }),
+    )
+    .max(100)
+    .optional(),
 });
 
 const jobParamsSchema = z.object({
@@ -314,6 +323,7 @@ export async function localWorkerRoutes(fastify: FastifyInstance) {
           sessionToken: token,
           activeJobId: body.activeJobId,
           leaseId: body.leaseId,
+          reviewLeases: body.reviewLeases,
         });
         return reply.status(200).send({ ok: true });
       } catch (error) {
