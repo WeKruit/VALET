@@ -51,6 +51,13 @@ interface ActiveLease {
   queuePayload: GhApplyJobPayload;
 }
 
+type LeaseTrackingState = "running" | "held";
+
+interface LeaseHeartbeatReference {
+  jobId: string;
+  leaseId: string;
+}
+
 interface RuntimeGrant {
   userId: string;
   desktopWorkerId: string;
@@ -161,6 +168,14 @@ export class LocalWorkerBrokerService {
     return `gh:local-worker:worker-lease:${desktopWorkerId}`;
   }
 
+  private workerLeaseSetKey(desktopWorkerId: string): string {
+    return `gh:local-worker:worker-leases:${desktopWorkerId}`;
+  }
+
+  private workerRunningLeaseKey(desktopWorkerId: string): string {
+    return `gh:local-worker:worker-running-lease:${desktopWorkerId}`;
+  }
+
   private runtimeGrantKey(grantHash: string): string {
     return `gh:local-worker:runtime-grant:${grantHash}`;
   }
@@ -264,13 +279,47 @@ export class LocalWorkerBrokerService {
     return next;
   }
 
-  private async writeLease(lease: ActiveLease): Promise<void> {
-    const results = await this.redis
+  private async clearRunningLeaseMarker(
+    desktopWorkerId: string,
+    jobId: string,
+  ): Promise<void> {
+    await this.redis.eval(
+      `
+        local deleted = 0
+        if redis.call("GET", KEYS[1]) == ARGV[1] then
+          deleted = deleted + redis.call("DEL", KEYS[1])
+        end
+        if redis.call("GET", KEYS[2]) == ARGV[1] then
+          deleted = deleted + redis.call("DEL", KEYS[2])
+        end
+        return deleted
+      `,
+      2,
+      this.workerRunningLeaseKey(desktopWorkerId),
+      this.workerLeaseKey(desktopWorkerId),
+      jobId,
+    );
+  }
+
+  private async writeLease(lease: ActiveLease, state: LeaseTrackingState = "running"): Promise<void> {
+    const multi = this.redis
       .multi()
       .set(this.leaseKey(lease.jobId), JSON.stringify(lease), "PX", LEASE_TTL_MS)
-      .set(this.workerLeaseKey(lease.desktopWorkerId), lease.jobId, "PX", LEASE_TTL_MS)
-      .exec();
+      .sadd(this.workerLeaseSetKey(lease.desktopWorkerId), lease.jobId)
+      .pexpire(this.workerLeaseSetKey(lease.desktopWorkerId), LEASE_TTL_MS);
+
+    if (state === "running") {
+      multi
+        .set(this.workerRunningLeaseKey(lease.desktopWorkerId), lease.jobId, "PX", LEASE_TTL_MS)
+        .set(this.workerLeaseKey(lease.desktopWorkerId), lease.jobId, "PX", LEASE_TTL_MS);
+    }
+
+    const results = await multi.exec();
     assertMultiExecSuccess(results, "writeLease");
+
+    if (state === "held") {
+      await this.clearRunningLeaseMarker(lease.desktopWorkerId, lease.jobId);
+    }
   }
 
   private async readLease(jobId: string): Promise<ActiveLease | null> {
@@ -278,27 +327,62 @@ export class LocalWorkerBrokerService {
   }
 
   private async readWorkerLease(desktopWorkerId: string): Promise<ActiveLease | null> {
-    const jobId = await this.redis.get(this.workerLeaseKey(desktopWorkerId));
+    const jobId =
+      (await this.redis.get(this.workerRunningLeaseKey(desktopWorkerId))) ??
+      (await this.redis.get(this.workerLeaseKey(desktopWorkerId)));
     if (!jobId) return null;
     const lease = await this.readLease(jobId);
-    if (!lease) {
-      await this.redis.del(this.workerLeaseKey(desktopWorkerId));
+    if (!lease || lease.desktopWorkerId !== desktopWorkerId) {
+      await this.clearRunningLeaseMarker(desktopWorkerId, jobId);
+      await this.redis.srem(this.workerLeaseSetKey(desktopWorkerId), jobId);
       return null;
     }
     return lease;
   }
 
+  private async readWorkerLeases(desktopWorkerId: string): Promise<ActiveLease[]> {
+    const jobIds = new Set(await this.redis.smembers(this.workerLeaseSetKey(desktopWorkerId)));
+    const runningLease = await this.readWorkerLease(desktopWorkerId);
+    if (runningLease) {
+      jobIds.add(runningLease.jobId);
+    }
+
+    if (jobIds.size === 0) {
+      return [];
+    }
+
+    const leases = await Promise.all(
+      [...jobIds].map(async (jobId) => ({ jobId, lease: await this.readLease(jobId) })),
+    );
+
+    const staleJobIds = leases
+      .filter(({ lease }) => !lease || lease.desktopWorkerId !== desktopWorkerId)
+      .map(({ jobId }) => jobId);
+    if (staleJobIds.length > 0) {
+      await this.redis.srem(this.workerLeaseSetKey(desktopWorkerId), ...staleJobIds);
+    }
+
+    return leases
+      .map(({ lease }) => lease)
+      .filter((lease): lease is ActiveLease => !!lease && lease.desktopWorkerId === desktopWorkerId);
+  }
+
   private async deleteLease(lease: ActiveLease): Promise<void> {
     const runtimeGrantHash = await this.redis.get(this.leaseRuntimeGrantKey(lease.leaseId));
-    const keys = [
-      this.leaseKey(lease.jobId),
-      this.workerLeaseKey(lease.desktopWorkerId),
-      this.leaseRuntimeGrantKey(lease.leaseId),
-    ];
+    const multi = this.redis
+      .multi()
+      .del(this.leaseKey(lease.jobId), this.leaseRuntimeGrantKey(lease.leaseId))
+      .srem(this.workerLeaseSetKey(lease.desktopWorkerId), lease.jobId);
     if (runtimeGrantHash) {
-      keys.push(this.runtimeGrantKey(runtimeGrantHash));
+      multi.del(this.runtimeGrantKey(runtimeGrantHash));
     }
-    await this.redis.del(...keys);
+    const results = await multi.exec();
+    assertMultiExecSuccess(results, "deleteLease");
+    await this.clearRunningLeaseMarker(lease.desktopWorkerId, lease.jobId);
+  }
+
+  private leaseTrackingStateForStatus(status?: string | null): LeaseTrackingState {
+    return status === "awaiting_review" ? "held" : "running";
   }
 
   private async issueRuntimeGrant(
@@ -444,7 +528,7 @@ export class LocalWorkerBrokerService {
     const session = await this.requireSessionByToken(sessionToken, undefined, expectedUserId);
     const lease = await this.readWorkerLease(session.desktopWorkerId);
     if (!lease) {
-      throw new LocalWorkerBrokerError(409, "LEASE_NOT_FOUND", "Worker has no active lease");
+      throw new LocalWorkerBrokerError(409, "LEASE_NOT_FOUND", "Worker has no active running lease");
     }
     if (lease.leaseId !== leaseId) {
       throw new LocalWorkerBrokerError(409, "LEASE_MISMATCH", "Lease does not match active job");
@@ -740,11 +824,22 @@ export class LocalWorkerBrokerService {
         this.logger.warn(
           {
             desktopWorkerId: session.desktopWorkerId,
-            activeJobId: existingLease.jobId,
+            runningJobId: existingLease.jobId,
           },
-          "Worker attempted to claim while already holding a lease",
+          "Worker attempted to claim while already holding a running lease",
         );
         return emptyClaim;
+      }
+
+      const heldReviewLeases = await this.readWorkerLeases(session.desktopWorkerId);
+      if (heldReviewLeases.length > 0) {
+        this.logger.info(
+          {
+            desktopWorkerId: session.desktopWorkerId,
+            heldReviewJobIds: heldReviewLeases.map((lease) => lease.jobId),
+          },
+          "Worker is claiming a new job while retaining awaiting-review leases",
+        );
       }
 
       const boss = this.requireBoss();
@@ -877,7 +972,7 @@ export class LocalWorkerBrokerService {
       };
 
       try {
-        await this.writeLease(lease);
+        await this.writeLease(lease, "running");
       } catch (leaseErr) {
         this.logger.error(
           {
@@ -1026,32 +1121,20 @@ export class LocalWorkerBrokerService {
     }
   }
 
-  async heartbeat(input: {
+  private async refreshHeartbeatLease(input: {
     userId: string;
     desktopWorkerId: string;
     sessionToken: string;
-    activeJobId?: string;
-    leaseId?: string;
+    leaseRef: LeaseHeartbeatReference;
+    requestedState: LeaseTrackingState;
   }): Promise<void> {
-    this.ensureEnabled();
-    const session = await this.requireSessionByToken(
-      input.sessionToken,
-      input.desktopWorkerId,
-      input.userId,
-    );
-    await this.refreshSession(session);
-
-    if (!input.activeJobId || !input.leaseId) {
-      return;
-    }
-
     const { lease } = await this.requireLease(
       input.sessionToken,
-      input.activeJobId,
-      input.leaseId,
+      input.leaseRef.jobId,
+      input.leaseRef.leaseId,
       input.userId,
     );
-    const ghJob = await this.ghJobRepo.findById(input.activeJobId);
+    const ghJob = await this.ghJobRepo.findById(input.leaseRef.jobId);
     if (!ghJob) {
       throw new LocalWorkerBrokerError(404, "JOB_NOT_FOUND", "GhostHands job not found");
     }
@@ -1059,7 +1142,7 @@ export class LocalWorkerBrokerService {
     if (TERMINAL_STATUSES.has(ghJob.status)) {
       this.logger.warn(
         {
-          jobId: input.activeJobId,
+          jobId: input.leaseRef.jobId,
           currentStatus: ghJob.status,
           desktopWorkerId: input.desktopWorkerId,
         },
@@ -1069,14 +1152,93 @@ export class LocalWorkerBrokerService {
       return;
     }
 
-    await this.writeLease(lease);
-    const nextStatus = ghJob.status === "awaiting_review" ? "awaiting_review" : "running";
-    const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.activeJobId, {
-      status: nextStatus,
+    const effectiveState = this.leaseTrackingStateForStatus(ghJob.status);
+    if (effectiveState !== input.requestedState) {
+      this.logger.warn(
+        {
+          jobId: input.leaseRef.jobId,
+          requestedState: input.requestedState,
+          effectiveState,
+          currentStatus: ghJob.status,
+          desktopWorkerId: input.desktopWorkerId,
+        },
+        "Adjusting heartbeat lease state to match GhostHands job status",
+      );
+    }
+
+    await this.writeLease(lease, effectiveState);
+    const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.leaseRef.jobId, {
+      status: effectiveState === "held" ? "awaiting_review" : "running",
       lastHeartbeat: new Date(),
     });
     if (!updated) {
       await this.deleteLease(lease);
+    }
+  }
+
+  async heartbeat(input: {
+    userId: string;
+    desktopWorkerId: string;
+    sessionToken: string;
+    activeJobId?: string;
+    leaseId?: string;
+    reviewLeases?: LeaseHeartbeatReference[];
+  }): Promise<void> {
+    this.ensureEnabled();
+    const session = await this.requireSessionByToken(
+      input.sessionToken,
+      input.desktopWorkerId,
+      input.userId,
+    );
+    await this.refreshSession(session);
+
+    const seenJobIds = new Set<string>();
+    if (input.activeJobId || input.leaseId) {
+      if (!input.activeJobId || !input.leaseId) {
+        throw new LocalWorkerBrokerError(
+          400,
+          "INVALID_HEARTBEAT",
+          "Heartbeat must include both activeJobId and leaseId",
+        );
+      }
+      seenJobIds.add(input.activeJobId);
+      await this.refreshHeartbeatLease({
+        userId: input.userId,
+        desktopWorkerId: input.desktopWorkerId,
+        sessionToken: input.sessionToken,
+        leaseRef: {
+          jobId: input.activeJobId,
+          leaseId: input.leaseId,
+        },
+        requestedState: "running",
+      });
+    }
+
+    for (const leaseRef of input.reviewLeases ?? []) {
+      if (seenJobIds.has(leaseRef.jobId)) {
+        continue;
+      }
+      seenJobIds.add(leaseRef.jobId);
+
+      try {
+        await this.refreshHeartbeatLease({
+          userId: input.userId,
+          desktopWorkerId: input.desktopWorkerId,
+          sessionToken: input.sessionToken,
+          leaseRef,
+          requestedState: "held",
+        });
+      } catch (error) {
+        this.logger.warn(
+          {
+            err: error,
+            jobId: leaseRef.jobId,
+            leaseId: leaseRef.leaseId,
+            desktopWorkerId: input.desktopWorkerId,
+          },
+          "Skipping held-review lease heartbeat refresh after per-lease failure",
+        );
+      }
     }
   }
 
@@ -1120,7 +1282,7 @@ export class LocalWorkerBrokerService {
       return;
     }
 
-    await this.writeLease(lease);
+    await this.writeLease(lease, this.leaseTrackingStateForStatus(ghJob?.status));
     const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
       status: ghJob?.status === "awaiting_review" ? "awaiting_review" : "running",
       lastHeartbeat: new Date(),
@@ -1156,7 +1318,7 @@ export class LocalWorkerBrokerService {
       return;
     }
 
-    await this.writeLease(lease);
+    await this.writeLease(lease, "held");
     const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.jobId, {
       status: "awaiting_review",
       lastHeartbeat: new Date(),
