@@ -135,6 +135,10 @@ jobs:
               --build-arg VITE_API_URL=${{ inputs.api-url }} \
               --build-arg VITE_WS_URL=${WS_URL} \
               --build-arg VITE_GOOGLE_CLIENT_ID=${{ inputs.google-client-id }} \
+              --build-arg VITE_VALET_ENVIRONMENT=${{ inputs.environment }} \
+              --build-arg VITE_LD_CLIENT_SIDE_ID_TEST=${{ secrets.LD_CLIENT_SIDE_ID_TEST || vars.LD_CLIENT_SIDE_ID_TEST }} \
+              --build-arg VITE_LD_CLIENT_SIDE_ID_STAGING=${{ secrets.LD_CLIENT_SIDE_ID_STAGING || vars.LD_CLIENT_SIDE_ID_STAGING }} \
+              --build-arg VITE_LD_CLIENT_SIDE_ID_PRODUCTION=${{ secrets.LD_CLIENT_SIDE_ID_PRODUCTION || vars.LD_CLIENT_SIDE_ID_PRODUCTION }} \
               --remote-only \
               --strategy rolling \
               --wait-timeout 300; then

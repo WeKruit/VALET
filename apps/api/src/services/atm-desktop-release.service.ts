@@ -6,6 +6,7 @@ export interface AtmDesktopRelease {
   channel: "stable" | "beta";
   releaseUrl: string;
   publishedAt: string;
+  minimumSupportedVersion?: string | null;
   assets: Record<string, string>;
 }
 
@@ -86,7 +87,12 @@ export class AtmDesktopReleaseService {
         );
         return null;
       }
-      return (await response.json()) as AtmDesktopRelease;
+      const release = (await response.json()) as AtmDesktopRelease;
+      return {
+        ...release,
+        minimumSupportedVersion:
+          response.headers.get("x-desktop-minimum-supported-version") ?? null,
+      };
     } catch (error) {
       this.logger.warn(
         { err: error, url: url.toString() },

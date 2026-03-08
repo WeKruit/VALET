@@ -90,10 +90,15 @@ export class DesktopService {
       HANDOFF_TTL_SECONDS,
     );
 
+    const protocol =
+      this.launchDarklyService.getEnvironment() === "staging"
+        ? "ghosthands-beta"
+        : "ghosthands";
+
     return {
       token,
       expiresAt: expiresAt.toISOString(),
-      deepLink: `ghosthands://handoff/${token}`,
+      deepLink: `${protocol}://handoff/${token}`,
     };
   }
 
@@ -185,7 +190,9 @@ export class DesktopService {
         flagContext,
         false,
       ),
-      this.atmDesktopReleaseService.getReleaseState(releaseChannel === "beta" ? "beta" : "stable"),
+      this.atmDesktopReleaseService.getLatestRelease(
+        releaseChannel === "beta" ? "beta" : "stable",
+      ),
     ]);
 
     const userRecord = user as Record<string, unknown>;
@@ -204,10 +211,6 @@ export class DesktopService {
 
     const role = userRecord.role as string;
     const isAdminRole = role === "admin" || role === "superadmin";
-    const activeRollout =
-      releaseState?.rollouts.find(
-        (rollout) => rollout.channel === (releaseChannel === "beta" ? "beta" : "stable"),
-      ) ?? null;
     const publicDownloadUrl = process.env.VALET_WEB_URL
       ? `${process.env.VALET_WEB_URL.replace(/\/+$/, "")}/download`
       : null;
@@ -244,7 +247,7 @@ export class DesktopService {
       automation,
       desktop: {
         channel: releaseChannel,
-        minimumSupportedVersion: activeRollout?.minimumSupportedVersion ?? null,
+        minimumSupportedVersion: releaseState?.minimumSupportedVersion ?? null,
         flags: {
           killSwitch,
           localWorkerEnabled,

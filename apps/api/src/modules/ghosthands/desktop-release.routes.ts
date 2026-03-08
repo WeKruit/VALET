@@ -8,16 +8,18 @@ export const desktopReleaseRouter = s.router(desktopReleaseContract, {
     const { redis, atmDesktopReleaseService } = request.diScope.cradle;
     const atmRelease = await atmDesktopReleaseService.getLatestRelease("stable");
     if (atmRelease) {
+      const payload = {
+        version: atmRelease.version,
+        dmgArm64Url: atmRelease.assets.dmg_arm64 ?? "",
+        dmgX64Url: atmRelease.assets.dmg_x64 ?? null,
+        exeX64Url: atmRelease.assets.exe_x64 ?? null,
+        releaseUrl: atmRelease.releaseUrl,
+        releasedAt: atmRelease.publishedAt,
+      };
+      await redis.set("desktop:latest-release", JSON.stringify(payload));
       return {
         status: 200 as const,
-        body: {
-          version: atmRelease.version,
-          dmgArm64Url: atmRelease.assets.dmg_arm64 ?? "",
-          dmgX64Url: atmRelease.assets.dmg_x64 ?? null,
-          exeX64Url: atmRelease.assets.exe_x64 ?? null,
-          releaseUrl: atmRelease.releaseUrl,
-          releasedAt: atmRelease.publishedAt,
-        },
+        body: payload,
       };
     }
 
