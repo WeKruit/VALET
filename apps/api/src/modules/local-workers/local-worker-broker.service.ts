@@ -1121,6 +1121,61 @@ export class LocalWorkerBrokerService {
     }
   }
 
+  private async refreshHeartbeatLease(input: {
+    userId: string;
+    desktopWorkerId: string;
+    sessionToken: string;
+    leaseRef: LeaseHeartbeatReference;
+    requestedState: LeaseTrackingState;
+  }): Promise<void> {
+    const { lease } = await this.requireLease(
+      input.sessionToken,
+      input.leaseRef.jobId,
+      input.leaseRef.leaseId,
+      input.userId,
+    );
+    const ghJob = await this.ghJobRepo.findById(input.leaseRef.jobId);
+    if (!ghJob) {
+      throw new LocalWorkerBrokerError(404, "JOB_NOT_FOUND", "GhostHands job not found");
+    }
+
+    if (TERMINAL_STATUSES.has(ghJob.status)) {
+      this.logger.warn(
+        {
+          jobId: input.leaseRef.jobId,
+          currentStatus: ghJob.status,
+          desktopWorkerId: input.desktopWorkerId,
+        },
+        "Ignoring heartbeat for job already in terminal state",
+      );
+      await this.deleteLease(lease);
+      return;
+    }
+
+    const effectiveState = this.leaseTrackingStateForStatus(ghJob.status);
+    if (effectiveState !== input.requestedState) {
+      this.logger.warn(
+        {
+          jobId: input.leaseRef.jobId,
+          requestedState: input.requestedState,
+          effectiveState,
+          currentStatus: ghJob.status,
+          desktopWorkerId: input.desktopWorkerId,
+        },
+        "Adjusting heartbeat lease state to match GhostHands job status",
+      );
+    }
+
+    await this.writeLease(lease, effectiveState);
+    const updated = await this.ghJobRepo.updateStatusIfNotTerminal(input.leaseRef.jobId, {
+      status: effectiveState === "held" ? "awaiting_review" : "running",
+      lastHeartbeat: new Date(),
+    });
+    if (!updated) {
+      await this.deleteLease(lease);
+    }
+  }
+
   async heartbeat(input: {
     userId: string;
     desktopWorkerId: string;
@@ -1137,7 +1192,7 @@ export class LocalWorkerBrokerService {
     );
     await this.refreshSession(session);
 
-    const trackedLeases: Array<LeaseHeartbeatReference & { state: LeaseTrackingState }> = [];
+    const seenJobIds = new Set<string>();
     if (input.activeJobId || input.leaseId) {
       if (!input.activeJobId || !input.leaseId) {
         throw new LocalWorkerBrokerError(
@@ -1146,62 +1201,43 @@ export class LocalWorkerBrokerService {
           "Heartbeat must include both activeJobId and leaseId",
         );
       }
-      trackedLeases.push({
-        jobId: input.activeJobId,
-        leaseId: input.leaseId,
-        state: "running",
+      seenJobIds.add(input.activeJobId);
+      await this.refreshHeartbeatLease({
+        userId: input.userId,
+        desktopWorkerId: input.desktopWorkerId,
+        sessionToken: input.sessionToken,
+        leaseRef: {
+          jobId: input.activeJobId,
+          leaseId: input.leaseId,
+        },
+        requestedState: "running",
       });
     }
+
     for (const leaseRef of input.reviewLeases ?? []) {
-      trackedLeases.push({
-        ...leaseRef,
-        state: "held",
-      });
-    }
-
-    if (trackedLeases.length === 0) {
-      return;
-    }
-
-    const seenJobIds = new Set<string>();
-    for (const leaseRef of trackedLeases) {
       if (seenJobIds.has(leaseRef.jobId)) {
         continue;
       }
       seenJobIds.add(leaseRef.jobId);
 
-      const { lease } = await this.requireLease(
-        input.sessionToken,
-        leaseRef.jobId,
-        leaseRef.leaseId,
-        input.userId,
-      );
-      const ghJob = await this.ghJobRepo.findById(leaseRef.jobId);
-      if (!ghJob) {
-        throw new LocalWorkerBrokerError(404, "JOB_NOT_FOUND", "GhostHands job not found");
-      }
-
-      if (TERMINAL_STATUSES.has(ghJob.status)) {
+      try {
+        await this.refreshHeartbeatLease({
+          userId: input.userId,
+          desktopWorkerId: input.desktopWorkerId,
+          sessionToken: input.sessionToken,
+          leaseRef,
+          requestedState: "held",
+        });
+      } catch (error) {
         this.logger.warn(
           {
+            err: error,
             jobId: leaseRef.jobId,
-            currentStatus: ghJob.status,
+            leaseId: leaseRef.leaseId,
             desktopWorkerId: input.desktopWorkerId,
           },
-          "Ignoring heartbeat for job already in terminal state",
+          "Skipping held-review lease heartbeat refresh after per-lease failure",
         );
-        await this.deleteLease(lease);
-        continue;
-      }
-
-      const nextStatus = leaseRef.state === "held" ? "awaiting_review" : "running";
-      await this.writeLease(lease, leaseRef.state);
-      const updated = await this.ghJobRepo.updateStatusIfNotTerminal(leaseRef.jobId, {
-        status: nextStatus,
-        lastHeartbeat: new Date(),
-      });
-      if (!updated) {
-        await this.deleteLease(lease);
       }
     }
   }

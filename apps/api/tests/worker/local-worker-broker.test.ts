@@ -672,6 +672,155 @@ describe("LocalWorkerBrokerService multi-lease worker tracking", () => {
     );
   });
 
+  it("does not re-promote an awaiting-review lease back to running from a stale active heartbeat", async () => {
+    const session = {
+      userId: "user-1",
+      desktopWorkerId: "desktop-worker-1",
+      deviceId: "device-1",
+      sessionToken: "session-token-1",
+      expiresAt: Date.now() + 60_000,
+      pollIntervalMs: 4_000,
+      heartbeatIntervalMs: 15_000,
+    };
+    const redis = createRedisMock();
+    const updateStatusIfNotTerminal = vi.fn().mockImplementation(async (jobId: string, patch) => ({
+      id: jobId,
+      ...patch,
+    }));
+    const service = new LocalWorkerBrokerService({
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      } as any,
+      pgBossService: { instance: null } as any,
+      ghJobRepo: {
+        findById: vi.fn().mockResolvedValue({
+          id: "gh-job-review",
+          status: "awaiting_review",
+        }),
+        updateStatusIfNotTerminal,
+      } as any,
+      ghJobEventRepo: {} as any,
+      taskQueueService: {} as any,
+      redis: redis as any,
+    });
+
+    await (service as any).writeLease(
+      {
+        jobId: "gh-job-review",
+        leaseId: "lease-review",
+        desktopWorkerId: session.desktopWorkerId,
+        pgBossJobId: "pg-review",
+        queueName: "queue",
+        queuePayload: {
+          ghJobId: "gh-job-review",
+          userId: session.userId,
+          targetUrl: "https://example.com/jobs/review",
+          platform: "other",
+          jobType: "apply",
+        },
+      },
+      "held",
+    );
+
+    (service as any).requireSessionByToken = vi.fn().mockResolvedValue(session);
+    (service as any).refreshSession = vi.fn().mockResolvedValue(undefined);
+
+    await service.heartbeat({
+      userId: session.userId,
+      desktopWorkerId: session.desktopWorkerId,
+      sessionToken: session.sessionToken,
+      activeJobId: "gh-job-review",
+      leaseId: "lease-review",
+    });
+
+    expect(updateStatusIfNotTerminal).toHaveBeenCalledWith(
+      "gh-job-review",
+      expect.objectContaining({ status: "awaiting_review" }),
+    );
+    expect(await redis.get(`gh:local-worker:worker-running-lease:${session.desktopWorkerId}`)).toBeNull();
+  });
+
+  it("continues refreshing the running lease when a held review lease is stale", async () => {
+    const session = {
+      userId: "user-1",
+      desktopWorkerId: "desktop-worker-1",
+      deviceId: "device-1",
+      sessionToken: "session-token-1",
+      expiresAt: Date.now() + 60_000,
+      pollIntervalMs: 4_000,
+      heartbeatIntervalMs: 15_000,
+    };
+    const redis = createRedisMock();
+    const updateStatusIfNotTerminal = vi.fn().mockImplementation(async (jobId: string, patch) => ({
+      id: jobId,
+      ...patch,
+    }));
+    const service = new LocalWorkerBrokerService({
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      } as any,
+      pgBossService: { instance: null } as any,
+      ghJobRepo: {
+        findById: vi.fn(async (jobId: string) => {
+          if (jobId === "gh-job-running") {
+            return { id: jobId, status: "running" };
+          }
+          return null;
+        }),
+        updateStatusIfNotTerminal,
+      } as any,
+      ghJobEventRepo: {} as any,
+      taskQueueService: {} as any,
+      redis: redis as any,
+    });
+
+    await (service as any).writeLease(
+      {
+        jobId: "gh-job-running",
+        leaseId: "lease-running",
+        desktopWorkerId: session.desktopWorkerId,
+        pgBossJobId: "pg-running",
+        queueName: "queue",
+        queuePayload: {
+          ghJobId: "gh-job-running",
+          userId: session.userId,
+          targetUrl: "https://example.com/jobs/running",
+          platform: "other",
+          jobType: "apply",
+        },
+      },
+      "running",
+    );
+
+    (service as any).requireSessionByToken = vi.fn().mockResolvedValue(session);
+    (service as any).refreshSession = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      service.heartbeat({
+        userId: session.userId,
+        desktopWorkerId: session.desktopWorkerId,
+        sessionToken: session.sessionToken,
+        activeJobId: "gh-job-running",
+        leaseId: "lease-running",
+        reviewLeases: [{ jobId: "gh-job-stale-review", leaseId: "lease-stale-review" }],
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(updateStatusIfNotTerminal).toHaveBeenCalledWith(
+      "gh-job-running",
+      expect.objectContaining({ status: "running" }),
+    );
+    expect(await redis.get(`gh:local-worker:worker-running-lease:${session.desktopWorkerId}`)).toBe(
+      "gh-job-running",
+    );
+  });
+
   it("cancelling one held review lease does not remove a different running lease", async () => {
     const session = {
       userId: "user-1",
